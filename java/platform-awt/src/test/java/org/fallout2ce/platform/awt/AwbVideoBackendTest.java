@@ -98,6 +98,24 @@ class AwbVideoBackendTest {
     }
 
     @Test
+    void freshPaletteIsGrayscale() {
+        AwbVideoBackend backend = new AwbVideoBackend();
+
+        // Identity gray ramp, like a fresh SDL surface (directDrawInit).
+        assertEquals(5, Byte.toUnsignedInt(backend.palette()[5 * 3]));
+        assertEquals(5, Byte.toUnsignedInt(backend.palette()[5 * 3 + 1]));
+        assertEquals(5, Byte.toUnsignedInt(backend.palette()[5 * 3 + 2]));
+        backend.framebuffer()[0] = 5;
+        backend.present();
+        assertEquals(0x141414, backend.image().getRGB(0, 0) & 0xFFFFFF);
+
+        backend.freeSurface();
+        assertEquals(0, Byte.toUnsignedInt(backend.palette()[5 * 3]));
+        backend.present();
+        assertEquals(0x000000, backend.image().getRGB(0, 0) & 0xFFFFFF);
+    }
+
+    @Test
     void badPaletteSizesThrow() {
         AwbVideoBackend backend = new AwbVideoBackend();
         assertThrows(IllegalArgumentException.class, () -> backend.setPalette(new byte[767]));

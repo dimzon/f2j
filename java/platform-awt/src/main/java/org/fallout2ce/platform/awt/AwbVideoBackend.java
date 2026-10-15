@@ -46,6 +46,15 @@ public final class AwbVideoBackend implements VideoBackend {
 
     private volatile JFrame window;
 
+    /** Fresh surfaces start with the identity gray ramp (like SDL). */
+    public AwbVideoBackend() {
+        for (int i = 0; i < 256; i++) {
+            palette[i * 3] = (byte) i;
+            palette[i * 3 + 1] = (byte) i;
+            palette[i * 3 + 2] = (byte) i;
+        }
+    }
+
     /**
      * Offscreen image in the pipeline-optimal format: a compatible image
      * lives where the JRE's standard pipeline (OpenGL with
@@ -76,6 +85,28 @@ public final class AwbVideoBackend implements VideoBackend {
     /** Framebuffer height in pixels. */
     public int height() {
         return height;
+    }
+
+    /** Current surface palette copy (zeros after {@link #freeSurface()}). */
+    @Override
+    public byte[] palette() {
+        synchronized (lock) {
+            return palette.clone();
+        }
+    }
+
+    /** Release the drawing surface (palette and pixels go to zero). */
+    @Override
+    public void freeSurface() {
+        synchronized (lock) {
+            Arrays.fill(palette, (byte) 0);
+            Arrays.fill(framebuffer, (byte) 0);
+        }
+    }
+
+    @Override
+    public boolean isExclusiveFullscreen() {
+        return false;
     }
 
     /**

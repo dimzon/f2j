@@ -33,6 +33,7 @@
 #include "input.h"
 #include "message.h"
 #include "settings.h"
+#include "svga.h"
 #include "file_utils.h"
 #include "fpattern_windows.h"
 #include "xfile.h"
@@ -49,6 +50,7 @@ void progressHandler()
 } // namespace
 #include "geometry.h"
 #include "platform_compat.h"
+#include "win32.h"
 #include "random.h"
 #include "string_parsers.h"
 #include "text_font.h"
@@ -1789,6 +1791,130 @@ void sectionFps()
     std::printf("delay50=%d\n", fallout::getTicksBetween(t1, t0) >= 50 ? 1 : 0);
 }
 
+void sectionSvga()
+{
+    std::puts("[svga]");
+
+    setenv("SDL_VIDEODRIVER", "dummy", 1);
+    int videoInit = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER);
+    std::printf("video-init=%d\n", videoInit == 0 ? 1 : 0);
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+    fallout::settingsInit(false, 1, argv0);
+    fallout::settings.screen.resolution_x = 640;
+    fallout::settings.screen.resolution_y = 480;
+    fallout::settings.screen.scale = 1;
+    fallout::settings.screen.windowed = fallout::WindowMode::Windowed;
+    fallout::settings.ui.iface_bar_mode = false;
+    fallout::gProgramIsActive = true;
+
+    // _scr_blit is preset to _GNW95_ShowRect at startup; _zero_mem starts null.
+    bool scrBlitPreset = fallout::_scr_blit != nullptr;
+    std::printf("scrblit-preset=%d\n", scrBlitPreset ? 1 : 0);
+    bool zeroMemNull = fallout::_zero_mem == nullptr;
+    std::printf("zeromem-null=%d\n", zeroMemNull ? 1 : 0);
+    fallout::_zero_vid_mem();
+    std::printf("zero-noop=1\n");
+
+    // Manual SDL context mirroring createRenderer (the GL window flag is
+    // rejected by the dummy driver, so the window is created without it;
+    // _GNW95_init_window then skips creation and every line below the
+    // window check in _GNW95_init_mode_ex is real C code).
+    fallout::gSdlWindow = SDL_CreateWindow("f2j",
+        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480,
+        SDL_WINDOW_ALLOW_HIGHDPI);
+    std::printf("window=%d\n", fallout::gSdlWindow != nullptr ? 1 : 0);
+    fallout::gSdlRenderer = SDL_CreateRenderer(fallout::gSdlWindow, -1, 0);
+    SDL_RenderSetLogicalSize(fallout::gSdlRenderer, 640, 480);
+    fallout::gSdlTexture = SDL_CreateTexture(fallout::gSdlRenderer,
+        SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
+    Uint32 format = 0;
+    SDL_QueryTexture(fallout::gSdlTexture, &format, nullptr, nullptr, nullptr);
+    fallout::gSdlTextureSurface = SDL_CreateRGBSurfaceWithFormat(0, 640, 480,
+        SDL_BITSPERPIXEL(format), format);
+    bool rendererOk = fallout::gSdlRenderer != nullptr
+        && fallout::gSdlTexture != nullptr
+        && fallout::gSdlTextureSurface != nullptr;
+    std::printf("renderer=%d\n", rendererOk ? 1 : 0);
+
+    int mode = fallout::_init_mode_640_480();
+    std::printf("mode640480=%d scr=%d,%d,%d,%d\n", mode,
+        fallout::_scr_size.left, fallout::_scr_size.top,
+        fallout::_scr_size.right, fallout::_scr_size.bottom);
+    bool hooksSet = fallout::_scr_blit != nullptr && fallout::_zero_mem != nullptr;
+    std::printf("hooks-set=%d\n", hooksSet ? 1 : 0);
+    std::printf("screen=%dx%d visible=%d exclusive=%d\n",
+        fallout::screenGetWidth(), fallout::screenGetHeight(),
+        fallout::screenGetVisibleHeight(),
+        fallout::screenIsExclusiveFullscreen() ? 1 : 0);
+    std::printf("surface=%dx%d pitch=%d\n",
+        fallout::gSdlSurface->w, fallout::gSdlSurface->h, fallout::gSdlSurface->pitch);
+
+    fallout::directDrawSetPalette(fallout::_cmap);
+    unsigned char* pal = fallout::directDrawGetPalette();
+    uLong palCrc = crc32(crc32(0L, Z_NULL, 0), pal, 768);
+    std::printf("pal-crc=%08lX\n", palCrc);
+
+    unsigned char src[100 * 50];
+    for (int i = 0; i < 100 * 50; i++) {
+        src[i] = (unsigned char)(i & 0xFF);
+    }
+    // Zero first: fresh SDL surfaces are not guaranteed cleared, and only
+    // the blit window below is overwritten.
+    fallout::_zero_vid_mem();
+    fallout::_GNW95_ShowRect(src, 100, 0, 10, 5, 80, 40, 200, 100);
+    uLong blitCrc = crc32(crc32(0L, Z_NULL, 0),
+        (unsigned char*)fallout::gSdlSurface->pixels,
+        fallout::gSdlSurface->pitch * fallout::gSdlSurface->h);
+    std::printf("blit-crc=%08lX\n", blitCrc);
+
+    fallout::_zero_vid_mem();
+    uLong zeroCrc = crc32(crc32(0L, Z_NULL, 0),
+        (unsigned char*)fallout::gSdlSurface->pixels,
+        fallout::gSdlSurface->pitch * fallout::gSdlSurface->h);
+    std::printf("zero-crc=%08lX\n", zeroCrc);
+
+    fallout::settings.screen.resolution_x = 800;
+    fallout::settings.screen.resolution_y = 600;
+    int mode800 = fallout::_init_mode_800_600();
+    unsigned char* pal2 = fallout::directDrawGetPalette();
+    uLong palCrc2 = crc32(crc32(0L, Z_NULL, 0), pal2, 768);
+    std::printf("mode800=%d scr=%d,%d,%d,%d surface=%dx%d pal-preserved=%d\n", mode800,
+        fallout::_scr_size.left, fallout::_scr_size.top,
+        fallout::_scr_size.right, fallout::_scr_size.bottom,
+        fallout::gSdlSurface->w, fallout::gSdlSurface->h,
+        palCrc2 == palCrc ? 1 : 0);
+
+    fallout::settings.screen.resolution_x = 1280;
+    fallout::settings.screen.resolution_y = 960;
+    fallout::settings.screen.scale = 2;
+    int modeScaled = fallout::_GNW95_init_mode_ex(320, 200, 8);
+    std::printf("scaled=%d scr=%d,%d,%d,%d surface=%dx%d\n", modeScaled,
+        fallout::_scr_size.left, fallout::_scr_size.top,
+        fallout::_scr_size.right, fallout::_scr_size.bottom,
+        fallout::gSdlSurface->w, fallout::gSdlSurface->h);
+
+    fallout::settings.screen.resolution_x = 640;
+    fallout::settings.screen.resolution_y = 480;
+    fallout::settings.screen.scale = 2;
+    int modeFallback = fallout::_GNW95_init_mode_ex(0, 0, 8);
+    std::printf("fallback=%d scr=%d,%d,%d,%d surface=%dx%d\n", modeFallback,
+        fallout::_scr_size.left, fallout::_scr_size.top,
+        fallout::_scr_size.right, fallout::_scr_size.bottom,
+        fallout::gSdlSurface->w, fallout::gSdlSurface->h);
+
+    int mode16 = fallout::_init_mode_640_480_16();
+    std::printf("mode16=%d\n", mode16);
+
+    fallout::directDrawFree();
+    unsigned char* pal3 = fallout::directDrawGetPalette();
+    uLong palCrc3 = crc32(crc32(0L, Z_NULL, 0), pal3, 768);
+    std::printf("free-pal-crc=%08lX\n", palCrc3);
+
+    fallout::settingsExit(false);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1825,5 +1951,6 @@ int main()
     sectionSettings();
     sectionColorCycle();
     sectionFps();
+    sectionSvga();
     return 0;
 }

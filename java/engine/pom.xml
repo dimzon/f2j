@@ -36,6 +36,14 @@
             <version>${project.version}</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- Game-level render tests run the real AWT backend headless
+             (offscreen only, never a window). Main code stays backend-free. -->
+        <dependency>
+            <groupId>org.fallout2ce</groupId>
+            <artifactId>f2j-platform-awt</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
