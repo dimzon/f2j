@@ -54,8 +54,12 @@
 #include "art_defs.h"
 #include "combat_ai_defs.h"
 #include "combat_defs.h"
+#include "critter.h"
+#include "inventory.h"
+#include "item.h"
 #include "obj_types.h"
 #include "proto.h"
+#include "proto_instance.h"
 #include "proto_types.h"
 #include "version.h"
 #include "font_manager.h"
@@ -3713,6 +3717,32 @@ void sectionPrototypes()
         (int)fallout::PROTO_DATA_MEMBER_TYPE_INT, (int)fallout::PROTO_DATA_MEMBER_TYPE_STRING);
 }
 
+void sectionGameTypes()
+{
+    std::puts("[gametypes]");
+
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    fallout::RadiationLevel rl = fallout::RADIATION_LEVEL_FATAL;
+    fallout::RadiationLevel rlOld = rl++;
+    int rlNew = static_cast<int>(rl);
+    std::printf("radiation-count=%d radiation-first=%d post-old=%d post-new=%d goris-combat=%d goris-robe=%d\n",
+        (int)fallout::RADIATION_LEVEL_COUNT, (int)fallout::RADIATION_LEVEL_NONE,
+        (int)rlOld, rlNew,
+        (int)fallout::kGorisCombatBaseFrameId, (int)fallout::kGorisRobeBaseFrameId);
+
+    fallout::HealingItem hi = fallout::HEALING_ITEM_HEALING_POWDER;
+    fallout::HealingItem hiOld = hi++;
+    int hiNew = static_cast<int>(hi);
+    std::printf("attack-invalid=%d attack-first=%d attack-count=%d healing-first=%d healing-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::ATTACK_TYPE_INVALID, (int)fallout::ATTACK_TYPE_FIRST, (int)fallout::ATTACK_TYPE_COUNT,
+        (int)fallout::HEALING_ITEM_FIRST, (int)fallout::HEALING_ITEM_COUNT, (int)hiOld, hiNew);
+
+    std::printf("hand-count=%d slot-w=%d slot-h=%d barter-extra=%d useitem-error=%d useitem-ok=%d useitem-remove=%d useitem-drop=%d\n",
+        (int)fallout::HAND_COUNT, INVENTORY_SLOT_WIDTH, INVENTORY_SLOT_HEIGHT, fallout::kExpandedBarterExtraSlots,
+        (int)fallout::USE_ITEM_RESULT_ERROR, (int)fallout::USE_ITEM_RESULT_OK,
+        (int)fallout::USE_ITEM_RESULT_REMOVE, (int)fallout::USE_ITEM_RESULT_DROP);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3777,5 +3807,6 @@ int main()
     sectionCombatDefs();
     sectionObjTypes();
     sectionPrototypes();
+    sectionGameTypes();
     return 0;
 }
