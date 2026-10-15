@@ -55,6 +55,8 @@
 #include "combat_ai_defs.h"
 #include "combat_defs.h"
 #include "obj_types.h"
+#include "proto.h"
+#include "proto_types.h"
 #include "version.h"
 #include "font_manager.h"
 #include "game_config.h"
@@ -3629,6 +3631,88 @@ void sectionObjTypes()
         (int)fallout::MAP_ARROYO_TEMPLE, (int)fallout::MAP_IN_GAME_MOVIE1, (int)mpOld, mpNew);
 }
 
+void sectionPrototypes()
+{
+    std::puts("[prototypes]");
+
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    fallout::ItemType it = fallout::ITEM_TYPE_KEY;
+    fallout::ItemType itOld = it++;
+    int itNew = static_cast<int>(it);
+    fallout::DamageType dt = fallout::DAMAGE_TYPE_FIRE;
+    int dtStat = static_cast<int>(fallout::STAT_DAMAGE_THRESHOLD + dt);
+    int drStat = static_cast<int>(fallout::STAT_DAMAGE_RESISTANCE + fallout::DAMAGE_TYPE_PLASMA);
+    bool dtValid = fallout::damageTypeIsValid(fallout::DAMAGE_TYPE_COUNT);
+    bool killValid = fallout::killTypeIsValid(fallout::KILL_TYPE_DEFAULT_COUNT - 1);
+    bool killInvalid = fallout::killTypeIsValid(fallout::KILL_TYPE_DEFAULT_COUNT);
+    bool killOver = fallout::killTypeOverrideIsValid(fallout::KILL_TYPE_PLAYER);
+    bool killOverOut = fallout::killTypeOverrideIsValid(fallout::KILL_TYPE_OVERRIDE_COUNT + 1);
+    std::printf("gender-count=%d item-count=%d item-first=%d post-old=%d post-new=%d scenery-count=%d material-count=%d dmg-count=%d dt-fire=%d dr-plasma=%d dt-valid=%d caliber-count=%d race-count=%d body-count=%d kill-default=%d kill-override=%d kill-player=%d kill-valid=%d kill-invalid=%d kill-over=%d kill-over-out=%d\n",
+        (int)fallout::GENDER_COUNT,
+        (int)fallout::ITEM_TYPE_COUNT, (int)fallout::ITEM_TYPE_FIRST, (int)itOld, itNew,
+        (int)fallout::SCENERY_TYPE_COUNT, (int)fallout::MATERIAL_TYPE_COUNT,
+        (int)fallout::DAMAGE_TYPE_COUNT, dtStat, drStat, dtValid ? 1 : 0,
+        (int)fallout::CALIBER_TYPE_COUNT, (int)fallout::RACE_TYPE_COUNT, (int)fallout::BODY_TYPE_COUNT,
+        (int)fallout::KILL_TYPE_DEFAULT_COUNT, (int)fallout::KILL_TYPE_OVERRIDE_COUNT, (int)fallout::KILL_TYPE_PLAYER,
+        killValid ? 1 : 0, killInvalid ? 1 : 0, killOver ? 1 : 0, killOverOut ? 1 : 0);
+
+    std::printf("item-armor=%d item-stimpak=%d item-money=%d item-jet=%d item-scorcher=%d critter-dude=%d critter-dogmeat=%d scenery-car=%d scenery-goo1=%d misc-blood=%d misc-exit1=%d misc-exitlast=%d\n",
+        (int)fallout::ItemProtoTypeId::PowerArmor, (int)fallout::ItemProtoTypeId::Stimpak,
+        (int)fallout::ItemProtoTypeId::Money, (int)fallout::ItemProtoTypeId::Jet,
+        (int)fallout::ItemProtoTypeId::SolarScorcher,
+        (int)fallout::CritterProtoTypeId::Dude, (int)fallout::CritterProtoTypeId::Dogmeat,
+        (int)fallout::SceneryProtoTypeId::Car, (int)fallout::SceneryProtoTypeId::FirstRadioactiveGoo,
+        (int)fallout::MiscProtoTypeId::Blood, (int)fallout::MiscProtoTypeId::FirstExitGrid,
+        (int)fallout::MiscProtoTypeId::LastExitGrid);
+
+    int protoOr = static_cast<int>(fallout::PROTO_FLAG_FLAT | fallout::PROTO_FLAG_NO_BLOCK);
+    int protoShoot = static_cast<int>(fallout::PROTO_FLAG_SHOOT_THRU);
+    fallout::ProtoExtendedFlags ef = fallout::PROTO_EXT_FLAG_BIG_GUN;
+    ef |= fallout::PROTO_EXT_FLAG_IS_TWO_HANDED;
+    int extOr = static_cast<int>(ef);
+    ef ^= fallout::PROTO_EXT_FLAG_BIG_GUN;
+    int extXor = static_cast<int>(ef);
+    std::printf("proto-or=%d proto-shoot=%d ext-or=%d ext-xor=%d ext-hidden=%d list-extent=%d list-max=%d\n",
+        protoOr, protoShoot, extOr, extXor,
+        (int)fallout::PROTO_EXT_FLAG_HIDDEN, PROTO_LIST_EXTENT_SIZE, PROTO_LIST_MAX_ENTRIES);
+
+    fallout::ProtoId empty = fallout::ProtoId::Empty();
+    fallout::ProtoId stim(fallout::ItemProtoTypeId::Stimpak);
+    fallout::ProtoId dog(fallout::CritterProtoTypeId::Dogmeat);
+    fallout::ProtoId fromPid(40);
+    fallout::ProtoId fromPidDog((1 << 24) | 342);
+    fallout::ProtoId wideType((7 << 24) | 5);
+    bool stimEq = stim == fallout::ItemProtoTypeId::Stimpak;
+    bool stimNeCrit = stim != fallout::CritterProtoTypeId::Dude;
+    bool fromEq = fromPid == stim;
+    fallout::ItemProtoTypeId backToItem = stim.protoId<fallout::ItemProtoTypeId>();
+    std::printf("empty-pid=%d empty-haspid=%d empty-valid=%d stim-pid=%d stim-type=%d stim-protoid=%d dog-pid=%d from-pid-type=%d from-pid-protoid=%d from-pid-valid=%d dog-type=%d wide-type=%d wide-valid=%d stim-eq=%d stim-ne-crit=%d from-eq=%d back-to-item=%d\n",
+        empty.pid(), empty.hasPid() ? 1 : 0, empty.valid() ? 1 : 0,
+        stim.pid(), (int)stim.objectType(), stim.protoId(),
+        dog.pid(), (int)fromPid.objectType(), fromPid.protoId(), fromPid.valid() ? 1 : 0,
+        (int)fromPidDog.objectType(), (int)wideType.objectType(), wideType.valid() ? 1 : 0,
+        stimEq ? 1 : 0, stimNeCrit ? 1 : 0, fromEq ? 1 : 0, (int)backToItem);
+    std::printf("mapto-item=%d mapto-critter=%d mapto-scenery=%d mapto-wall=%d mapto-tile=%d mapto-misc=%d\n",
+        (int)fallout::MapProtoTypeIdToObjectType<fallout::ItemProtoTypeId>::value,
+        (int)fallout::MapProtoTypeIdToObjectType<fallout::CritterProtoTypeId>::value,
+        (int)fallout::MapProtoTypeIdToObjectType<fallout::SceneryProtoTypeId>::value,
+        (int)fallout::MapProtoTypeIdToObjectType<fallout::WallProtoTypeId>::value,
+        (int)fallout::MapProtoTypeIdToObjectType<fallout::TileProtoTypeId>::value,
+        (int)fallout::MapProtoTypeIdToObjectType<fallout::MiscProtoTypeId>::value);
+
+    fallout::ProtoId exitGrid((5 << 24) | 16);
+    fallout::ProtoId noExit((5 << 24) | 15);
+    fallout::ProtoId exitLast((5 << 24) | 23);
+    fallout::ProtoId exitOver((5 << 24) | 24);
+    std::printf("exitgrid=%d noexit=%d exitlast=%d exitover=%d itemmember-range=%d itemmember-material=%d critmember-headfid=%d scenerymember-data=%d wallmember-material=%d miscmember-max=%d typemember-int=%d typemember-string=%d\n",
+        fallout::isExitGridProtoId(exitGrid) ? 1 : 0, fallout::isExitGridProtoId(noExit) ? 1 : 0,
+        fallout::isExitGridProtoId(exitLast) ? 1 : 0, fallout::isExitGridProtoId(exitOver) ? 1 : 0,
+        (int)fallout::ITEM_DATA_MEMBER_WEAPON_RANGE, (int)fallout::ITEM_DATA_MEMBER_MATERIAL,
+        (int)fallout::CRITTER_DATA_MEMBER_HEAD_FID, (int)fallout::SCENERY_DATA_MEMBER_DATA,
+        (int)fallout::WALL_DATA_MEMBER_MATERIAL, (int)fallout::MISC_DATA_MEMBER_EXTENDED_FLAGS,
+        (int)fallout::PROTO_DATA_MEMBER_TYPE_INT, (int)fallout::PROTO_DATA_MEMBER_TYPE_STRING);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3692,5 +3776,6 @@ int main()
     sectionKbFull();
     sectionCombatDefs();
     sectionObjTypes();
+    sectionPrototypes();
     return 0;
 }
