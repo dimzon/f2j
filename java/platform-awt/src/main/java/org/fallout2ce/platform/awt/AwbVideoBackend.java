@@ -42,10 +42,31 @@ public final class AwbVideoBackend implements VideoBackend {
     private int height = DEFAULT_HEIGHT;
     private byte[] framebuffer = new byte[DEFAULT_WIDTH * DEFAULT_HEIGHT];
     private final byte[] palette = new byte[256 * 3];
-    private volatile BufferedImage image =
-            new BufferedImage(DEFAULT_WIDTH, DEFAULT_HEIGHT, BufferedImage.TYPE_INT_RGB);
+    private volatile BufferedImage image = newImage(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
     private volatile JFrame window;
+
+    /**
+     * Offscreen image in the pipeline-optimal format: a compatible image
+     * lives where the JRE's standard pipeline (OpenGL with
+     * {@code -Dsun.java2d.opengl=True}, Direct3D, Metal) can blit it
+     * accelerated; headless falls back to a plain heap image. (A
+     * {@code VolatileImage} would be faster still but needs content-loss
+     * handling; a managed compatible image is the pragmatic choice.)
+     */
+    private static BufferedImage newImage(int w, int h) {
+        if (!GraphicsEnvironment.isHeadless()) {
+            try {
+                return GraphicsEnvironment.getLocalGraphicsEnvironment()
+                        .getDefaultScreenDevice()
+                        .getDefaultConfiguration()
+                        .createCompatibleImage(w, h);
+            } catch (Exception e) {
+                // Fall through to the heap image below.
+            }
+        }
+        return new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+    }
 
     /** Framebuffer width in pixels. */
     public int width() {
@@ -74,7 +95,7 @@ public final class AwbVideoBackend implements VideoBackend {
             width = newWidth;
             height = newHeight;
             framebuffer = new byte[newWidth * newHeight];
-            image = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
+            image = newImage(newWidth, newHeight);
         }
     }
 

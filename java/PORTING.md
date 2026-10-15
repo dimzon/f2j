@@ -53,6 +53,10 @@
   Swing, палитровый фреймбуфер 640x480, `component << 2` как в
   `directDrawSetPalette`). Выбор: `-Df2j.platform=awt`. Без дисплея окно не
   открывается, offscreen-пиксели сверяются пиксель-в-пиксель тестами.
+  Встроенные пайплайны JRE при этом работают как обычно: offscreen-образ
+  создаётся через `createCompatibleImage` (оптимален для текущего пайплайна
+  — OpenGL при `-Dsun.java2d.opengl=True`, Direct3D, Metal), ничего не
+  форсится и не отключается; проверка — `-Dsun.java2d.trace=log`.
 - `engine` по умолчанию использует только managed-код (JRE + slf4j + SPI):
   встроенные no-op/system-дефолты швов + `headless` из коробки.
 - `Platform.load()`: `-Df2j.platform=<name>` побеждает; иначе `headless`,
