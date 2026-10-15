@@ -58,9 +58,12 @@
 #include "inventory.h"
 #include "item.h"
 #include "obj_types.h"
+#include "perk.h"
 #include "proto.h"
 #include "proto_instance.h"
 #include "proto_types.h"
+#include "skill.h"
+#include "stat.h"
 #include "version.h"
 #include "font_manager.h"
 #include "game_config.h"
@@ -3743,6 +3746,18 @@ void sectionGameTypes()
         (int)fallout::USE_ITEM_RESULT_REMOVE, (int)fallout::USE_ITEM_RESULT_DROP);
 }
 
+void sectionAbility()
+{
+    std::puts("[ability]");
+
+    std::printf("stat-err=%d steal-caught=%d steal-success=%d steal-fail=%d perkprop-first=%d perkprop-last=%d perkprop-count=%d\n",
+        STAT_ERR_INVALID_STAT,
+        (int)fallout::SkillStealResult::Caught, (int)fallout::SkillStealResult::Success,
+        (int)fallout::SkillStealResult::Fail,
+        (int)fallout::PerkProperty::FrmId, (int)fallout::PerkProperty::Luck,
+        (int)fallout::PerkProperty::Luck + 1);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3808,5 +3823,6 @@ int main()
     sectionObjTypes();
     sectionPrototypes();
     sectionGameTypes();
+    sectionAbility();
     return 0;
 }
