@@ -29,6 +29,7 @@
 #include "config.h"
 #include "content_config.h"
 #include "dfile.h"
+#include "draw.h"
 #include "game_config.h"
 #include "input.h"
 #include "message.h"
@@ -1915,6 +1916,188 @@ void sectionSvga()
     fallout::settingsExit(false);
 }
 
+static uLong crcBytes(unsigned char* buf, int size)
+{
+    return crc32(crc32(0L, Z_NULL, 0), buf, size);
+}
+
+void sectionDraw()
+{
+    std::puts("[draw]");
+
+    // Lines on 64x64 heap buffers (malloc is uninitialized: preset first).
+    unsigned char* line = (unsigned char*)malloc(64 * 64);
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 2, 3, 10, 3, static_cast<fallout::Color>(7));
+    std::printf("line-h=%08lX\n", crcBytes(line, 64 * 64));
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 10, 3, 2, 3, static_cast<fallout::Color>(7));
+    std::printf("line-hrev=%08lX\n", crcBytes(line, 64 * 64));
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 4, 1, 4, 8, static_cast<fallout::Color>(9));
+    std::printf("line-v=%08lX\n", crcBytes(line, 64 * 64));
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 4, 8, 4, 1, static_cast<fallout::Color>(9));
+    std::printf("line-vrev=%08lX\n", crcBytes(line, 64 * 64));
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 5, 5, 5, 5, static_cast<fallout::Color>(3));
+    std::printf("line-point=%08lX\n", crcBytes(line, 64 * 64));
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 1, 1, 3, 9, static_cast<fallout::Color>(5));
+    std::printf("line-steep=%08lX\n", crcBytes(line, 64 * 64));
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 1, 6, 12, 2, static_cast<fallout::Color>(6));
+    std::printf("line-shallow=%08lX\n", crcBytes(line, 64 * 64));
+    memset(line, 0, 64 * 64);
+    fallout::bufferDrawLine(line, 64, 12, 2, 1, 6, static_cast<fallout::Color>(6));
+    std::printf("line-shallow-rev=%08lX\n", crcBytes(line, 64 * 64));
+    free(line);
+
+    unsigned char rect[16 * 16];
+    memset(rect, 0, sizeof(rect));
+    fallout::bufferDrawRect(rect, 16, 2, 2, 9, 7, static_cast<fallout::Color>(7));
+    std::printf("rect=%08lX\n", crcBytes(rect, sizeof(rect)));
+    memset(rect, 0, sizeof(rect));
+    fallout::bufferDrawRectShadowed(rect, 16, 2, 2, 9, 7, static_cast<fallout::Color>(1), static_cast<fallout::Color>(2));
+    std::printf("rect-shadowed=%08lX\n", crcBytes(rect, sizeof(rect)));
+
+    unsigned char bsrc[8 * 10];
+    for (int i = 0; i < 8 * 10; i++) {
+        bsrc[i] = (unsigned char)((i / 10 * 8 + i % 10 + 1) & 0xFF);
+    }
+    unsigned char bdst[12 * 12];
+    memset(bdst, 0, sizeof(bdst));
+    fallout::blitBufferToBuffer(bsrc, 8, 8, 10, bdst, 12);
+    std::printf("blit=%08lX\n", crcBytes(bdst, sizeof(bdst)));
+    unsigned char tsrc[8 * 10];
+    for (int i = 0; i < 8 * 10; i++) {
+        tsrc[i] = (unsigned char)(((i / 10 + i % 10) % 3 == 0) ? 0 : (i & 0xFF) + 1);
+    }
+    memset(bdst, 0, sizeof(bdst));
+    fallout::blitBufferToBufferTrans(tsrc, 8, 8, 10, bdst, 12);
+    std::printf("blit-trans=%08lX\n", crcBytes(bdst, sizeof(bdst)));
+
+    unsigned char s26x6[36];
+    for (int i = 0; i < 36; i++) {
+        s26x6[i] = (unsigned char)(i + 1);
+    }
+    fallout::ConstBuffer2D src2d(s26x6, 6, 6);
+    unsigned char d10x10[100];
+    memset(d10x10, 0, sizeof(d10x10));
+    fallout::Buffer2D dst2d(d10x10, 10, 10);
+    fallout::blitBuffer2D(src2d, dst2d, -2, 3);
+    std::printf("blit2d-clip=%08lX\n", crcBytes(d10x10, sizeof(d10x10)));
+    memset(d10x10, 0, sizeof(d10x10));
+    fallout::blitBuffer2D(src2d, 1, 1, 3, 3, dst2d, 4, 4);
+    std::printf("blit2d-sub=%08lX\n", crcBytes(d10x10, sizeof(d10x10)));
+    memset(d10x10, 7, sizeof(d10x10));
+    fallout::blitBuffer2D(src2d, dst2d, 20, 20);
+    std::printf("blit2d-outside=%08lX\n", crcBytes(d10x10, sizeof(d10x10)));
+
+    unsigned char s44x4[16];
+    for (int i = 0; i < 16; i++) {
+        s44x4[i] = (unsigned char)(i + 1);
+    }
+    fallout::ConstBuffer2D src44(s44x4, 4, 4);
+    unsigned char d8x8[64];
+    memset(d8x8, 0, sizeof(d8x8));
+    fallout::Buffer2D dst88(d8x8, 8, 8);
+    fallout::blitBuffer2DScaled(src44, dst88, 0, 0, 8, 8);
+    std::printf("scaled-up=%08lX\n", crcBytes(d8x8, sizeof(d8x8)));
+    memset(d8x8, 0, sizeof(d8x8));
+    fallout::blitBuffer2DScaled(src44, 1, 1, 2, 2, dst88, 1, 1, 4, 4);
+    std::printf("scaled-sub=%08lX\n", crcBytes(d8x8, sizeof(d8x8)));
+    unsigned char ts44x4[16];
+    for (int i = 0; i < 16; i++) {
+        ts44x4[i] = (unsigned char)((i % 5 == 0) ? 0 : i + 1);
+    }
+    fallout::ConstBuffer2D tsrc44(ts44x4, 4, 4);
+    memset(d8x8, 9, sizeof(d8x8));
+    fallout::blitBuffer2DScaledTrans(tsrc44, dst88, 0, 0, 8, 8);
+    std::printf("scaled-trans=%08lX\n", crcBytes(d8x8, sizeof(d8x8)));
+
+    unsigned char s42x2[8];
+    for (int i = 0; i < 8; i++) {
+        s42x2[i] = (unsigned char)(i + 1);
+    }
+    fallout::ConstBuffer2D src42(s42x2, 4, 2);
+    memset(d8x8, 0, sizeof(d8x8));
+    fallout::Rect fitUp = fallout::blitBuffer2DCenteredAspectFit(src42, dst88, static_cast<fallout::Color>(9), true);
+    uLong fitUpCrc = crcBytes(d8x8, sizeof(d8x8));
+    std::printf("fit-up=%08lX bounds=%d,%d,%d,%d\n", fitUpCrc,
+        fitUp.left, fitUp.top, fitUp.right, fitUp.bottom);
+    memset(d8x8, 0, sizeof(d8x8));
+    fallout::Rect fitFlat = fallout::blitBuffer2DCenteredAspectFit(src42, dst88, static_cast<fallout::Color>(9), false);
+    uLong fitFlatCrc = crcBytes(d8x8, sizeof(d8x8));
+    std::printf("fit-flat=%08lX bounds=%d,%d,%d,%d\n", fitFlatCrc,
+        fitFlat.left, fitFlat.top, fitFlat.right, fitFlat.bottom);
+    unsigned char s88x8[64];
+    for (int i = 0; i < 64; i++) {
+        s88x8[i] = (unsigned char)(i + 1);
+    }
+    fallout::ConstBuffer2D src88(s88x8, 8, 8);
+    unsigned char d4x4[16];
+    memset(d4x4, 0, sizeof(d4x4));
+    fallout::Buffer2D dst44(d4x4, 4, 4);
+    fallout::Rect fitDown = fallout::blitBuffer2DCenteredAspectFit(src88, dst44, static_cast<fallout::Color>(9), false);
+    uLong fitDownCrc = crcBytes(d4x4, sizeof(d4x4));
+    std::printf("fit-down=%08lX bounds=%d,%d,%d,%d\n", fitDownCrc,
+        fitDown.left, fitDown.top, fitDown.right, fitDown.bottom);
+
+    unsigned char f57x[35];
+    fallout::Buffer2D fill57(f57x, 5, 7);
+    fallout::bufferFill2D(fill57, static_cast<fallout::Color>(3));
+    std::printf("fill2d=%08lX\n", crcBytes(f57x, sizeof(f57x)));
+    fallout::Buffer2D fillNull(nullptr, 5, 7);
+    fallout::bufferFill2D(fillNull, static_cast<fallout::Color>(3));
+    std::printf("fill2d-null=1\n");
+
+    unsigned char f65x[48];
+    memset(f65x, 0, sizeof(f65x));
+    fallout::bufferFill(f65x, 6, 5, 8, static_cast<fallout::Color>(4));
+    std::printf("fill=%08lX\n", crcBytes(f65x, sizeof(f65x)));
+
+    unsigned char tex[32];
+    for (int i = 0; i < 32; i++) {
+        tex[i] = (unsigned char)(i + 1);
+    }
+    fallout::_buf_texture(tex, 8, 4, 8, nullptr, 0, 0);
+    std::printf("texture-dormant=%08lX\n", crcBytes(tex, sizeof(tex)));
+
+    // NOTE: intensity tables come from [color] (color.pal stays loaded).
+    unsigned char li44x4[16];
+    for (int i = 0; i < 16; i++) {
+        li44x4[i] = (unsigned char)(i * 16);
+    }
+    fallout::_lighten_buf(li44x4, 4, 4, 4);
+    std::printf("lighten=%08lX\n", crcBytes(li44x4, sizeof(li44x4)));
+
+    unsigned char sw44x4[16];
+    for (int i = 0; i < 16; i++) {
+        sw44x4[i] = (unsigned char)((i % 4 == 0) ? 3 : ((i % 4 == 1) ? 7 : 5));
+    }
+    fallout::_swap_color_buf(sw44x4, 4, 4, 4, static_cast<fallout::Color>(3), static_cast<fallout::Color>(7));
+    std::printf("swap=%08lX\n", crcBytes(sw44x4, sizeof(sw44x4)));
+
+    unsigned char ol8x8[64];
+    memset(ol8x8, 0, sizeof(ol8x8));
+    for (int y = 2; y < 6; y++) {
+        for (int x = 2; x < 6; x++) {
+            ol8x8[y * 8 + x] = 7;
+        }
+    }
+    fallout::bufferOutline(ol8x8, 8, 8, 8, static_cast<fallout::Color>(9));
+    std::printf("outline=%08lX\n", crcBytes(ol8x8, sizeof(ol8x8)));
+
+    unsigned char cpydst[20];
+    memset(cpydst, 0, sizeof(cpydst));
+    fallout::srcCopy(cpydst, 5, bsrc, 10, 4, 3);
+    std::printf("srccopy=%08lX\n", crcBytes(cpydst, sizeof(cpydst)));
+    memset(cpydst, 0, sizeof(cpydst));
+    fallout::transSrcCopy(cpydst, 5, tsrc, 10, 4, 3);
+    std::printf("transsrccopy=%08lX\n", crcBytes(cpydst, sizeof(cpydst)));
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1952,5 +2135,6 @@ int main()
     sectionColorCycle();
     sectionFps();
     sectionSvga();
+    sectionDraw();
     return 0;
 }
