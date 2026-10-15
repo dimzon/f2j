@@ -16,7 +16,10 @@
 #include <unistd.h>
 #include <zlib.h>
 
+#include <SDL.h>
+
 #include "color.h"
+#include "cycle.h"
 #include "dictionary.h"
 #include "art.h"
 #include "cache.h"
@@ -1674,6 +1677,77 @@ void sectionColor()
     std::printf("load-missing=%d err=[%s]\n", missingLoaded ? 1 : 0, missingErr);
 }
 
+void sectionColorCycle()
+{
+    std::puts("[colorcycle]");
+
+    std::printf("sdl-init=%d\n", SDL_Init(SDL_INIT_TIMER) == 0 ? 1 : 0);
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+    fallout::settingsInit(false, 1, argv0);
+    fallout::settings.system.color_cycling = true;
+    fallout::settings.system.cycle_speed_factor = 1;
+
+    fallout::colorCycleInit();
+    std::printf("init-enabled=%d\n", fallout::colorCycleEnabled() ? 1 : 0);
+    fallout::colorCycleInit();
+    std::printf("init-again=%d\n", fallout::colorCycleEnabled() ? 1 : 0);
+    std::printf("speed=%d\n", fallout::settings.system.cycle_speed_factor);
+    fallout::cycleSetSpeedFactor(3);
+    std::printf("set-speed=%d\n", fallout::settings.system.cycle_speed_factor);
+    fallout::cycleSetSpeedFactor(1);
+
+    unsigned char* palette = fallout::_getSystemPalette();
+    uLong rangeCrc0 = crc32(crc32(0L, Z_NULL, 0), palette + 229 * 3, 81);
+    std::printf("crc-range0=%08lX\n", rangeCrc0);
+
+    usleep(250000);
+    fallout::colorCycleTicker();
+    uLong crc1 = crc32(crc32(0L, Z_NULL, 0), palette + 229 * 3, 81);
+    std::printf("tick1-crc=%08lX slime0=%d,%d,%d bobber=%d\n", crc1,
+        (int)palette[229 * 3], (int)palette[229 * 3 + 1], (int)palette[229 * 3 + 2],
+        (int)palette[254 * 3]);
+
+    fallout::colorCycleTicker();
+    uLong crc2 = crc32(crc32(0L, Z_NULL, 0), palette + 229 * 3, 81);
+    std::printf("tick2-same=%d\n", crc2 == crc1 ? 1 : 0);
+
+    fallout::colorCycleReset();
+    std::printf("reset-enabled=%d\n", fallout::colorCycleEnabled() ? 1 : 0);
+    fallout::colorCycleTicker();
+    uLong crc3 = crc32(crc32(0L, Z_NULL, 0), palette + 229 * 3, 81);
+    std::printf("tick3-crc=%08lX changed=%d slime0=%d,%d,%d bobber=%d\n", crc3,
+        crc3 != crc1 ? 1 : 0,
+        (int)palette[229 * 3], (int)palette[229 * 3 + 1], (int)palette[229 * 3 + 2],
+        (int)palette[254 * 3]);
+
+    fallout::colorCycleDisable();
+    std::printf("disable=%d\n", fallout::colorCycleEnabled() ? 1 : 0);
+    fallout::colorCycleTicker();
+    uLong crcDisabled = crc32(crc32(0L, Z_NULL, 0), palette + 229 * 3, 81);
+    std::printf("tick-disabled-same=%d\n", crcDisabled == crc3 ? 1 : 0);
+
+    fallout::colorCycleEnable();
+    usleep(250000);
+    fallout::colorCycleTicker();
+    uLong crc4 = crc32(crc32(0L, Z_NULL, 0), palette + 229 * 3, 81);
+    std::printf("tick4-crc=%08lX changed=%d slime0=%d,%d,%d bobber=%d\n", crc4,
+        crc4 != crc3 ? 1 : 0,
+        (int)palette[229 * 3], (int)palette[229 * 3 + 1], (int)palette[229 * 3 + 2],
+        (int)palette[254 * 3]);
+
+    fallout::colorCycleFree();
+    std::printf("free-enabled=%d\n", fallout::colorCycleEnabled() ? 1 : 0);
+    fallout::colorCycleTicker();
+    uLong crcAfterFree = crc32(crc32(0L, Z_NULL, 0), palette + 229 * 3, 81);
+    std::printf("tick-after-free-same=%d\n", crcAfterFree == crc4 ? 1 : 0);
+    fallout::colorCycleReset();
+    std::printf("reset-after-free=%d\n", fallout::colorCycleEnabled() ? 1 : 0);
+
+    fallout::settingsExit(false);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1708,5 +1782,6 @@ int main()
     sectionArtLoad();
     sectionColor();
     sectionSettings();
+    sectionColorCycle();
     return 0;
 }

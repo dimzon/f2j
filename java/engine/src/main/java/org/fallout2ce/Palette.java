@@ -7,11 +7,11 @@ import java.util.function.BooleanSupplier;
  * Port of {@code src/palette.h} / {@code src/palette.cc} (global palettes,
  * fade-step calibration, fade/set entry points).
  *
- * <p>Sound / color-cycle / clock calls are seams below so unit tests run
- * headless. The C names they stand in for: {@code backgroundSoundIsEnabled},
- * {@code speechIsEnabled}, {@code soundContinueAll},
- * {@code colorCycleEnabled} / {@code colorCycleDisable} /
- * {@code colorCycleEnable}, {@code getTicks}.
+ * <p>Sound / color-cycle calls are seams below so unit tests run headless.
+ * Time comes from {@link Ticks}. The C names the seams stand in for:
+ * {@code backgroundSoundIsEnabled}, {@code speechIsEnabled},
+ * {@code soundContinueAll}, {@code colorCycleEnabled} /
+ * {@code colorCycleDisable} / {@code colorCycleEnable}, {@code getTicks}.
  */
 public final class Palette {
 
@@ -29,11 +29,6 @@ public final class Palette {
 
     /** Port of {@code gPaletteFadeSteps}. */
     private static int fadeSteps;
-
-    /** Clock seam (C {@code getTicks}, milliseconds). */
-    public interface Clock {
-        long millis();
-    }
 
     /** Color-cycle seam (C {@code colorCycle*}). */
     public interface CycleControl {
@@ -59,7 +54,6 @@ public final class Palette {
         }
     };
 
-    public static Clock clock = System::currentTimeMillis;
     public static CycleControl colorCycle = NO_CYCLE;
 
     /** Port of {@code backgroundSoundIsEnabled() || speechIsEnabled()}. */
@@ -83,7 +77,7 @@ public final class Palette {
         Arrays.fill(gPaletteWhite, (byte) 63);
         System.arraycopy(Color.cmap, 0, gPalette, 0, gPalette.length);
 
-        long tick = clock.millis() & 0xFFFFFFFFL;
+        long tick = Ticks.getTicks();
         if (soundEnabled.getAsBoolean()) {
             Color.colorPaletteSetTransitionCallback(soundContinueAllHook);
         }
@@ -95,7 +89,7 @@ public final class Palette {
         // Never 0 in the game (the fade above throttles); tests must advance
         // the fake clock or this divides by zero, exactly like the C
         // unsigned division.
-        long actualFadeDuration = clock.millis() - tick & 0xFFFFFFFFL;
+        long actualFadeDuration = Ticks.getTicksSince(tick);
 
         long fadeDurationMs = (int) (700.0 / Settings.settings.ui.anim_speed) & 0xFFFFFFFFL;
 
@@ -157,7 +151,6 @@ public final class Palette {
         Arrays.fill(gPaletteBlack, (byte) 0);
         Arrays.fill(gPalette, (byte) 0);
         fadeSteps = 0;
-        clock = System::currentTimeMillis;
         colorCycle = NO_CYCLE;
         soundEnabled = () -> false;
         soundContinueAllHook = () -> {

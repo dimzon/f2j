@@ -64,6 +64,7 @@ class PaletteTest {
         Palette.resetForTests();
         Color.resetForTests();
         Db.resetForTests();
+        Ticks.resetForTests();
         if (!Double.isNaN(savedAnimSpeed)) {
             Settings.settings.ui.anim_speed = savedAnimSpeed;
             savedAnimSpeed = Double.NaN;
@@ -80,7 +81,7 @@ class PaletteTest {
     /** Fake clock advancing {@code step} ms per read. */
     static void clockStep(long step) {
         long[] now = { 1_000_000L };
-        Palette.clock = () -> {
+        Ticks.clock = () -> {
             long t = now[0];
             now[0] += step;
             return t;
@@ -134,7 +135,7 @@ class PaletteTest {
     @Test
     void initZeroDurationDividesByZero() {
         Color.video = new RecordingVideo();
-        Palette.clock = () -> 5L;
+        Ticks.clock = () -> 5L;
 
         // C performs an unsigned /0 here (UB/crash); Java throws.
         assertThrows(ArithmeticException.class, Palette::paletteInit);
