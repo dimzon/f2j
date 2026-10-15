@@ -33,6 +33,7 @@
 #include "datafile.h"
 #include "dinput.h"
 #include "draw.h"
+#include "graph_lib.h"
 #include "game_config.h"
 #include "game_config_migration.h"
 #include "game_movie.h"
@@ -61,6 +62,7 @@ void progressHandler()
 }
 
 } // namespace
+#include "audio_channels.h"
 #include "geometry.h"
 #include "platform_compat.h"
 #include "text_font.h"
@@ -2845,6 +2847,103 @@ void sectionDInput()
     fallout::settingsExit(false);
 }
 
+void sectionGraph()
+{
+    std::puts("[graph]");
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+    fallout::settingsInit(false, 1, argv0);
+    fallout::settings.sound.music_channels = 1;
+    fallout::settings.sound.speech_channels = 1;
+    fallout::settings.sound.sfx_channels = 4;
+    fallout::settings.sound.movie_channels = 1;
+    fallout::settings.sound.script_channels = 4;
+    fallout::settings.sound.float_channels = 4;
+    fallout::settings.sound.pipboy_channels = 1;
+
+    std::printf("channels music=%d speech=%d sfx=%d movie=%d script=%d float=%d pipboy=%d total=%d\n",
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_MUSIC),
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_SPEECH),
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_SFX),
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_MOVIE),
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_SCRIPT),
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_FLOAT),
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_PIPBOY),
+        fallout::audioChannelsGetTotal());
+
+    fallout::settings.sound.sfx_channels = 100;
+    fallout::settings.sound.script_channels = 0;
+    std::printf("clamped sfx=%d script=%d bad-type=%d total=%d\n",
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_SFX),
+        fallout::audioChannelsGetCount(fallout::AUDIO_CHANNEL_SCRIPT),
+        fallout::audioChannelsGetCount((fallout::AudioChannelType)99),
+        fallout::audioChannelsGetTotal());
+
+    fallout::xbaseOpen("/game-en/master.dat");
+    fallout::colorPaletteLoad("color.pal");
+
+    std::printf("high-white=%d high-black=%d\n",
+        (int)fallout::HighRGB(fallout::_colorTable[fallout::rgb555(0xFFFFFF)]),
+        (int)fallout::HighRGB(fallout::_colorTable[fallout::rgb555(0x000000)]));
+
+    char lbm[] = "/src/java/engine/src/test/resources/fixtures/test.lbm";
+    unsigned char pixels[64];
+    memset(pixels, 0xAA, sizeof(pixels));
+    int lbmWidth = fallout::load_lbm_to_buf(lbm, pixels, 0, 0, 5, 3);
+    std::printf("lbm=%d crc=%08lX\n", lbmWidth, crcBytes(pixels, 6 * 4));
+
+    unsigned char clip[16];
+    memset(clip, 0xAA, sizeof(clip));
+    int clipWidth = fallout::load_lbm_to_buf(lbm, clip, 1, 1, 4, 2);
+    std::printf("lbm-clip=%d crc=%08lX\n", clipWidth, crcBytes(clip, sizeof(clip)));
+
+    char missing[] = "/tmp/nope.lbm";
+    unsigned char miss[8];
+    std::printf("lbm-missing=%d\n", fallout::load_lbm_to_buf(missing, miss, 0, 0, 1, 1));
+
+    unsigned char plain[64];
+    for (int i = 0; i < 64; i++) {
+        plain[i] = (unsigned char)(i / 8);
+    }
+    unsigned char packed[128];
+    memset(packed, 0, sizeof(packed));
+    int packedSize = fallout::graphCompress(plain, packed, 64);
+    uLong packCrc = packedSize > 0 ? crcBytes(packed, packedSize) : 0;
+    std::printf("compress=%d crc=%08lX\n", packedSize, packCrc);
+
+    unsigned char unpacked[64];
+    memset(unpacked, 0xAA, sizeof(unpacked));
+    int unpackRc = fallout::graphDecompress(packed, packedSize, unpacked, 64);
+    std::printf("decompress=%d match=%d\n", unpackRc,
+        memcmp(plain, unpacked, 64) == 0 ? 1 : 0);
+
+    unsigned char tiny[4] = { 1, 2, 3, 4 };
+    unsigned char tinyOut[4];
+    std::printf("decompress-trunc=%d decompress-null=%d\n",
+        fallout::graphDecompress(tiny, 4, tinyOut, 64),
+        fallout::graphDecompress(nullptr, 0, tinyOut, 4));
+
+    unsigned char gray[16];
+    for (int i = 0; i < 16; i++) {
+        gray[i] = (unsigned char)(i * 16);
+    }
+    fallout::grayscalePaletteUpdate(static_cast<fallout::Color>(0),
+        static_cast<fallout::Color>(255));
+    fallout::grayscalePaletteApply(gray, 4, 4, 4);
+    std::printf("grayscale=%08lX\n", crcBytes(gray, sizeof(gray)));
+
+    unsigned char grayPitch[24];
+    memset(grayPitch, 0, sizeof(grayPitch));
+    for (int i = 0; i < 16; i++) {
+        grayPitch[i] = (unsigned char)(i * 16);
+    }
+    fallout::grayscalePaletteApply(grayPitch, 4, 4, 6);
+    std::printf("grayscale-pitch=%08lX\n", crcBytes(grayPitch, sizeof(grayPitch)));
+
+    fallout::settingsExit(false);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2891,5 +2990,6 @@ int main()
     sectionInput();
     sectionKb();
     sectionDInput();
+    sectionGraph();
     return 0;
 }

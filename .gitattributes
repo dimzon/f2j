@@ -35,3 +35,4 @@ LICENSE text eol=lf
 *.zip binary
 *.bin binary
 *.pcx binary
+*.lbm binary
