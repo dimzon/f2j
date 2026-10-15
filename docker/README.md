@@ -53,8 +53,13 @@ powershell -File docker/run-game.ps1      # игра под Xvfb: лог + shot-
 
 ```powershell
 powershell -File docker/refharness/build-refharness.ps1  # пересобрать и показать векторы
-powershell -File docker/refharness/check-refharness.ps1  # сверить с golden/v1.txt
+powershell -File docker/refharness/check-refharness.ps1  # сверить с golden/vN.txt
 ```
+
+Правила харнеса (кровью):
+- Никаких вызовов + чтения их out-параметров в одном `printf` — порядок
+  аргументов в C не задан. Сначала вызов в отдельную переменную, потом печать.
+- `stdout` unbuffered (`setvbuf`), иначе `stderr` (`SDL_Log`) всплывает первым.
 
 `golden/v1.txt` — эталон фазы 1 (geometry/random/rgb555). Внимание: в v1
 строка `INFO:` от `SDL_Log` стоит первой — тогда stdout ещё был
@@ -68,7 +73,9 @@ Java-тест), `v4` — `[paths]`/`[fileUtils]`, `v5/v6` — `[pattern]`/
 прогресс-хендлер, списки имён), `v8` — `[config]` (INI: strtol-квирки,
 int-списки, CLI-оверрайды, standard + side-by-side запись),
 `v9` — `[message]` (`.msg` на реальных данных, badwords, gender-слова,
-репозиторий). Java-порт обязан
+репозиторий), `v10` — `[settings]` (дефолты, clamp при чтении, CLI-оверрайды
+с флагами, stage/validate через дескрипторы, strip при сохранении, stale
+полей). Java-порт обязан
 воспроизводить последний golden
 побайтово (см. `java/`). При расширении покрытия харнеса —
 новый файл `golden/vN.txt`, старые не трогать.

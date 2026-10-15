@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <unistd.h>
 #include <zlib.h>
 
 #include "color.h"
@@ -20,7 +21,9 @@
 #include "config.h"
 #include "content_config.h"
 #include "dfile.h"
+#include "game_config.h"
 #include "message.h"
+#include "settings.h"
 #include "file_utils.h"
 #include "fpattern_windows.h"
 #include "xfile.h"
@@ -1165,6 +1168,118 @@ void sectionMessage()
     fallout::messageListFree(&misc);
 }
 
+const fallout::SettingDescriptor* findDescriptor(const char* id);
+
+void sectionSettings()
+{
+    std::puts("[settings]");
+
+    // Config/save files land in CWD: isolate to /tmp (last section).
+    chdir("/tmp");
+    remove("/tmp/fallout2.cfg");
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+
+    // Phase A: defaults + set/validate vectors (no CLI overrides active).
+    std::printf("init=%d\n", fallout::settingsInit(false, 1, argv0));
+    std::printf("res=%dx%d windowed=%d music=%d lang=[%s]\n",
+        fallout::settings.screen.resolution_x, fallout::settings.screen.resolution_y,
+        (int)fallout::settings.screen.windowed, fallout::settings.sound.music ? 1 : 0,
+        fallout::settings.system.language.c_str());
+    std::printf("init-again=%d\n", fallout::settingsInit(false, 1, argv0));
+
+    const fallout::SettingDescriptor* resxDesc = findDescriptor("screen.resolution_x");
+    std::printf("desc-found=%d\n", resxDesc != nullptr);
+    if (resxDesc != nullptr) {
+        fallout::SettingValue active = fallout::settingsGetValue(*resxDesc);
+        std::printf("get-value=%d\n", std::get<int>(active));
+        std::string error;
+        std::printf("set-800=%d\n",
+            fallout::settingsSetValue(*resxDesc, fallout::SettingValue(800), &error) ? 1 : 0);
+        fallout::SettingValue active2 = fallout::settingsGetValue(*resxDesc);
+        fallout::SettingValue configured2 = fallout::settingsGetConfiguredValue(*resxDesc);
+        std::printf("after-set active=%d configured=%d\n",
+            std::get<int>(active2), std::get<int>(configured2));
+        bool set100 = fallout::settingsSetValue(*resxDesc, fallout::SettingValue(100), &error);
+        std::printf("set-100=%d err=[%s]\n", set100 ? 1 : 0, error.c_str());
+        error.clear();
+        bool setBool = fallout::settingsSetValue(*resxDesc, fallout::SettingValue(true), &error);
+        std::printf("set-bool=%d err=[%s]\n", setBool ? 1 : 0, error.c_str());
+    }
+    fallout::settingsExit(false);
+
+    // Phase B: out-of-range file value clamps on read.
+    {
+        FILE* f = fopen("/tmp/fallout2.cfg", "wb");
+        fputs("[screen]\nresolution_x=100\n", f);
+        fclose(f);
+    }
+    fallout::settingsInit(false, 1, argv0);
+    std::printf("clamped-resx=%d\n", fallout::settings.screen.resolution_x);
+    fallout::settingsExit(false);
+
+    // Phase C: CLI overrides win, are flagged, and are stripped on save.
+    char arg1[] = "[screen]resolution_x=1024";
+    char arg2[] = "[ui]skip_opening_movies=2";
+    char* argv[] = { prog, arg1, arg2 };
+    std::printf("init-cli=%d\n", fallout::settingsInit(false, 3, argv));
+    std::printf("cli-resx=%d cli-skip=%d\n",
+        fallout::settings.screen.resolution_x, fallout::settings.ui.skip_opening_movies);
+    resxDesc = findDescriptor("screen.resolution_x");
+    std::printf("override=%d\n",
+        resxDesc != nullptr && resxDesc->commandLineOverride ? 1 : 0);
+    std::printf("set-overridden=%d\n",
+        resxDesc != nullptr
+                && !fallout::settingsSetValue(*resxDesc, fallout::SettingValue(800), nullptr)
+            ? 1
+            : 0);
+
+    std::printf("save=%d\n", fallout::settingsSave() ? 1 : 0);
+    {
+        FILE* f = fopen("/tmp/fallout2.cfg", "rb");
+        int resxLines = 0;
+        int skipLines = 0;
+        char firstResx[512] = {};
+        if (f != nullptr) {
+            char line[512];
+            while (fgets(line, sizeof(line), f) != nullptr) {
+                if (strstr(line, "resolution_x") != nullptr) {
+                    resxLines++;
+                    if (firstResx[0] == '\0') {
+                        size_t n = strlen(line);
+                        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
+                            line[--n] = '\0';
+                        }
+                        snprintf(firstResx, sizeof(firstResx), "%s", line);
+                    }
+                }
+                if (strstr(line, "skip_opening_movies") != nullptr) {
+                    skipLines++;
+                }
+            }
+            fclose(f);
+        }
+        std::printf("saved-resx-lines=%d [%s] saved-skip-lines=%d\n", resxLines, firstResx, skipLines);
+    }
+
+    // Phase D: fields are NOT reset by re-init (stale 1024, not default).
+    fallout::settingsExit(false);
+    std::printf("reinit=%d resx=%d\n", fallout::settingsInit(false, 1, argv0) ? 1 : 0,
+        fallout::settings.screen.resolution_x);
+    fallout::settingsExit(false);
+}
+
+const fallout::SettingDescriptor* findDescriptor(const char* id)
+{
+    for (const auto& d : fallout::settingsGetDescriptors()) {
+        if (d.id == id) {
+            return &d;
+        }
+    }
+    return nullptr;
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1193,5 +1308,6 @@ int main()
     sectionDb();
     sectionConfig();
     sectionMessage();
+    sectionSettings();
     return 0;
 }
