@@ -52,6 +52,8 @@
 #include "map_defs.h"
 #include "animation_defs.h"
 #include "art_defs.h"
+#include "combat_ai_defs.h"
+#include "combat_defs.h"
 #include "version.h"
 #include "font_manager.h"
 #include "game_config.h"
@@ -3429,6 +3431,94 @@ void sectionKbFull()
     fallout::keyboardReset();
 }
 
+void sectionCombatDefs()
+{
+    std::puts("[combatdefs]");
+
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    fallout::CriticalEffect ce = fallout::CRITICAL_EFFECT_3;
+    fallout::CriticalEffect ceOld = ce++;
+    int ceNew = static_cast<int>(ce);
+    bool ceValidNeg = fallout::criticalEffectIsValid(-1);
+    bool ceValidCount = fallout::criticalEffectIsValid(fallout::CRITICAL_EFFECT_COUNT);
+    std::printf("crit-count=%d crit-first=%d valid-neg=%d valid-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::CRITICAL_EFFECT_COUNT, (int)fallout::CRITICAL_EFFECT_FIRST,
+        ceValidNeg ? 1 : 0, ceValidCount ? 1 : 0, (int)ceOld, ceNew);
+
+    fallout::CombatState st = fallout::COMBAT_STATE_IN_COMBAT;
+    st |= fallout::COMBAT_STATE_PLAYER_TURN;
+    int stOr = static_cast<int>(st);
+    st &= fallout::COMBAT_STATE_PLAYER_TURN;
+    int stAnd = static_cast<int>(st);
+    st &= 0x08u;
+    int stAndU = static_cast<int>(st);
+    int stNot = static_cast<int>(~fallout::COMBAT_STATE_OUT_COMBAT);
+    std::printf("state-or=%d state-and=%d state-andu=%d state-not=%d\n", stOr, stAnd, stAndU, stNot);
+
+    fallout::HitMode hm = fallout::HIT_MODE_PUNCH;
+    fallout::HitMode hmOld = hm++;
+    int hmNew = static_cast<int>(hm);
+    bool hmValidNeg = fallout::hitModeIsValid(-1);
+    bool hmValidCount = fallout::hitModeIsValid(fallout::HIT_MODE_COUNT);
+    std::printf("hitmode-count=%d hitmode-first=%d punch-first=%d punch-last=%d kick-first=%d kick-last=%d valid-neg=%d valid-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::HIT_MODE_COUNT, (int)fallout::HIT_MODE_FIRST,
+        (int)fallout::FIRST_ADVANCED_PUNCH_HIT_MODE, (int)fallout::LAST_ADVANCED_PUNCH_HIT_MODE,
+        (int)fallout::FIRST_ADVANCED_KICK_HIT_MODE, (int)fallout::LAST_ADVANCED_KICK_HIT_MODE,
+        hmValidNeg ? 1 : 0, hmValidCount ? 1 : 0, (int)hmOld, hmNew);
+
+    fallout::HitLocation hl = fallout::HIT_LOCATION_GROIN;
+    fallout::HitLocation hlOld = hl++;
+    int hlNew = static_cast<int>(hl);
+    bool hlValidCount = fallout::hitLocationIsValid(fallout::HIT_LOCATION_COUNT);
+    std::printf("hitloc-count=%d hitloc-specific=%d hitloc-first=%d uncalled=%d valid-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::HIT_LOCATION_COUNT, (int)fallout::HIT_LOCATION_SPECIFIC_COUNT,
+        (int)fallout::HIT_LOCATION_FIRST, (int)fallout::HIT_LOCATION_UNCALLED,
+        hlValidCount ? 1 : 0, (int)hlOld, hlNew);
+
+    fallout::CriticalHitDataMember cm = fallout::CRIT_DATA_MEMBER_FLAGS;
+    fallout::CriticalHitDataMember cmOld = cm++;
+    int cmNew = static_cast<int>(cm);
+    std::printf("critmember-count=%d critmember-first=%d post-old=%d post-new=%d badshot-ok=%d badshot-arms=%d\n",
+        (int)fallout::CRIT_DATA_MEMBER_COUNT, (int)fallout::CRIT_DATA_MEMBER_FIRST,
+        (int)cmOld, cmNew,
+        (int)fallout::COMBAT_BAD_SHOT_OK, (int)fallout::COMBAT_BAD_SHOT_BOTH_ARMS_CRIPPLED);
+
+    fallout::CriticalHitDescription desc;
+    desc.damageMultiplier = 3;
+    desc.flags = (fallout::Dam)((int)fallout::DAM_CRITICAL | (int)fallout::DAM_DEAD);
+    desc.massiveCriticalStat = fallout::STAT_STRENGTH;
+    desc.massiveCriticalStatModifier = -2;
+    desc.massiveCriticalFlags = fallout::DAM_HIT;
+    desc.messageId = 100;
+    desc.massiveCriticalMessageId = 101;
+    std::printf("critdesc=%d,%d,%d,%d,%d,%d,%d\n",
+        desc.values[0], desc.values[1], desc.values[2], desc.values[3],
+        desc.values[4], desc.values[5], desc.values[6]);
+
+    fallout::RunAwayMode ra = fallout::RUN_AWAY_MODE_NEVER;
+    fallout::RunAwayMode raPostOld = ra++;
+    int raPostNew = static_cast<int>(ra);
+    fallout::RunAwayMode rd = fallout::RUN_AWAY_MODE_NONE;
+    fallout::RunAwayMode rdPostOld = rd--;
+    int rdPostNew = static_cast<int>(rd);
+    std::printf("runaway-count=%d runaway-first=%d runaway-last=%d post-old=%d post-new=%d postdec-old=%d postdec-new=%d\n",
+        (int)fallout::RUN_AWAY_MODE_COUNT, (int)fallout::RUN_AWAY_MODE_FIRST, (int)fallout::RUN_AWAY_MODE_LAST,
+        (int)raPostOld, raPostNew, (int)rdPostOld, rdPostNew);
+
+    fallout::Disposition dp = fallout::DISPOSITION_CUSTOM;
+    fallout::Disposition dpPostOld = dp--;
+    int dpPostNew = static_cast<int>(dp);
+    std::printf("area-count=%d area-first=%d best-count=%d best-first=%d dist-count=%d dist-first=%d who-count=%d who-first=%d chem-count=%d chem-first=%d disp-count=%d disp-first=%d disp-postdec-old=%d disp-postdec-new=%d hurt-count=%d hurt-first=%d\n",
+        (int)fallout::AREA_ATTACK_MODE_COUNT, (int)fallout::AREA_ATTACK_MODE_FIRST,
+        (int)fallout::BEST_WEAPON_COUNT, (int)fallout::BEST_WEAPON_FIRST,
+        (int)fallout::DISTANCE_COUNT, (int)fallout::DISTANCE_FIRST,
+        (int)fallout::ATTACK_WHO_COUNT, (int)fallout::ATTACK_WHO_FIRST,
+        (int)fallout::CHEM_USE_COUNT, (int)fallout::CHEM_USE_FIRST,
+        (int)fallout::DISPOSITION_COUNT, (int)fallout::DISPOSITION_FIRST,
+        (int)dpPostOld, dpPostNew,
+        (int)fallout::HURT_COUNT, (int)fallout::HURT_FIRST);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3490,5 +3580,6 @@ int main()
     sectionGameDefs();
     sectionArtDefs();
     sectionKbFull();
+    sectionCombatDefs();
     return 0;
 }
