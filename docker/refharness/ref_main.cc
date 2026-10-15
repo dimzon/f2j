@@ -20,6 +20,8 @@
 
 #include "color.h"
 #include "cycle.h"
+#include "delay.h"
+#include "fps_limiter.h"
 #include "dictionary.h"
 #include "art.h"
 #include "cache.h"
@@ -28,6 +30,7 @@
 #include "content_config.h"
 #include "dfile.h"
 #include "game_config.h"
+#include "input.h"
 #include "message.h"
 #include "settings.h"
 #include "file_utils.h"
@@ -1748,6 +1751,44 @@ void sectionColorCycle()
     fallout::settingsExit(false);
 }
 
+void sectionFps()
+{
+    std::puts("[fps]");
+
+    // SDL timer is already up (see [colorcycle]); all vectors below are
+    // lower-bound checks so scheduling jitter cannot break them.
+    fallout::FpsLimiter limiter(60);
+
+    unsigned int t0 = fallout::getTicks();
+    limiter.mark();
+    limiter.throttle();
+    unsigned int t1 = fallout::getTicks();
+    std::printf("throttle-delayed=%d\n", fallout::getTicksBetween(t1, t0) >= 15 ? 1 : 0);
+
+    t0 = fallout::getTicks();
+    limiter.mark();
+    SDL_Delay(20);
+    limiter.throttle();
+    t1 = fallout::getTicks();
+    std::printf("throttle-nodelay=%d\n", fallout::getTicksBetween(t1, t0) >= 20 ? 1 : 0);
+
+    fallout::FpsLimiter fast(1000);
+    t0 = fallout::getTicks();
+    fast.mark();
+    fast.throttle();
+    t1 = fallout::getTicks();
+    std::printf("fps1000-delayed=%d\n", fallout::getTicksBetween(t1, t0) >= 1 ? 1 : 0);
+
+    delay_ms(0);
+    delay_ms(-3);
+    std::printf("delay-nonpositive-ok=1\n");
+
+    t0 = fallout::getTicks();
+    delay_ms(50);
+    t1 = fallout::getTicks();
+    std::printf("delay50=%d\n", fallout::getTicksBetween(t1, t0) >= 50 ? 1 : 0);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1783,5 +1824,6 @@ int main()
     sectionColor();
     sectionSettings();
     sectionColorCycle();
+    sectionFps();
     return 0;
 }
