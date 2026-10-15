@@ -3436,6 +3436,15 @@ int main()
     // v1.txt predates this fix (its INFO line sits on top).
     setvbuf(stdout, nullptr, _IONBF, 0);
 
+    // The harness depends on fixtures.sh outputs. Never run the binary
+    // directly: degraded /tmp state silently corrupts vectors, and the CWD
+    // fallback of relative VFS paths writes scratch files (wtest.bin) into
+    // the mounted repo.
+    if (access("/tmp/f2test.zip", F_OK) != 0 || access("/tmp/f2xbase_a", F_OK) != 0) {
+        std::fprintf(stderr, "refharness: missing fixtures, run via build.sh\n");
+        return 2;
+    }
+
     sectionRgb555();
     sectionRectUnion();
     sectionRectIntersection();
