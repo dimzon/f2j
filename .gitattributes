@@ -23,3 +23,13 @@ LICENSE text eol=lf
 
 # Force CRLF
 *.bat text eol=crlf
+
+# f2j: differential goldens, fixtures and scripts must keep exact bytes
+*.txt text eol=lf
+*.msg text eol=lf
+*.cfg text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.dat binary
+*.zip binary
+*.bin binary
