@@ -729,6 +729,11 @@ public final class Art {
 
     // artInit minus the cache (wired in the cache phase).
     public static int artInit() {
+        if (artLockInit() != 0) {
+            Debug.print("cache_init failed in art_init\n");
+            return -1;
+        }
+
         for (int objectType = ObjectType.FIRST; objectType < ObjectType.COUNT; objectType++) {
             ArtList list = artLists.descriptions.get(objectType);
             list.flags = 0;
@@ -893,7 +898,302 @@ public final class Art {
         artLists.headDescriptions.clear();
     }
 
-    /** Test seam: clear lists state (C keeps globals across runs). */
+    // --- localized paths (artGetLocalizedPath state) ---
+
+    static String localizedPath(String basePath) {
+        if (!artLists.languageInitialized) {
+            return null;
+        }
+        int sep = basePath.indexOf('\\');
+        String tail = sep >= 0 ? basePath.substring(sep) : basePath;
+        return "art\\" + artLists.language + "\\" + tail;
+    }
+
+    // --- cache procedures (artCacheGetFileSize/artCacheReadData) ---
+
+    static int artCacheGetFileSize(FrmId frmId, int[] sizePtr) {
+        String artFilePath = frmId.filePath();
+        if (artFilePath == null) {
+            return -1;
+        }
+
+        String openedPath = artFilePath;
+        String localized = localizedPath(artFilePath);
+        XFile.Handle stream = null;
+        if (localized != null) {
+            stream = Db.fileOpen(localized, "rb");
+            if (stream != null) {
+                openedPath = localized;
+            }
+        }
+        if (stream == null) {
+            stream = Db.fileOpen(artFilePath, "rb");
+        }
+
+        int result = -1;
+        if (stream != null) {
+            ArtData header = new ArtData();
+            if (artReadHeader(header, stream) == 0) {
+                int dataSize = artGetDataSize(header);
+                if (dataSize <= 0) {
+                    Debug.print("ART ERROR: fid %d path %s returned invalid data size %d\n",
+                            frmId.fid(), artFilePath, dataSize);
+                    sizePtr[0] = 0;
+                } else {
+                    sizePtr[0] = dataSize;
+                    result = 0;
+                }
+            } else {
+                Debug.print("ART ERROR: rejected %s: invalid header\n", openedPath);
+            }
+            Db.fileClose(stream);
+        }
+
+        return result;
+    }
+
+    static ArtData artCacheReadData(FrmId frmId, int[] sizePtr) {
+        String artFileName = frmId.filePath();
+        if (artFileName == null) {
+            return null;
+        }
+
+        ArtData[] loaded = new ArtData[1];
+        String localized = localizedPath(artFileName);
+        if (localized != null) {
+            ArtData[] attempt = new ArtData[1];
+            if (artRead(localized, attempt) == 0) {
+                loaded = attempt;
+            }
+        }
+
+        if (loaded[0] == null) {
+            if (artRead(artFileName, loaded) != 0) {
+                Debug.print("ART ERROR: failed to load ART data for fid %d path %s\n",
+                        frmId.fid(), artFileName);
+                return null;
+            }
+        }
+
+        int dataSize = artGetDataSize(loaded[0]);
+        if (dataSize < 0) {
+            Debug.print("ART ERROR: fid %d path %s read data returned negative size %d\n",
+                    frmId.fid(), artFileName, dataSize);
+        }
+        sizePtr[0] = dataSize;
+        return loaded[0];
+    }
+
+    // --- loaders ---
+
+    static boolean pathHasExtension(String path, String extension) {
+        if (path.length() < extension.length()) {
+            return false;
+        }
+        return path.substring(path.length() - extension.length()).equalsIgnoreCase(extension);
+    }
+
+    /** artLoadFrm: header probe for sizing, then a full artRead. */
+    public static ArtData artLoadFrm(String path) {
+        XFile.Handle stream = Db.fileOpen(path, "rb");
+        if (stream == null) {
+            return null;
+        }
+
+        ArtData header = new ArtData();
+        if (artReadHeader(header, stream) != 0) {
+            Debug.print("ART ERROR: rejected %s: invalid header\n", path);
+            Db.fileClose(stream);
+            return null;
+        }
+        Db.fileClose(stream);
+
+        int dataSize = artGetDataSize(header);
+        if (dataSize <= 0) {
+            Debug.print("ART ERROR: rejected %s: invalid data size %d\n", path, dataSize);
+            return null;
+        }
+
+        ArtData[] out = new ArtData[1];
+        if (artRead(path, out) != 0) {
+            return null;
+        }
+        return out[0];
+    }
+
+    /** artLoad dispatcher (pcx/png land with their phases; null for now). */
+    public static ArtData artLoad(String path) {
+        if (path == null) {
+            return null;
+        }
+
+        if (pathHasExtension(path, ".png")) {
+            // TODO(png): indexed-PNG validation + decode via ImageIO metadata.
+            return null;
+        }
+
+        if (pathHasExtension(path, ".pcx")) {
+            // TODO(pcx): datafile/pcx decoder phase.
+            return null;
+        }
+
+        return artLoadFrm(path);
+    }
+
+    static ArtData artLoadLocalized(String path) {
+        String localized = localizedPath(path);
+        ArtData result = localized != null ? artLoad(localized) : null;
+        return result != null ? result : artLoad(path);
+    }
+
+    // --- fid cache (artLock/artUnlock/artCacheFlush over the art cache) ---
+
+    static final Cache.Store gArtCache = new Cache.Store();
+
+    // artInit minus the call below is pure lists; the cache init needs
+    // Settings (art_cache_size), wired here since both phases landed.
+    // NOTE: artLockInit is part of artInit (cacheInit there); exposed so the
+    // cache behaviour stays testable without game init.
+    static int artLockInit() {
+        int cacheSize = Settings.settings.system.art_cache_size << 20;
+        return Cache.cacheInit(Art.gArtCache,
+                (key, sizePtr) -> Art.artCacheGetFileSize(FrmId.ofFid(key), sizePtr) == 0 ? 0 : -1,
+                Art::artCacheFill, cacheSize)
+                        ? 0
+                        : -1;
+    }
+
+    static int artCacheFill(int key, int[] size, byte[] buffer) {
+        int[] actual = new int[1];
+        ArtData art = Art.artCacheReadData(FrmId.ofFid(key), actual);
+        if (art == null) {
+            return -1;
+        }
+        byte[] flat = ArtCodec.serialize(art);
+        if (flat.length > buffer.length) {
+            return -1;
+        }
+        System.arraycopy(flat, 0, buffer, 0, flat.length);
+        return 0;
+    }
+
+    /** artLock(FrmId): loads through the cache, returns entry + data. */
+    public static ArtLock artLock(FrmId frmId) {
+        if (!frmId.valid()) {
+            return null;
+        }
+
+        Cache.Entry entry = Cache.cacheLock(gArtCache, frmId.fid());
+        if (entry == null) {
+            return null;
+        }
+        return new ArtLock(entry, ArtCodec.deserialize(entry.data));
+    }
+
+    /** Locked art handle (unlock on done; AutoCloseable for try-blocks). */
+    public static final class ArtLock implements AutoCloseable {
+        final Cache.Entry entry;
+        final ArtData art;
+
+        ArtLock(Cache.Entry entry, ArtData art) {
+            this.entry = entry;
+            this.art = art;
+        }
+
+        public ArtData art() {
+            return art;
+        }
+
+        @Override
+        public void close() {
+            Art.artUnlock(this);
+        }
+    }
+
+    public static int artUnlock(ArtLock lock) {
+        if (lock == null) {
+            return 0;
+        }
+        return Cache.cacheUnlock(gArtCache, lock.entry) ? 1 : 0;
+    }
+
+    public static int artCacheFlush() {
+        return Cache.cacheFlush(gArtCache) ? 1 : 0;
+    }
+
+    // --- named art cache (path-keyed LRU over decoded objects) ---
+
+    static final int NAMED_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+
+    static final class NamedEntry {
+        ArtData art;
+        long mru;
+        int locks;
+    }
+
+    static final java.util.LinkedHashMap<String, NamedEntry> namedCache = new java.util.LinkedHashMap<>();
+    static long namedMruCounter;
+    static long namedCurrentBytes;
+
+    public static ArtData artLockNamedFrameData(String path) {
+        NamedEntry found = namedCache.get(path);
+        if (found != null) {
+            found.mru = ++namedMruCounter;
+            found.locks++;
+            return found.art;
+        }
+
+        ArtData art = artLoadLocalized(path);
+        if (art == null) {
+            return null;
+        }
+
+        if (namedMruCounter == 0xFFFFFFFFL) {
+            List<NamedEntry> sorted = new ArrayList<>(namedCache.values());
+            sorted.sort((a, b) -> Long.compare(a.mru, b.mru));
+            long mru = 0;
+            for (NamedEntry e : sorted) {
+                e.mru = mru++;
+            }
+            namedMruCounter = mru;
+        }
+
+        NamedEntry entry = new NamedEntry();
+        entry.art = art;
+        entry.mru = ++namedMruCounter;
+        entry.locks++;
+        namedCache.put(path, entry);
+        namedCurrentBytes += artGetDataSize(art);
+
+        while (namedCurrentBytes > NAMED_CACHE_MAX_BYTES) {
+            String evictKey = null;
+            long lowestMru = Long.MAX_VALUE;
+            for (var kv : namedCache.entrySet()) {
+                if (kv.getValue().locks == 0 && kv.getValue().mru < lowestMru) {
+                    lowestMru = kv.getValue().mru;
+                    evictKey = kv.getKey();
+                }
+            }
+
+            if (evictKey == null) {
+                break;
+            }
+
+            namedCurrentBytes -= artGetDataSize(namedCache.get(evictKey).art);
+            namedCache.remove(evictKey);
+        }
+
+        return entry.art;
+    }
+
+    static void artUnlockNamed(String path) {
+        NamedEntry entry = namedCache.get(path);
+        if (entry != null && entry.locks > 0) {
+            entry.locks--;
+        }
+    }
+
+    /** Test seam: clear lists/cache state (C keeps globals across runs). */
     static void resetForTests() {
         artLists.descriptions.clear();
         artLists.anonAlias.clear();
@@ -904,6 +1204,152 @@ public final class Art {
             list.name = name;
             artLists.descriptions.add(list);
         }
+        artLists.languageInitialized = false;
+        artLists.language = "";
         cdPathBase = "";
+        namedCache.clear();
+        namedMruCounter = 0;
+        namedCurrentBytes = 0;
+        gArtCache.entries.clear();
+        gArtCache.size = 0;
+        gArtCache.hits = 0;
+    }
+
+    // --- FrmImage (RAII frame lock; AutoCloseable in Java) ---
+
+    public static final class FrmImage implements AutoCloseable {
+        private ArtLock fidLock;
+        private String namedPath;
+        private ArtData namedArt;
+        private byte[] data;
+        private int width;
+        private int height;
+        private int xOffset;
+        private int yOffset;
+
+        public boolean isLocked() {
+            return fidLock != null || namedArt != null;
+        }
+
+        public boolean lock(FrmId frmId) {
+            return lock(frmId, 0, Rotation.NE.value());
+        }
+
+        public boolean lock(FrmId frmId, int frame, int rotation) {
+            if (frmId.fid() >= 0) {
+                ArtLock artLock = Art.artLock(frmId);
+                if (artLock == null) {
+                    return false;
+                }
+                if (!setFrame(artLock.art(), frame, rotation)) {
+                    artLock.close();
+                    return false;
+                }
+                fidLock = artLock;
+                return true;
+            }
+            String filePath = frmId.filePath();
+            if (filePath != null) {
+                return frmId.hasObjectType()
+                        ? lock(frmId.objectType().value(), filePath, frame, rotation)
+                        : lock(filePath, frame, rotation);
+            }
+            return false;
+        }
+
+        public boolean lock(String frmPath) {
+            return lock(frmPath, 0, Rotation.NE.value());
+        }
+
+        public boolean lock(String frmPath, int frame, int rotation) {
+            if (isLocked()) {
+                return false;
+            }
+
+            ArtData art = Art.artLockNamedFrameData(frmPath);
+            if (art == null) {
+                return false;
+            }
+
+            if (!setFrame(art, frame, rotation)) {
+                Art.artUnlockNamed(frmPath);
+                return false;
+            }
+
+            namedPath = frmPath;
+            namedArt = art;
+            return true;
+        }
+
+        public boolean lock(int objType, String frmRelativePath) {
+            return lock(objType, frmRelativePath, 0, Rotation.NE.value());
+        }
+
+        public boolean lock(int objType, String frmRelativePath, int frame, int rotation) {
+            if (!ObjectType.isValid(objType)) {
+                return false;
+            }
+            String path = cdPathBase + "art\\" + artLists.descriptions.get(objType).name
+                    + "\\" + frmRelativePath;
+            return lock(path, frame, rotation);
+        }
+
+        public void unlock() {
+            if (fidLock != null) {
+                fidLock.close();
+                fidLock = null;
+            }
+            if (namedPath != null) {
+                Art.artUnlockNamed(namedPath);
+                namedPath = null;
+                namedArt = null;
+            }
+            data = null;
+            width = 0;
+            height = 0;
+            xOffset = 0;
+            yOffset = 0;
+        }
+
+        @Override
+        public void close() {
+            unlock();
+        }
+
+        public int getWidth() {
+            return width;
+        }
+
+        public int getHeight() {
+            return height;
+        }
+
+        public int getXOffset() {
+            return xOffset;
+        }
+
+        public int getYOffset() {
+            return yOffset;
+        }
+
+        public byte[] getData() {
+            return data;
+        }
+
+        boolean setFrame(ArtData art, int frame, int rotation) {
+            int[] w = new int[1];
+            int[] h = new int[1];
+            byte[] pixels = Art.artGetFrameData(art, frame, rotation, w, h, null, null);
+            if (pixels == null) {
+                return false;
+            }
+
+            width = w[0];
+            height = h[0];
+            xOffset = art.xOffsets[rotation];
+            yOffset = art.yOffsets[rotation];
+            data = pixels;
+            return true;
+        }
     }
 }

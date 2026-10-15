@@ -429,7 +429,7 @@ public final class Config {
 
             if (trimmed.charAt(0) == '[') {
                 if (currentSection != null) {
-                    writeSectionBuilder(out, null, currentSection, handledKeys);
+                    writeSection(out, null, currentSection, handledKeys);
                     handledKeys.clear();
                     currentSection = null;
                 }
@@ -512,7 +512,7 @@ public final class Config {
         }
 
         if (currentSection != null) {
-            writeSectionBuilder(out, null, currentSection, handledKeys);
+            writeSection(out, null, currentSection, handledKeys);
         }
 
         for (String l : pendingLines) {
@@ -527,7 +527,7 @@ public final class Config {
                     out.append('\n');
                     firstNewSection = false;
                 }
-                writeSectionBuilder(out, sectionEntry.getKey(), sectionEntry.getValue(), null);
+                writeSection(out, sectionEntry.getKey(), sectionEntry.getValue(), null);
                 out.append('\n');
             }
         }
@@ -556,11 +556,6 @@ public final class Config {
 
         CompatFiles.remove(backupPath);
         return true;
-    }
-
-    private static void writeSectionBuilder(StringBuilder out, String sectionName,
-            TreeMap<String, String> section, java.util.Set<String> handledKeys) {
-        writeSection(out, sectionName, section, handledKeys);
     }
 
     static String readFile(String filePath) {

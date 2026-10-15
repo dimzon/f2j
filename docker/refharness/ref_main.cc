@@ -19,6 +19,7 @@
 #include "color.h"
 #include "dictionary.h"
 #include "art.h"
+#include "cache.h"
 #include "config.h"
 #include "content_config.h"
 #include "dfile.h"
@@ -1466,6 +1467,147 @@ void dumpFrm(const char* path)
         fallout::artGetWidth(nullptr, 0, fallout::ROTATION_NE));
 }
 
+// Synthetic cache backend: keys 1..4 map to 100/200/300/500 bytes.
+static int cacheTestSize(int key, int* sizePtr)
+{
+    static const int sizes[] = { 100, 200, 300, 500 };
+    if (key < 1 || key > 4) {
+        return -1;
+    }
+    *sizePtr = sizes[key - 1];
+    return 0;
+}
+
+static int cacheTestRead(int key, int* sizePtr, unsigned char* buffer)
+{
+    if (key < 1 || key > 4) {
+        return -1;
+    }
+    memset(buffer, 0x10 + key, (size_t)*sizePtr);
+    return 0;
+}
+
+static void cacheTestFree(void* ptr)
+{
+    (void)ptr;
+}
+
+void sectionCache()
+{
+    std::puts("[cache]");
+
+    fallout::Cache cache {};
+    std::printf("init=%d\n", fallout::cacheInit(&cache, cacheTestSize, cacheTestRead, cacheTestFree, 1000));
+
+    unsigned char* data = nullptr;
+    fallout::CacheEntry* entry = nullptr;
+    bool locked = fallout::cacheLock(&cache, 1, (void**)&data, &entry);
+    std::printf("lock1=%d byte=%02X refs=%u hits=%u\n", locked ? 1 : 0,
+        locked ? data[0] : 0, locked ? entry->referenceCount : 0, locked ? entry->hits : 0);
+
+    unsigned char* data2 = nullptr;
+    fallout::CacheEntry* entry2 = nullptr;
+    bool relocked = fallout::cacheLock(&cache, 1, (void**)&data2, &entry2);
+    std::printf("relock1=%d refs=%u hits=%u same=%d\n", relocked ? 1 : 0,
+        relocked ? entry2->referenceCount : 0, relocked ? entry2->hits : 0,
+        (relocked && data == data2) ? 1 : 0);
+
+    std::printf("unlock=%d\n", fallout::cacheUnlock(&cache, entry2) ? 1 : 0);
+    std::printf("unlock=%d\n", fallout::cacheUnlock(&cache, entry) ? 1 : 0);
+    std::printf("unlock-empty=%d\n", fallout::cacheUnlock(&cache, entry) ? 1 : 0);
+    std::printf("unlock-null=%d\n", fallout::cacheUnlock(&cache, nullptr) ? 1 : 0);
+    std::printf("lock-missing=%d\n", fallout::cacheLock(&cache, 99, (void**)&data, &entry) ? 1 : 0);
+
+    // Flush drops the unreferenced entry; relock re-reads it.
+    fallout::cacheFlush(&cache);
+    unsigned char* data3 = nullptr;
+    fallout::CacheEntry* entry3 = nullptr;
+    bool relocked2 = fallout::cacheLock(&cache, 1, (void**)&data3, &entry3);
+    std::printf("relock-after-flush=%d byte=%02X\n", relocked2 ? 1 : 0, relocked2 ? data3[0] : 0);
+    if (relocked2) {
+        fallout::cacheUnlock(&cache, entry3);
+    }
+    fallout::cacheFree(&cache);
+}
+
+void sectionCacheEvict()
+{
+    std::puts("[cacheEvict]");
+
+    // Single cold 500B entry is swept to make room in a 600B cache.
+    fallout::Cache cache {};
+    fallout::cacheInit(&cache, cacheTestSize, cacheTestRead, cacheTestFree, 600);
+
+    // Content under eviction pressure is allocator-dependent (see the
+    // Heap note in Cache.java); only success codes are pinned here.
+    unsigned char* d1 = nullptr;
+    fallout::CacheEntry* e1 = nullptr;
+    std::printf("lock-big=%d\n", fallout::cacheLock(&cache, 4, (void**)&d1, &e1) ? 1 : 0);
+    if (e1 != nullptr) {
+        fallout::cacheUnlock(&cache, e1);
+    }
+
+    unsigned char* d2 = nullptr;
+    fallout::CacheEntry* e2 = nullptr;
+    std::printf("lock-after-evict=%d\n", fallout::cacheLock(&cache, 2, (void**)&d2, &e2) ? 1 : 0);
+    if (e2 != nullptr) {
+        fallout::cacheUnlock(&cache, e2);
+    }
+    fallout::cacheFree(&cache);
+
+    // Entry bigger than the whole cache never loads.
+    fallout::Cache small {};
+    fallout::cacheInit(&small, cacheTestSize, cacheTestRead, cacheTestFree, 400);
+    unsigned char* ds = nullptr;
+    fallout::CacheEntry* es = nullptr;
+    std::printf("lock-over-max=%d\n", fallout::cacheLock(&small, 4, (void**)&ds, &es) ? 1 : 0);
+    fallout::cacheFree(&small);
+}
+
+void sectionArtLoad()
+{
+    std::puts("[artload]");
+
+    fallout::Art* art = fallout::artLoad("art\\intrface\\mainmenu.frm");
+    std::printf("load=%d frames=%d\n", art != nullptr ? 1 : 0,
+        art != nullptr ? fallout::artGetFrameCount(art) : -99);
+    std::printf("load-missing=%d\n", fallout::artLoad("art\\no\\such.frm") != nullptr ? 1 : 0);
+    std::printf("load-notfrm=%d\n", fallout::artLoad("text\\english\\game\\misc.msg") != nullptr ? 1 : 0);
+
+    fallout::FrmId menu(fallout::OBJ_TYPE_INTERFACE, 140);
+    fallout::FrmImage image;
+    bool locked = image.lock(menu);
+    unsigned char* pixels = locked ? image.getData() : nullptr;
+    uLong crc = crc32(0L, Z_NULL, 0);
+    if (pixels != nullptr) {
+        crc = crc32(crc, pixels, (uInt)((unsigned int)image.getWidth() * (unsigned int)image.getHeight()));
+    }
+    std::printf("img-lock=%d w=%d h=%d x=%d y=%d crc=%08lX\n", locked ? 1 : 0,
+        image.getWidth(), image.getHeight(), image.getXOffset(), image.getYOffset(), crc);
+    image.unlock();
+
+    fallout::FrmImage named;
+    bool namedLocked = named.lock("art\\intrface\\mainmenu.frm");
+    std::printf("named-lock=%d w=%d\n", namedLocked ? 1 : 0, named.getWidth());
+    named.unlock();
+
+    fallout::FrmImage rel;
+    bool relLocked = rel.lock(fallout::OBJ_TYPE_INTERFACE, "mainmenu.frm");
+    std::printf("rel-lock=%d w=%d\n", relLocked ? 1 : 0, rel.getWidth());
+    rel.unlock();
+
+    fallout::FrmImage bad;
+    std::printf("lock-badframe=%d\n", bad.lock(menu, 999) ? 1 : 0);
+    fallout::FrmImage missing;
+    fallout::FrmId noSuch(fallout::OBJ_TYPE_INTERFACE, 4095);
+    std::printf("lock-missing=%d\n", missing.lock(noSuch) ? 1 : 0);
+
+    fallout::CacheEntry* handle = nullptr;
+    fallout::Art* lockedArt = fallout::artLock(menu, &handle);
+    std::printf("artlock=%d unlock=%d flush=%d\n", lockedArt != nullptr ? 1 : 0,
+        fallout::artUnlock(handle), fallout::artCacheFlush());
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1495,6 +1637,9 @@ int main()
     sectionConfig();
     sectionMessage();
     sectionArt();
+    sectionCache();
+    sectionCacheEvict();
+    sectionArtLoad();
     sectionSettings();
     return 0;
 }
