@@ -15,6 +15,7 @@
     <modules>
         <module>platform-spi</module>
         <module>platform-headless</module>
+        <module>platform-awt</module>
         <module>engine</module>
     </modules>
 

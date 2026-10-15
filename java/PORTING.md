@@ -49,6 +49,10 @@
 - `f2j-platform-headless`: managed-дефолт (`headless`: null-video, системные
   часы/слип, in-memory тикеры). `runtime`-зависимость `engine`, провайдер
   регистрируется через `META-INF/services`.
+- `f2j-platform-awt`: рабочий managed-рендерер (`awt`, только JRE: окно
+  Swing, палитровый фреймбуфер 640x480, `component << 2` как в
+  `directDrawSetPalette`). Выбор: `-Df2j.platform=awt`. Без дисплея окно не
+  открывается, offscreen-пиксели сверяются пиксель-в-пиксель тестами.
 - `engine` по умолчанию использует только managed-код (JRE + slf4j + SPI):
   встроенные no-op/system-дефолты швов + `headless` из коробки.
 - `Platform.load()`: `-Df2j.platform=<name>` побеждает; иначе `headless`,
