@@ -35,6 +35,7 @@
 #include "game_config.h"
 #include "game_config_migration.h"
 #include "game_movie.h"
+#include "input.h"
 #include "pcx.h"
 #include "sfall_config.h"
 #include "font_manager.h"
@@ -2649,6 +2650,101 @@ void sectionCfgMig()
     fallout::settingsExit(false);
 }
 
+namespace {
+// Ticker probes (prepend order => reverse execution).
+int gTickLog[16];
+int gTickCount = 0;
+void tickerA()
+{
+    gTickLog[gTickCount++] = 1;
+}
+void tickerB()
+{
+    gTickLog[gTickCount++] = 2;
+}
+} // namespace
+
+void sectionInput()
+{
+    std::puts("[input]");
+
+    std::printf("bk-init=%u\n", fallout::_get_bk_time());
+
+    fallout::tickersAdd(tickerA);
+    fallout::tickersAdd(tickerB);
+    fallout::tickersExecute();
+    std::printf("exec1=%d,%d\n", gTickLog[0], gTickLog[1]);
+
+    fallout::tickersRemove(tickerA);
+    gTickCount = 0;
+    fallout::tickersExecute();
+    std::printf("exec2-removed=%d count=%d\n", gTickLog[0], gTickCount);
+
+    fallout::tickersAdd(tickerA);
+    gTickCount = 0;
+    fallout::tickersExecute();
+    std::printf("exec3-readded=%d,%d\n", gTickLog[0], gTickLog[1]);
+
+    fallout::tickersDisable();
+    gTickCount = 0;
+    fallout::tickersExecute();
+    std::printf("disabled=%d\n", gTickCount);
+    fallout::tickersEnable();
+    fallout::tickersExecute();
+    std::printf("re-enabled=%d\n", gTickCount);
+    fallout::tickersRemove(tickerA);
+    fallout::tickersRemove(tickerB);
+    fallout::tickersExecute();
+
+    unsigned int t0 = fallout::getTicks();
+    fallout::inputBlockForTocks(50);
+    unsigned int t1 = fallout::getTicks();
+    std::printf("block50=%d\n", fallout::getTicksBetween(t1, t0) >= 50 ? 1 : 0);
+
+    system("rm -f /tmp/scr*.bmp /tmp/scr*.png");
+    unsigned char shot[12];
+    for (int i = 0; i < 12; i++) {
+        shot[i] = (unsigned char)(i * 17 + 3);
+    }
+    unsigned char shotPal[768];
+    for (int i = 0; i < 768; i++) {
+        shotPal[i] = (unsigned char)((i * 3 + 5) & 0xFF);
+    }
+    int bmpRc = fallout::screenshotHandlerDefaultImpl(4, 3, shot, shotPal);
+    FILE* bmp = fopen("/tmp/scr00000.bmp", "rb");
+    long bmpSize = -1;
+    uLong bmpCrc = 0;
+    if (bmp != nullptr) {
+        fseek(bmp, 0, SEEK_END);
+        bmpSize = ftell(bmp);
+        rewind(bmp);
+        unsigned char* bmpBytes = (unsigned char*)malloc(bmpSize);
+        size_t got = fread(bmpBytes, 1, bmpSize, bmp);
+        (void)got;
+        bmpCrc = crc32(crc32(0L, Z_NULL, 0), bmpBytes, bmpSize);
+        free(bmpBytes);
+        fclose(bmp);
+    }
+    std::printf("bmp=%d size=%ld crc=%08lX\n", bmpRc, bmpSize, bmpCrc);
+
+    int pngRc = fallout::screenshotHandlerPngImpl(4, 3, shot, shotPal);
+    FILE* png = fopen("/tmp/scr00000.png", "rb");
+    long pngSize = -1;
+    uLong pngCrc = 0;
+    if (png != nullptr) {
+        fseek(png, 0, SEEK_END);
+        pngSize = ftell(png);
+        rewind(png);
+        unsigned char* pngBytes = (unsigned char*)malloc(pngSize);
+        size_t got = fread(pngBytes, 1, pngSize, png);
+        (void)got;
+        pngCrc = crc32(crc32(0L, Z_NULL, 0), pngBytes, pngSize);
+        free(pngBytes);
+        fclose(png);
+    }
+    std::printf("png=%d size=%ld crc=%08lX\n", pngRc, pngSize, pngCrc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2692,5 +2788,6 @@ int main()
     sectionRegion();
     sectionDatafile();
     sectionCfgMig();
+    sectionInput();
     return 0;
 }
