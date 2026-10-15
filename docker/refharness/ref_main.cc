@@ -43,6 +43,7 @@
 #include "options_schema.h"
 #include "options_settings_model.h"
 #include "pcx.h"
+#include "pointer_registry.h"
 #include "sfall_config.h"
 #include "font_manager.h"
 #include "game_config.h"
@@ -3076,6 +3077,29 @@ void sectionOptions()
     fallout::settingsExit(false);
 }
 
+void sectionPtrReg()
+{
+    std::puts("[ptrreg]");
+
+    // Fresh process: the shared registry is empty, refs start at 1.
+    int a = 0;
+    int b = 0;
+    int rNull = fallout::ptrToInt(nullptr);
+    int rA = fallout::ptrToInt(&a);
+    int rB = fallout::ptrToInt(&b);
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    bool fetchA = fallout::intToPtr(rA) == &a;
+    bool fetchB = fallout::intToPtr(rB, true) == &b;
+    bool fetchBGone = fallout::intToPtr(rB) == nullptr;
+    bool fetchZero = fallout::intToPtr(0) == nullptr;
+    bool fetchMissing = fallout::intToPtr(999) == nullptr;
+    int rC = fallout::ptrToInt(&a);
+    std::printf("store-null=%d store-a=%d store-b=%d fetch-a=%d fetch-remove-b=%d fetch-b-gone=%d fetch-zero=%d fetch-missing=%d store-c=%d\n",
+        rNull, rA, rB,
+        fetchA ? 1 : 0, fetchB ? 1 : 0, fetchBGone ? 1 : 0,
+        fetchZero ? 1 : 0, fetchMissing ? 1 : 0, rC);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3124,5 +3148,6 @@ int main()
     sectionDInput();
     sectionGraph();
     sectionOptions();
+    sectionPtrReg();
     return 0;
 }
