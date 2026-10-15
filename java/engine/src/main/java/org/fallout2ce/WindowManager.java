@@ -273,8 +273,9 @@ public final class WindowManager {
 
     // ===== window store / refresh engine (window_manager.cc, v38 slice) =====
     //
-    // Buttons, menus, text input dialogs and managed windows come with the
-    // rest of the file; movie/interpreter/game hooks become seams then.
+    // The button engine below is ported; menus (managed windows, text input
+    // dialogs, pulldown interaction) still come with the rest of the file;
+    // movie/interpreter/game hooks become seams then.
     // C `rand()` for tx/ty dither seeds is a counter here (unsigned glibc
     // rand is not bit-identical; seeds are unobservable on opaque windows).
 
@@ -345,6 +346,9 @@ public final class WindowManager {
     private static Object gnwTexture;
     private static final ButtonGroup[] buttonGroups = new ButtonGroup[BUTTON_GROUP_LIST_CAPACITY];
     private static int txTyCounter;
+
+    /** Port of {@code _last_button_winID}. */
+    private static int lastButtonWinId = -1;
 
     static {
         for (int index = 0; index < buttonGroups.length; index++) {
@@ -1043,8 +1047,7 @@ public final class WindowManager {
     }
 
     /** Port of {@code _GNW_win_refresh}. */
-    static void gnwWinRefresh(Window window, Geometry.Rect rect, byte[] dest) {
-        // dest is only used when refreshing the portion of the screen containing the cursor (which is subsequently drawn on the buffer)
+    static void gnwWinRefresh(Window window, Geometry.Rect rect, byte[] dest) {        // dest is only used when refreshing the portion of the screen containing the cursor (which is subsequently drawn on the buffer)
 
         if ((window.flags & WindowFlags.WINDOW_HIDDEN.id()) != 0) {
             return;
@@ -1218,8 +1221,19 @@ public final class WindowManager {
         }
     }
 
-    /** Placeholder for {@code _GNW_button_refresh} (body with buttons). */
+    /** Port of {@code _GNW_button_refresh} (0x4D9A58). */
     static void gnwButtonRefresh(Window window, Geometry.Rect rect) {
+        Button button = window.buttonListHead;
+        if (button != null) {
+            while (button.next != null) {
+                button = button.next;
+            }
+        }
+
+        while (button != null) {
+            buttonDraw(button, window, button.currentImage, false, rect, false);
+            button = button.prev;
+        }
     }
 
     /** Port of {@code windowRefreshAll} (0x4D759C). */
@@ -1284,6 +1298,1187 @@ public final class WindowManager {
                 }
             }
         }
+    }
+
+    // ===== button engine (window_manager.cc) =====
+
+    /** Port of {@code buttonCreate} (0x4D8260). */
+    public static int buttonCreate(int win, int x, int y, int width, int height,
+            int mouseEnterEventCode, int mouseExitEventCode, int mouseDownEventCode, int mouseUpEventCode,
+            byte[] normal, byte[] pressed, byte[] hover, int flags) {
+        Window window = windowGetWindow(win);
+
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (window == null) {
+            return -1;
+        }
+
+        if (normal == null && (pressed != null || hover != null)) {
+            return -1;
+        }
+
+        Button button = buttonCreateInternal(win, x, y, width, height,
+            mouseEnterEventCode, mouseExitEventCode, mouseDownEventCode, mouseUpEventCode,
+            flags | ButtonFlags.BUTTON_FLAG_GRAPHIC.id(), normal, pressed, hover);
+        if (button == null) {
+            return -1;
+        }
+
+        buttonDraw(button, window, button.normalImage, false, null, false);
+
+        return button.id;
+    }
+
+    /** Port of {@code _win_register_text_button} (0x4D8308). */
+    public static int winRegisterTextButton(int win, int x, int y,
+            int mouseEnterEventCode, int mouseExitEventCode, int mouseDownEventCode, int mouseUpEventCode,
+            String title, int flags) {
+        Window window = windowGetWindow(win);
+
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (window == null) {
+            return -1;
+        }
+
+        int buttonWidth = TextFont.fontGetStringWidth(title) + 16;
+        int buttonHeight = TextFont.fontGetLineHeight() + 7;
+        byte[] normal = new byte[buttonWidth * buttonHeight];
+        byte[] pressed = new byte[buttonWidth * buttonHeight];
+
+        if (window.color != Color.COLOR_COUNT || gnwTexture == null) {
+            int fill = window.color & Color.COLOR_LAST;
+            Draw.bufferFill(normal, buttonWidth, buttonHeight, buttonWidth, fill);
+            Draw.bufferFill(pressed, buttonWidth, buttonHeight, buttonWidth, fill);
+        }
+
+        Draw.lightenBuf(normal, buttonWidth, buttonHeight, buttonWidth);
+
+        int textColor = (Color.colorTable[gnwWcolor[3]] & 0xFF) | Color.DRAW_TEXT_FLAG_SHADOWED;
+        TextFont.fontDrawText(normal, buttonWidth * 3 + 8, title, buttonWidth, buttonWidth, textColor);
+        int light = Color.colorTable[gnwWcolor[1]] & 0xFF;
+        int shadow = Color.colorTable[gnwWcolor[2]] & 0xFF;
+        int black = Color.colorTable[Color.rgb555(0x000000)] & 0xFF;
+        Draw.bufferDrawRectShadowed(normal, buttonWidth, 2, 2, buttonWidth - 3, buttonHeight - 3, light, shadow);
+        Draw.bufferDrawRectShadowed(normal, buttonWidth, 1, 1, buttonWidth - 2, buttonHeight - 2, light, shadow);
+        Draw.bufferDrawRect(normal, buttonWidth, 0, 0, buttonWidth - 1, buttonHeight - 1, black);
+
+        TextFont.fontDrawText(pressed, buttonWidth * 4 + 9, title, buttonWidth, buttonWidth, textColor);
+        Draw.bufferDrawRectShadowed(pressed, buttonWidth, 2, 2, buttonWidth - 3, buttonHeight - 3, shadow,
+            light);
+        Draw.bufferDrawRectShadowed(pressed, buttonWidth, 1, 1, buttonWidth - 2, buttonHeight - 2, shadow,
+            light);
+        Draw.bufferDrawRect(pressed, buttonWidth, 0, 0, buttonWidth - 1, buttonHeight - 1, black);
+
+        Button button = buttonCreateInternal(win, x, y, buttonWidth, buttonHeight,
+            mouseEnterEventCode, mouseExitEventCode, mouseDownEventCode, mouseUpEventCode,
+            flags, normal, pressed, null);
+        if (button == null) {
+            return -1;
+        }
+
+        buttonDraw(button, window, button.normalImage, false, null, false);
+
+        return button.id;
+    }
+
+    /** Port of {@code _win_register_button_disable} (0x4D8674). */
+    public static int winRegisterButtonDisable(int btn, byte[] normal, byte[] pressed, byte[] hover) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Button button = buttonGetButton(btn, null);
+        if (button == null) {
+            return -1;
+        }
+
+        button.disabledNormalImage = normal;
+        button.disabledPressedImage = pressed;
+        button.disabledHoverImage = hover;
+
+        return 0;
+    }
+
+    /** Port of {@code _win_register_button_image} (0x4D86A8). */
+    public static int winRegisterButtonImage(int btn, byte[] normal, byte[] pressed, byte[] hover,
+            boolean draw) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (normal == null && (pressed != null || hover != null)) {
+            return -1;
+        }
+
+        Window[] windowPtr = new Window[1];
+        Button button = buttonGetButton(btn, windowPtr);
+        if (button == null) {
+            return -1;
+        }
+
+        if ((button.flags & ButtonFlags.BUTTON_FLAG_GRAPHIC.id()) == 0) {
+            return -1;
+        }
+
+        byte[] data = button.currentImage;
+        if (data == button.normalImage) {
+            button.currentImage = normal;
+        } else if (data == button.pressedImage) {
+            button.currentImage = pressed;
+        } else if (data == button.hoverImage) {
+            button.currentImage = hover;
+        }
+
+        button.normalImage = normal;
+        button.pressedImage = pressed;
+        button.hoverImage = hover;
+
+        buttonDraw(button, windowPtr[0], button.currentImage, draw, null, false);
+
+        return 0;
+    }
+
+    /** Port of {@code buttonSetMouseCallbacks} (0x4D8758). */
+    public static int buttonSetMouseCallbacks(int btn, ButtonCallback mouseEnterProc,
+            ButtonCallback mouseExitProc, ButtonCallback mouseDownProc, ButtonCallback mouseUpProc) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Button button = buttonGetButton(btn, null);
+        if (button == null) {
+            return -1;
+        }
+
+        button.mouseEnterProc = mouseEnterProc;
+        button.mouseExitProc = mouseExitProc;
+        button.leftMouseDownProc = mouseDownProc;
+        button.leftMouseUpProc = mouseUpProc;
+
+        return 0;
+    }
+
+    /** Port of {@code buttonSetRightMouseCallbacks} (0x4D8798). */
+    public static int buttonSetRightMouseCallbacks(int btn, int rightMouseDownEventCode,
+            int rightMouseUpEventCode, ButtonCallback rightMouseDownProc, ButtonCallback rightMouseUpProc) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Button button = buttonGetButton(btn, null);
+        if (button == null) {
+            return -1;
+        }
+
+        button.rightMouseDownEventCode = rightMouseDownEventCode;
+        button.rightMouseUpEventCode = rightMouseUpEventCode;
+        button.rightMouseDownProc = rightMouseDownProc;
+        button.rightMouseUpProc = rightMouseUpProc;
+
+        if (rightMouseDownEventCode != -1 || rightMouseUpEventCode != -1 || rightMouseDownProc != null
+                || rightMouseUpProc != null) {
+            button.flags |= ButtonFlags.BUTTON_FLAG_RIGHT_MOUSE_BUTTON_CONFIGURED.id();
+        } else {
+            button.flags &= ~ButtonFlags.BUTTON_FLAG_RIGHT_MOUSE_BUTTON_CONFIGURED.id();
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code buttonSetCallbacks} (0x4D87F8). */
+    public static int buttonSetCallbacks(int btn, ButtonCallback pressSoundFunc,
+            ButtonCallback releaseSoundFunc) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Button button = buttonGetButton(btn, null);
+        if (button == null) {
+            return -1;
+        }
+
+        button.pressSoundFunc = pressSoundFunc;
+        button.releaseSoundFunc = releaseSoundFunc;
+
+        return 0;
+    }
+
+    /** Port of {@code buttonSetMask} (0x4D8828). */
+    public static int buttonSetMask(int btn, byte[] mask) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Button button = buttonGetButton(btn, null);
+        if (button == null) {
+            return -1;
+        }
+
+        button.mask = mask;
+
+        return 0;
+    }
+
+    /** Port of {@code buttonCreateInternal} (0x4D8854). */
+    static Button buttonCreateInternal(int win, int x, int y, int width, int height,
+            int mouseEnterEventCode, int mouseExitEventCode, int mouseDownEventCode, int mouseUpEventCode,
+            int flags, byte[] up, byte[] dn, byte[] hover) {
+        Window window = windowGetWindow(win);
+        if (window == null) {
+            return null;
+        }
+
+        if ((flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) == 0) {
+            if ((flags & ButtonFlags.BUTTON_FLAG_CHECK_ON_DOWN.id()) != 0) {
+                flags &= ~ButtonFlags.BUTTON_FLAG_CHECK_ON_DOWN.id();
+            }
+
+            if ((flags & ButtonFlags.BUTTON_FLAG_NO_TOGGLE_OFF.id()) != 0) {
+                flags &= ~ButtonFlags.BUTTON_FLAG_NO_TOGGLE_OFF.id();
+            }
+        }
+
+        Button button = new Button();
+        button.id = buttonNewId();
+        button.flags = flags;
+        button.rect.left = x;
+        button.rect.top = y;
+        button.rect.right = x + width - 1;
+        button.rect.bottom = y + height - 1;
+        button.mouseEnterEventCode = mouseEnterEventCode;
+        button.mouseExitEventCode = mouseExitEventCode;
+        button.lefMouseDownEventCode = mouseDownEventCode;
+        button.leftMouseUpEventCode = mouseUpEventCode;
+        button.rightMouseDownEventCode = -1;
+        button.rightMouseUpEventCode = -1;
+        button.normalImage = up;
+        button.pressedImage = dn;
+        button.hoverImage = hover;
+        button.disabledNormalImage = null;
+        button.disabledPressedImage = null;
+        button.disabledHoverImage = null;
+        button.currentImage = null;
+        button.mask = null;
+        button.mouseEnterProc = null;
+        button.mouseExitProc = null;
+        button.leftMouseDownProc = null;
+        button.leftMouseUpProc = null;
+        button.rightMouseDownProc = null;
+        button.rightMouseUpProc = null;
+        button.pressSoundFunc = null;
+        button.releaseSoundFunc = null;
+        button.buttonGroup = null;
+        button.prev = null;
+
+        button.next = window.buttonListHead;
+        if (button.next != null) {
+            button.next.prev = button;
+        }
+        window.buttonListHead = button;
+
+        return button;
+    }
+
+    /** Port of {@code _win_button_down} (0x4D89E4). */
+    public static boolean winButtonDown(int btn) {
+        if (!windowSystemInitialized) {
+            return false;
+        }
+
+        Button button = buttonGetButton(btn, null);
+        if (button == null) {
+            return false;
+        }
+
+        return (button.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0
+            && (button.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0;
+    }
+
+    /** Port of {@code buttonGetButton} (0x4D79DC; window out-param is {@code Window[1]}). */
+    static Button buttonGetButton(int btn, Window[] windowPtr) {
+        for (int index = 0; index < windowsLength; index++) {
+            Window window = windows[index];
+            Button button = window.buttonListHead;
+            while (button != null) {
+                if (button.id == btn) {
+                    if (windowPtr != null) {
+                        windowPtr[0] = window;
+                    }
+                    return button;
+                }
+                button = button.next;
+            }
+        }
+
+        return null;
+    }
+
+    /** Port of {@code button_new_id} (0x4D9458, inlined in C). */
+    private static int buttonNewId() {
+        int btn = 1;
+        while (buttonGetButton(btn, null) != null) {
+            btn++;
+        }
+        return btn;
+    }
+
+    /** Port of {@code _win_check_all_buttons} (top of window_manager.cc slice). */
+    public static int winCheckAllButtons() {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        int keyCode = -1;
+        int[] keyCodeOut = new int[1];
+        for (int index = windowsLength - 1; index >= 1; index--) {
+            keyCodeOut[0] = -1;
+            if (gnwCheckButtons(windows[index], keyCodeOut) == 0) {
+                keyCode = keyCodeOut[0];
+                break;
+            }
+
+            if ((windows[index].flags & WindowFlags.WINDOW_MODAL.id()) != 0) {
+                break;
+            }
+        }
+
+        return keyCode;
+    }
+
+    /** Port of {@code _GNW_check_menu_bars} (0x4D7A34). */
+    public static int gnwCheckMenuBars(int input) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        for (int index = windowsLength - 1; index >= 1; index--) {
+            Window window = windows[index];
+            if (window.menuBar != null) {
+                for (int pulldownIndex = 0; pulldownIndex < window.menuBar.pulldownsLength; pulldownIndex++) {
+                    if (input == window.menuBar.pulldowns[pulldownIndex].keyCode) {
+                        input = gnwProcessMenu(window.menuBar, pulldownIndex);
+                        break;
+                    }
+                }
+            }
+
+            if ((window.flags & WindowFlags.WINDOW_MODAL.id()) != 0) {
+                break;
+            }
+        }
+
+        return input;
+    }
+
+    /**
+     * Stub for {@code _GNW_process_menu} (window_manager_private.cc): the full
+     * pulldown loop needs dialogs/text input, so only the no-menu passthrough
+     * is live. Never triggers while no window owns a matching pulldown.
+     */
+    static int gnwProcessMenu(MenuBar menuBar, int pulldownIndex) {
+        if (menuBar == null || pulldownIndex < 0 || pulldownIndex >= menuBar.pulldownsLength) {
+            return -1;
+        }
+        return menuBar.pulldowns[pulldownIndex].keyCode;
+    }
+
+    /** Port of {@code win_drag} (0x4D765C): harness never drags, minimal stub. */
+    static void winDrag(int win) {
+        Window window = windowGetWindow(win);
+        if (!windowSystemInitialized) {
+            return;
+        }
+        if (window == null) {
+            return;
+        }
+        windowShow(win);
+    }
+
+    /** Port of {@code _GNW_check_buttons} (0x4D8A10). */
+    static int gnwCheckButtons(Window window, int[] keyCodePtr) {
+        if ((window.flags & WindowFlags.WINDOW_HIDDEN.id()) != 0) {
+            return -1;
+        }
+
+        Button button = window.buttonListHead;
+        Button prevHoveredButton = window.hoveredButton;
+        Button prevClickedButton = window.clickedButton;
+
+        Geometry.Rect buttonScreenRect = new Geometry.Rect();
+        if (prevHoveredButton != null) {
+            Geometry.copyTo(buttonScreenRect, prevHoveredButton.rect);
+            Geometry.rectOffset(buttonScreenRect, window.rect.left, window.rect.top);
+        } else if (prevClickedButton != null) {
+            Geometry.copyTo(buttonScreenRect, prevClickedButton.rect);
+            Geometry.rectOffset(buttonScreenRect, window.rect.left, window.rect.top);
+        }
+
+        keyCodePtr[0] = -1;
+
+        if (Mouse.mouseClickIn(window.rect.left, window.rect.top, window.rect.right, window.rect.bottom)) {
+            int mouseEvent = Mouse.mouseGetEvent();
+            if ((window.flags & WindowFlags.WINDOW_FLAG_0x40.id()) != 0
+                    || (mouseEvent & Mouse.EVENT_LEFT_BUTTON_DOWN) == 0) {
+                if (mouseEvent == 0) {
+                    window.clickedButton = null;
+                }
+            } else {
+                windowShow(window.id);
+            }
+
+            if (prevHoveredButton != null) {
+                if (!buttonUnderMouse(prevHoveredButton, buttonScreenRect)) {
+                    if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                        keyCodePtr[0] = prevHoveredButton.mouseExitEventCode;
+                    }
+
+                    if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0
+                            && (prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                        buttonDraw(prevHoveredButton, window, prevHoveredButton.pressedImage, true, null,
+                            true);
+                    } else {
+                        buttonDraw(prevHoveredButton, window, prevHoveredButton.normalImage, true, null,
+                            true);
+                    }
+
+                    window.hoveredButton = null;
+
+                    lastButtonWinId = window.id;
+
+                    if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                        if (prevHoveredButton.mouseExitProc != null) {
+                            prevHoveredButton.mouseExitProc.handle(prevHoveredButton.id, keyCodePtr[0]);
+                            if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_0x40.id()) == 0) {
+                                keyCodePtr[0] = -1;
+                            }
+                        }
+                    }
+                    return 0;
+                }
+                button = prevHoveredButton;
+            } else if (prevClickedButton != null) {
+                if (buttonUnderMouse(prevClickedButton, buttonScreenRect)) {
+                    if ((prevClickedButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                        keyCodePtr[0] = prevClickedButton.mouseEnterEventCode;
+                    }
+
+                    if ((prevClickedButton.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0
+                            && (prevClickedButton.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                        buttonDraw(prevClickedButton, window, prevClickedButton.pressedImage, true, null,
+                            true);
+                    } else {
+                        buttonDraw(prevClickedButton, window, prevClickedButton.normalImage, true, null,
+                            true);
+                    }
+
+                    window.hoveredButton = prevClickedButton;
+
+                    lastButtonWinId = window.id;
+
+                    if ((prevClickedButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                        if (prevClickedButton.mouseEnterProc != null) {
+                            prevClickedButton.mouseEnterProc.handle(prevClickedButton.id, keyCodePtr[0]);
+                            if ((prevClickedButton.flags & ButtonFlags.BUTTON_FLAG_0x40.id()) == 0) {
+                                keyCodePtr[0] = -1;
+                            }
+                        }
+                    }
+                    return 0;
+                }
+            }
+
+            int dragWindowId = lastButtonWinId;
+            if (lastButtonWinId != -1 && lastButtonWinId != window.id) {
+                Window previousWindow = windowGetWindow(lastButtonWinId);
+                if (previousWindow != null) {
+                    lastButtonWinId = -1;
+
+                    Button previousHoveredButton = previousWindow.hoveredButton;
+                    if (previousHoveredButton != null) {
+                        if ((previousHoveredButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                            keyCodePtr[0] = previousHoveredButton.mouseExitEventCode;
+                        }
+
+                        if ((previousHoveredButton.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0
+                                && (previousHoveredButton.flags
+                                        & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                            buttonDraw(previousHoveredButton, previousWindow,
+                                previousHoveredButton.pressedImage, true, null, true);
+                        } else {
+                            buttonDraw(previousHoveredButton, previousWindow,
+                                previousHoveredButton.normalImage, true, null, true);
+                        }
+
+                        previousWindow.clickedButton = null;
+                        previousWindow.hoveredButton = null;
+
+                        if ((previousHoveredButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                            if (previousHoveredButton.mouseExitProc != null) {
+                                previousHoveredButton.mouseExitProc.handle(previousHoveredButton.id,
+                                    keyCodePtr[0]);
+                                if ((previousHoveredButton.flags & ButtonFlags.BUTTON_FLAG_0x40.id()) == 0) {
+                                    keyCodePtr[0] = -1;
+                                }
+                            }
+                        }
+                        return 0;
+                    }
+                }
+            }
+
+            ButtonCallback cb = null;
+
+            while (button != null) {
+                if ((button.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                    Geometry.copyTo(buttonScreenRect, button.rect);
+                    Geometry.rectOffset(buttonScreenRect, window.rect.left, window.rect.top);
+                    if (buttonUnderMouse(button, buttonScreenRect)) {
+                        if ((button.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                            if ((mouseEvent & Mouse.EVENT_ANY_BUTTON_DOWN) != 0) {
+                                if ((mouseEvent & Mouse.EVENT_RIGHT_BUTTON_DOWN) != 0
+                                        && (button.flags & ButtonFlags.BUTTON_FLAG_RIGHT_MOUSE_BUTTON_CONFIGURED
+                                                .id()) == 0) {
+                                    button = null;
+                                    break;
+                                }
+
+                                if (button != window.hoveredButton && button != window.clickedButton) {
+                                    break;
+                                }
+
+                                window.clickedButton = button;
+                                window.hoveredButton = button;
+
+                                if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0) {
+                                    if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECK_ON_DOWN.id()) != 0) {
+                                        if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                                            if ((button.flags
+                                                    & ButtonFlags.BUTTON_FLAG_NO_TOGGLE_OFF.id()) == 0) {
+                                                if (button.buttonGroup != null) {
+                                                    button.buttonGroup.currChecked--;
+                                                }
+
+                                                if ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_DOWN) != 0) {
+                                                    keyCodePtr[0] = button.leftMouseUpEventCode;
+                                                    cb = button.leftMouseUpProc;
+                                                } else {
+                                                    keyCodePtr[0] = button.rightMouseUpEventCode;
+                                                    cb = button.rightMouseUpProc;
+                                                }
+
+                                                button.flags &= ~ButtonFlags.BUTTON_FLAG_CHECKED.id();
+                                            }
+                                        } else {
+                                            if (buttonCheckGroup(button) == -1) {
+                                                button = null;
+                                                break;
+                                            }
+
+                                            if ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_DOWN) != 0) {
+                                                keyCodePtr[0] = button.lefMouseDownEventCode;
+                                                cb = button.leftMouseDownProc;
+                                            } else {
+                                                keyCodePtr[0] = button.rightMouseDownEventCode;
+                                                cb = button.rightMouseDownProc;
+                                            }
+
+                                            button.flags |= ButtonFlags.BUTTON_FLAG_CHECKED.id();
+                                        }
+                                    }
+                                } else {
+                                    if (buttonCheckGroup(button) == -1) {
+                                        button = null;
+                                        break;
+                                    }
+
+                                    if ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_DOWN) != 0) {
+                                        keyCodePtr[0] = button.lefMouseDownEventCode;
+                                        cb = button.leftMouseDownProc;
+                                    } else {
+                                        keyCodePtr[0] = button.rightMouseDownEventCode;
+                                        cb = button.rightMouseDownProc;
+                                    }
+                                }
+
+                                buttonDraw(button, window, button.pressedImage, true, null, true);
+                                break;
+                            }
+
+                            Button clickedButton = window.clickedButton;
+                            if (button == clickedButton
+                                    && (mouseEvent & Mouse.EVENT_ANY_BUTTON_UP) != 0) {
+                                window.clickedButton = null;
+                                window.hoveredButton = clickedButton;
+
+                                if ((clickedButton.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0) {
+                                    if ((clickedButton.flags
+                                            & ButtonFlags.BUTTON_FLAG_CHECK_ON_DOWN.id()) == 0) {
+                                        if ((clickedButton.flags
+                                                & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                                            if ((clickedButton.flags
+                                                    & ButtonFlags.BUTTON_FLAG_NO_TOGGLE_OFF.id()) == 0) {
+                                                if (clickedButton.buttonGroup != null) {
+                                                    clickedButton.buttonGroup.currChecked--;
+                                                }
+
+                                                if ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_UP) != 0) {
+                                                    keyCodePtr[0] = button.leftMouseUpEventCode;
+                                                    cb = button.leftMouseUpProc;
+                                                } else {
+                                                    keyCodePtr[0] = button.rightMouseUpEventCode;
+                                                    cb = button.rightMouseUpProc;
+                                                }
+
+                                                button.flags &= ~ButtonFlags.BUTTON_FLAG_CHECKED.id();
+                                            }
+                                        } else {
+                                            if (buttonCheckGroup(clickedButton) == -1) {
+                                                button = null;
+                                                buttonDraw(clickedButton, window, clickedButton.normalImage,
+                                                    true, null, true);
+                                                break;
+                                            }
+
+                                            if ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_UP) != 0) {
+                                                keyCodePtr[0] = clickedButton.lefMouseDownEventCode;
+                                                cb = clickedButton.leftMouseDownProc;
+                                            } else {
+                                                keyCodePtr[0] = clickedButton.rightMouseDownEventCode;
+                                                cb = clickedButton.rightMouseDownProc;
+                                            }
+
+                                            clickedButton.flags |= ButtonFlags.BUTTON_FLAG_CHECKED.id();
+                                        }
+                                    }
+                                } else {
+                                    if ((clickedButton.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                                        if (clickedButton.buttonGroup != null) {
+                                            clickedButton.buttonGroup.currChecked--;
+                                        }
+                                    }
+
+                                    if ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_UP) != 0) {
+                                        keyCodePtr[0] = clickedButton.leftMouseUpEventCode;
+                                        cb = clickedButton.leftMouseUpProc;
+                                    } else {
+                                        keyCodePtr[0] = clickedButton.rightMouseUpEventCode;
+                                        cb = clickedButton.rightMouseUpProc;
+                                    }
+                                }
+
+                                if (button.hoverImage != null) {
+                                    buttonDraw(button, window, button.hoverImage, true, null, true);
+                                } else {
+                                    buttonDraw(button, window, button.normalImage, true, null, true);
+                                }
+                                break;
+                            }
+                        }
+
+                        if (window.hoveredButton == null && mouseEvent == 0) {
+                            window.hoveredButton = button;
+                            if ((button.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                                keyCodePtr[0] = button.mouseEnterEventCode;
+                                cb = button.mouseEnterProc;
+                            }
+
+                            buttonDraw(button, window, button.hoverImage, true, null, true);
+                        }
+                        break;
+                    }
+                }
+                button = button.next;
+            }
+
+            if (button != null) {
+                if ((button.flags & ButtonFlags.BUTTON_DRAG_HANDLE.id()) != 0
+                        && (mouseEvent & Mouse.EVENT_ANY_BUTTON_DOWN) != 0
+                        && (mouseEvent & Mouse.EVENT_ANY_BUTTON_REPEAT) == 0) {
+                    winDrag(window.id);
+                    buttonDraw(button, window, button.normalImage, true, null, true);
+                }
+            } else if ((window.flags & WindowFlags.WINDOW_DRAGGABLE_BY_BACKGROUND.id()) != 0) {
+                dragWindowId |= mouseEvent << 8;
+                if ((mouseEvent & Mouse.EVENT_ANY_BUTTON_DOWN) != 0
+                        && (mouseEvent & Mouse.EVENT_ANY_BUTTON_REPEAT) == 0) {
+                    winDrag(window.id);
+                }
+            }
+
+            lastButtonWinId = window.id;
+
+            if (button != null) {
+                if (cb != null) {
+                    cb.handle(button.id, keyCodePtr[0]);
+                    if ((button.flags & ButtonFlags.BUTTON_FLAG_0x40.id()) == 0) {
+                        keyCodePtr[0] = -1;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        if (prevHoveredButton != null) {
+            keyCodePtr[0] = prevHoveredButton.mouseExitEventCode;
+
+            byte[] data;
+            if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0
+                    && (prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                data = prevHoveredButton.pressedImage;
+            } else {
+                data = prevHoveredButton.normalImage;
+            }
+
+            buttonDraw(prevHoveredButton, window, data, true, null, true);
+
+            window.hoveredButton = null;
+        }
+
+        if (keyCodePtr[0] != -1) {
+            lastButtonWinId = window.id;
+
+            if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                if (prevHoveredButton.mouseExitProc != null) {
+                    prevHoveredButton.mouseExitProc.handle(prevHoveredButton.id, keyCodePtr[0]);
+                    if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_0x40.id()) == 0) {
+                        keyCodePtr[0] = -1;
+                    }
+                }
+            }
+            return 0;
+        }
+
+        if (prevHoveredButton != null) {
+            if ((prevHoveredButton.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+                if (prevHoveredButton.mouseExitProc != null) {
+                    prevHoveredButton.mouseExitProc.handle(prevHoveredButton.id, keyCodePtr[0]);
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    /** Port of {@code _button_under_mouse} (0x4D9214). */
+    static boolean buttonUnderMouse(Button button, Geometry.Rect rect) {
+        if (!Mouse.mouseClickIn(rect.left, rect.top, rect.right, rect.bottom)) {
+            return false;
+        }
+
+        if (button.mask == null) {
+            return true;
+        }
+
+        int[] pos = new int[2];
+        Mouse.mouseGetPosition(pos);
+        int x = pos[0] - rect.left;
+        int y = pos[1] - rect.top;
+
+        int width = button.rect.right - button.rect.left + 1;
+        return button.mask[width * y + x] != 0;
+    }
+
+    /** Port of {@code buttonGetWindowId} (0x4D927C). */
+    public static int buttonGetWindowId(int btn) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Window[] windowPtr = new Window[1];
+        if (buttonGetButton(btn, windowPtr) == null) {
+            return -1;
+        }
+
+        return windowPtr[0].id;
+    }
+
+    /** Port of {@code _win_last_button_winID} (0x4D92B4). */
+    public static int winLastButtonWinID() {
+        return lastButtonWinId;
+    }
+
+    /** Port of {@code buttonDestroy} (0x4D92BC). */
+    public static int buttonDestroy(int btn) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Window[] windowPtr = new Window[1];
+        Button button = buttonGetButton(btn, windowPtr);
+        if (button == null) {
+            return -1;
+        }
+        Window window = windowPtr[0];
+
+        if (button.prev != null) {
+            button.prev.next = button.next;
+        } else {
+            window.buttonListHead = button.next;
+        }
+
+        if (button.next != null) {
+            button.next.prev = button.prev;
+        }
+
+        windowFill(window.id, button.rect.left, button.rect.top,
+            button.rect.right - button.rect.left + 1, button.rect.bottom - button.rect.top + 1,
+            window.color);
+
+        if (button == window.hoveredButton) {
+            window.hoveredButton = null;
+        }
+
+        if (button == window.clickedButton) {
+            window.clickedButton = null;
+        }
+
+        buttonFree(button);
+
+        return 0;
+    }
+
+    /** Port of {@code buttonEnable} (0x4D9474). */
+    public static int buttonEnable(int btn) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Window[] windowPtr = new Window[1];
+        Button button = buttonGetButton(btn, windowPtr);
+        if (button == null) {
+            return -1;
+        }
+
+        if ((button.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) != 0) {
+            button.flags &= ~ButtonFlags.BUTTON_FLAG_DISABLED.id();
+            buttonDraw(button, windowPtr[0], button.currentImage, true, null, false);
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code buttonDisable} (0x4D94D0). */
+    public static int buttonDisable(int btn) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Window[] windowPtr = new Window[1];
+        Button button = buttonGetButton(btn, windowPtr);
+        if (button == null) {
+            return -1;
+        }
+
+        if ((button.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) == 0) {
+            button.flags |= ButtonFlags.BUTTON_FLAG_DISABLED.id();
+
+            buttonDraw(button, windowPtr[0], button.currentImage, true, null, false);
+
+            if (button == windowPtr[0].hoveredButton) {
+                if (windowPtr[0].hoveredButton.mouseExitEventCode != -1) {
+                    Input.enqueueInputEvent(windowPtr[0].hoveredButton.mouseExitEventCode);
+                }
+
+                windowPtr[0].hoveredButton = null;
+            }
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code _win_set_button_rest_state} (0x4D9554). */
+    public static int winSetButtonRestState(int btn, boolean checked, int flags) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Window[] windowPtr = new Window[1];
+        Button button = buttonGetButton(btn, windowPtr);
+        if (button == null) {
+            return -1;
+        }
+
+        if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECKABLE.id()) != 0) {
+            int keyCode = -1;
+
+            if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                if (!checked) {
+                    button.flags &= ~ButtonFlags.BUTTON_FLAG_CHECKED.id();
+
+                    if ((flags & 0x02) == 0) {
+                        buttonDraw(button, windowPtr[0], button.normalImage, true, null, false);
+                    }
+
+                    if (button.buttonGroup != null) {
+                        button.buttonGroup.currChecked--;
+                    }
+
+                    keyCode = button.leftMouseUpEventCode;
+                }
+            } else {
+                if (checked) {
+                    button.flags |= ButtonFlags.BUTTON_FLAG_CHECKED.id();
+
+                    if ((flags & 0x02) == 0) {
+                        buttonDraw(button, windowPtr[0], button.pressedImage, true, null, false);
+                    }
+
+                    if (button.buttonGroup != null) {
+                        button.buttonGroup.currChecked++;
+                    }
+
+                    keyCode = button.lefMouseDownEventCode;
+                }
+            }
+
+            if (keyCode != -1) {
+                if ((flags & 0x01) != 0) {
+                    Input.enqueueInputEvent(keyCode);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code _win_group_check_buttons} (0x4D962C). */
+    public static int winGroupCheckButtons(int buttonCount, int[] btns, int maxChecked,
+            RadioButtonCallback func) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (buttonCount > BUTTON_GROUP_BUTTON_LIST_CAPACITY) {
+            return -1;
+        }
+
+        for (int groupIndex = 0; groupIndex < buttonGroups.length; groupIndex++) {
+            ButtonGroup buttonGroup = buttonGroups[groupIndex];
+            if (buttonGroup.buttonsLength == 0) {
+                buttonGroup.currChecked = 0;
+
+                for (int buttonIndex = 0; buttonIndex < buttonCount; buttonIndex++) {
+                    Button button = buttonGetButton(btns[buttonIndex], null);
+                    if (button == null) {
+                        return -1;
+                    }
+
+                    buttonGroup.buttons[buttonIndex] = button;
+
+                    button.buttonGroup = buttonGroup;
+
+                    if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                        buttonGroup.currChecked++;
+                    }
+                }
+
+                buttonGroup.buttonsLength = buttonCount;
+                buttonGroup.maxChecked = maxChecked;
+                buttonGroup.func = func;
+                return 0;
+            }
+        }
+
+        return -1;
+    }
+
+    /** Port of {@code _win_group_radio_buttons} (0x4D96EC). */
+    public static int winGroupRadioButtons(int count, int[] btns) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (winGroupCheckButtons(count, btns, 1, null) == -1) {
+            return -1;
+        }
+
+        Button button = buttonGetButton(btns[0], null);
+        ButtonGroup buttonGroup = button.buttonGroup;
+
+        for (int index = 0; index < buttonGroup.buttonsLength; index++) {
+            Button groupButton = buttonGroup.buttons[index];
+            groupButton.flags |= ButtonFlags.BUTTON_FLAG_RADIO.id();
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code _button_check_group} (0x4D9744). */
+    static int buttonCheckGroup(Button button) {
+        if (button.buttonGroup == null) {
+            return 0;
+        }
+
+        if ((button.flags & ButtonFlags.BUTTON_FLAG_RADIO.id()) != 0) {
+            if (button.buttonGroup.currChecked > 0) {
+                for (int index = 0; index < button.buttonGroup.buttonsLength; index++) {
+                    Button groupButton = button.buttonGroup.buttons[index];
+                    if ((groupButton.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                        groupButton.flags &= ~ButtonFlags.BUTTON_FLAG_CHECKED.id();
+
+                        Window[] windowPtr = new Window[1];
+                        buttonGetButton(groupButton.id, windowPtr);
+                        buttonDraw(groupButton, windowPtr[0], groupButton.normalImage, true, null, true);
+
+                        if (groupButton.leftMouseUpProc != null) {
+                            groupButton.leftMouseUpProc.handle(groupButton.id,
+                                groupButton.leftMouseUpEventCode);
+                        }
+                    }
+                }
+            }
+
+            if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) == 0) {
+                button.buttonGroup.currChecked++;
+            }
+
+            return 0;
+        }
+
+        if (button.buttonGroup.currChecked < button.buttonGroup.maxChecked) {
+            if ((button.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) == 0) {
+                button.buttonGroup.currChecked++;
+            }
+
+            return 0;
+        }
+
+        if (button.buttonGroup.func != null) {
+            button.buttonGroup.func.handle(button.id);
+        }
+
+        return -1;
+    }
+
+    /** Port of {@code _button_draw} (0x4D9808). Null data only updates state, never NPEs. */
+    static void buttonDraw(Button button, Window window, byte[] data, boolean draw, Geometry.Rect bound,
+            boolean sound) {
+        byte[] previousImage = null;
+        if (data != null) {
+            Geometry.Rect screenRect = new Geometry.Rect();
+            Geometry.copyTo(screenRect, button.rect);
+            Geometry.rectOffset(screenRect, window.rect.left, window.rect.top);
+
+            Geometry.Rect clippedRect = new Geometry.Rect();
+            if (bound != null) {
+                if (Geometry.rectIntersection(screenRect, bound, screenRect) == -1) {
+                    return;
+                }
+
+                Geometry.copyTo(clippedRect, screenRect);
+                Geometry.rectOffset(clippedRect, -window.rect.left, -window.rect.top);
+            } else {
+                Geometry.copyTo(clippedRect, button.rect);
+            }
+
+            if (data == button.normalImage
+                    && (button.flags & ButtonFlags.BUTTON_FLAG_CHECKED.id()) != 0) {
+                data = button.pressedImage;
+            }
+
+            if ((button.flags & ButtonFlags.BUTTON_FLAG_DISABLED.id()) != 0) {
+                if (data == button.normalImage) {
+                    data = button.disabledNormalImage;
+                } else if (data == button.pressedImage) {
+                    data = button.disabledPressedImage;
+                } else if (data == button.hoverImage) {
+                    data = button.disabledHoverImage;
+                }
+            } else {
+                if (data == button.disabledNormalImage) {
+                    data = button.normalImage;
+                } else if (data == button.disabledPressedImage) {
+                    data = button.pressedImage;
+                } else if (data == button.disabledHoverImage) {
+                    data = button.hoverImage;
+                }
+            }
+
+            if (data != null) {
+                if (!draw) {
+                    int width = button.rect.right - button.rect.left + 1;
+                    int srcOfs = (clippedRect.top - button.rect.top) * width + clippedRect.left
+                        - button.rect.left;
+                    int destOfs = window.width * clippedRect.top + clippedRect.left;
+                    int blitWidth = clippedRect.right - clippedRect.left + 1;
+                    int blitHeight = clippedRect.bottom - clippedRect.top + 1;
+                    if ((button.flags & ButtonFlags.BUTTON_FLAG_TRANSPARENT.id()) != 0) {
+                        Draw.blitBufferToBufferTrans(data, srcOfs, blitWidth, blitHeight, width,
+                            window.buffer, destOfs, window.width);
+                    } else {
+                        Draw.blitBufferToBuffer(data, srcOfs, blitWidth, blitHeight, width, window.buffer,
+                            destOfs, window.width);
+                    }
+                }
+
+                previousImage = button.currentImage;
+                button.currentImage = data;
+
+                if (draw) {
+                    gnwWinRefresh(window, screenRect, null);
+                }
+            }
+        }
+
+        if (sound) {
+            if (previousImage != data) {
+                if (data == button.pressedImage && button.pressSoundFunc != null) {
+                    button.pressSoundFunc.handle(button.id, button.lefMouseDownEventCode);
+                } else if (data == button.normalImage && button.releaseSoundFunc != null) {
+                    button.releaseSoundFunc.handle(button.id, button.leftMouseUpEventCode);
+                }
+            }
+        }
+    }
+
+    /** Port of {@code _win_button_press_and_release} (0x4D9AA0). */
+    public static int winButtonPressAndRelease(int btn) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Window[] windowPtr = new Window[1];
+        Button button = buttonGetButton(btn, windowPtr);
+        if (button == null) {
+            return -1;
+        }
+
+        buttonDraw(button, windowPtr[0], button.pressedImage, true, null, true);
+
+        if (button.leftMouseDownProc != null) {
+            button.leftMouseDownProc.handle(btn, button.lefMouseDownEventCode);
+
+            if ((button.flags & ButtonFlags.BUTTON_FLAG_0x40.id()) != 0) {
+                Input.enqueueInputEvent(button.lefMouseDownEventCode);
+            }
+        } else {
+            if (button.lefMouseDownEventCode != -1) {
+                Input.enqueueInputEvent(button.lefMouseDownEventCode);
+            }
+        }
+
+        buttonDraw(button, windowPtr[0], button.normalImage, true, null, true);
+
+        if (button.leftMouseUpProc != null) {
+            button.leftMouseUpProc.handle(btn, button.leftMouseUpEventCode);
+
+            if ((button.flags & ButtonFlags.BUTTON_FLAG_0x40.id()) != 0) {
+                Input.enqueueInputEvent(button.leftMouseUpEventCode);
+            }
+        } else {
+            if (button.leftMouseUpEventCode != -1) {
+                Input.enqueueInputEvent(button.leftMouseUpEventCode);
+            }
+        }
+
+        return 0;
     }
 
     /** Port of {@code windowIsValidWindowId} (0x4D7888). */
@@ -1468,6 +2663,7 @@ public final class WindowManager {
         for (int index = 0; index < buttonGroups.length; index++) {
             buttonGroups[index] = new ButtonGroup();
         }
+        lastButtonWinId = -1;
         txTyCounter = 0;
         tmPersistence = 0;
         tmAdd = 0;

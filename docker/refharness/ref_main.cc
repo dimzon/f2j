@@ -4056,6 +4056,215 @@ void sectionMouseWin()
     kbSim(SDL_SCANCODE_B, 0);
     std::printf("kb-b=%d\n", bKey);
 
+    // Leave the system live for [winbtn]; clear the mouse event latch
+    // (two zero-sims provably reach the idle path on a quiet device).
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_mouse_simulate_input(0, 0, 0);
+}
+
+static int testEnterProcCalls = 0;
+static int testEnterProcCode = -99;
+
+static void testEnterProc(int btn, int keyCode)
+{
+    (void)btn;
+    testEnterProcCalls++;
+    testEnterProcCode = keyCode;
+}
+
+void sectionWinBtn()
+{
+    std::puts("[winbtn]");
+
+    // Reuses [mousewin]'s live system: re-init would fail at fonts (managers
+    // are process-lifetime) and report already-initialized. Reset the cursor
+    // to the default frame so the click math below uses hot (1,1).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+    fallout::mouseSetFrame(nullptr, 0, 0, 0, 0, 0, 0);
+    fallout::mouseManagerShowMouse();
+
+    int win = fallout::windowCreate(10, 10, 120, 80, (fallout::ColorWithFlags)5, 0);
+    fallout::windowShow(win);
+
+    int btn1 = fallout::buttonCreate(win, 5, 5, 40, 20, 11, 12, 13, 14, nullptr, nullptr, nullptr, 0);
+    int btn2 = fallout::buttonCreate(win, 50, 5, 40, 20, 21, 22, 23, 24, nullptr, nullptr, nullptr,
+        fallout::BUTTON_FLAG_0x40);
+    std::printf("btn1=%d btn2=%d btnwin=%d lastwin=%d\n",
+        btn1, btn2, fallout::buttonGetWindowId(btn1), fallout::_win_last_button_winID());
+
+    // Hover btn1 (center at window(10,10) + btn(5,5) + half size).
+    fallout::_mouse_set_position(35, 25);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int hoverCode = fallout::_win_check_all_buttons();
+    // Move away from every button.
+    fallout::_mouse_set_position(115, 75);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int exitCode = fallout::_win_check_all_buttons();
+    std::printf("hover=%d exit=%d\n", hoverCode, exitCode);
+
+    // Click btn1: hover, down, up.
+    fallout::_mouse_set_position(35, 25);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    int downCode = fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int upCode = fallout::_win_check_all_buttons();
+    std::printf("down=%d up=%d\n", downCode, upCode);
+
+    // Right button on unconfigured btn1, then configure and repeat.
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_RIGHT_BUTTON_DOWN);
+    int rightUnconf = fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int rightUpUnconf = fallout::_win_check_all_buttons();
+    fallout::buttonSetRightMouseCallbacks(btn1, 31, 32, nullptr, nullptr);
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_RIGHT_BUTTON_DOWN);
+    int rightDownConf = fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int rightUpConf = fallout::_win_check_all_buttons();
+    std::printf("right-unconf=%d right-up-unconf=%d right-down-conf=%d right-up-conf=%d\n",
+        rightUnconf, rightUpUnconf, rightDownConf, rightUpConf);
+
+    // Enter proc fires with the code, then the code is cleared (no 0x40).
+    fallout::buttonSetMouseCallbacks(btn1, testEnterProc, nullptr, nullptr, nullptr);
+    fallout::_mouse_set_position(115, 75);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_set_position(35, 25);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int procRet = fallout::_win_check_all_buttons();
+    std::printf("proc-calls=%d proc-code=%d proc-ret=%d\n", testEnterProcCalls, testEnterProcCode,
+        procRet);
+    // btn2 keeps its code (0x40 flag).
+    fallout::buttonSetMouseCallbacks(btn2, testEnterProc, nullptr, nullptr, nullptr);
+    fallout::_mouse_set_position(115, 75);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_set_position(80, 25);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int procRet40 = fallout::_win_check_all_buttons();
+    std::printf("proc-ret40=%d\n", procRet40);
+
+    // Checkable button toggle (double pump: first drains btn2's exit).
+    int btn3 = fallout::buttonCreate(win, 5, 30, 40, 20, 41, 42, 33, 34, nullptr, nullptr, nullptr,
+        fallout::BUTTON_FLAG_CHECKABLE);
+    fallout::_mouse_set_position(35, 55);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_win_check_all_buttons();
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    int checkDown = fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int checkUp = fallout::_win_check_all_buttons();
+    int checkedAfter = fallout::_win_button_down(btn3) ? 1 : 0;
+    std::printf("check-down=%d check-up=%d checked=%d\n", checkDown, checkUp, checkedAfter);
+
+    // Disabled button ignores clicks; disabling a hovered button enqueues
+    // its exit code (drained here to keep later vectors hermetic).
+    fallout::buttonDisable(btn3);
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    int disabledDown = fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::buttonEnable(btn3);
+    int disableExit = fallout::inputGetInput();
+    std::printf("disabled-down=%d disable-exit=%d\n", disabledDown, disableExit);
+
+    // Radio group: checking one unchecks the other.
+    int btn4 = fallout::buttonCreate(win, 5, 55, 30, 15, 51, 52, 53, 54, nullptr, nullptr, nullptr,
+        fallout::BUTTON_FLAG_CHECKABLE);
+    int btn5 = fallout::buttonCreate(win, 40, 55, 30, 15, 61, 62, 63, 64, nullptr, nullptr, nullptr,
+        fallout::BUTTON_FLAG_CHECKABLE);
+    int radioRc = 0;
+    {
+        int btns[2] = { btn4, btn5 };
+        radioRc = fallout::_win_group_radio_buttons(2, btns);
+    }
+    fallout::_win_set_button_rest_state(btn4, true, 0);
+    int restChecked = fallout::_win_button_down(btn4) ? 1 : 0;
+    fallout::_mouse_set_position(20, 72);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_win_check_all_buttons();
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    int radio4 = fallout::_win_button_down(btn4) ? 1 : 0;
+    int radio5 = fallout::_win_button_down(btn5) ? 1 : 0;
+    std::printf("radio=%d rest-checked=%d radio4=%d radio5=%d\n", radioRc, restChecked, radio4,
+        radio5);
+
+    // Rest state with enqueue flag feeds inputGetInput.
+    fallout::_win_set_button_rest_state(btn5, true, 1);
+    int restCode = fallout::inputGetInput();
+    std::printf("rest-code=%d\n", restCode);
+
+    // Press-and-release enqueues down/up codes.
+    int pressRc = fallout::_win_button_press_and_release(btn1);
+    int pressCode1 = fallout::inputGetInput();
+    int pressCode2 = fallout::inputGetInput();
+    std::printf("press-rc=%d press-code1=%d press-code2=%d\n", pressRc, pressCode1, pressCode2);
+
+    // Text button paints into the window buffer.
+    int textBtn = fallout::_win_register_text_button(win, 75, 50, 71, 72, 73, 74, (char*)"OK", 0);
+    std::printf("textbtn=%d textbtn-crc=%08lX\n", textBtn, winBufCrc(win));
+
+    // Graphic button with pattern images paints on refresh.
+    unsigned char normal[40 * 20];
+    for (int i = 0; i < 40 * 20; i++) {
+        normal[i] = (unsigned char)(i & 0x3F);
+    }
+    int gfxBtn = fallout::buttonCreate(win, 75, 5, 40, 20, 81, 82, 83, 84, normal, nullptr, nullptr,
+        0);
+    fallout::windowRefresh(win);
+    std::printf("gfxbtn=%d gfxbtn-crc=%08lX\n", gfxBtn, winBufCrc(win));
+
+    // Masked hit test: opaque pixel hits, transparent misses.
+    unsigned char mask[40 * 20];
+    for (int i = 0; i < 40 * 20; i++) {
+        mask[i] = 0;
+    }
+    mask[10 * 40 + 20] = 1;
+    fallout::buttonSetMask(gfxBtn, mask);
+    // Opaque mask pixel: first pump drains the previous hover's exit,
+    // second hovers the button.
+    fallout::_mouse_set_position(10 + 75 + 20, 10 + 5 + 10);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    int maskHit = fallout::_win_check_all_buttons();
+    // Transparent mask pixel inside the rect: exit fires, hover never lands.
+    fallout::_mouse_set_position(10 + 75 + 21, 10 + 5 + 10);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int maskExit = fallout::_win_check_all_buttons();
+    int maskMiss = fallout::_win_check_all_buttons();
+    std::printf("mask-hit=%d mask-exit=%d mask-miss=%d\n", maskHit, maskExit, maskMiss);
+
+    // Menu bars pass input through when no pulldown matches.
+    int menuPassthrough = fallout::_GNW_check_menu_bars(42);
+    std::printf("menu-passthrough=%d\n", menuPassthrough);
+
+    // inputGetInput: queued event, empty queue, mouse-button event.
+    fallout::enqueueInputEvent(55);
+    int inputCode = fallout::inputGetInput();
+    int inputEmpty = fallout::inputGetInput();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    int inputMouse = fallout::inputGetInput();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    std::printf("input-code=%d input-empty=%d input-mouse=%d lastwin=%d\n", inputCode, inputEmpty,
+        inputMouse, fallout::_win_last_button_winID());
+
+    fallout::buttonDestroy(btn2);
+    int destroyedLookup = fallout::buttonGetWindowId(btn2);
+    std::printf("destroyed-lookup=%d\n", destroyedLookup);
+
     fallout::windowManagerExit();
 }
 
@@ -4127,5 +4336,6 @@ int main()
     sectionAbility();
     sectionUiTypes();
     sectionMouseWin();
+    sectionWinBtn();
     return 0;
 }

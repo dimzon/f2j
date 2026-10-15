@@ -5,8 +5,7 @@ package org.fallout2ce;
  * ticker registry + pump, input event queue, screenshots, init/exit and the
  * SDL message pump.
  *
- * <p>Not ported yet (need buttons/menus/movie/sfall/game): {@code
- * inputGetInput}, {@code _process_bk}, the click hook, text input.
+ * <p>Not ported yet (need movie/sfall/game): the click hook, text input.
  * Tick times come from {@link Ticks} (C {@code SDL_GetTicks}).
  */
 public final class Input {
@@ -254,6 +253,54 @@ public final class Input {
     /** Port of {@code get_input_position}. */
     public static Geometry.Point inputPosition() {
         return new Geometry.Point(inputMx, inputMy);
+    }
+
+    /** Port of {@code get_input_position} with out-param (input.cc). */
+    public static void getInputPosition(int[] out) {
+        out[0] = inputMx;
+        out[1] = inputMy;
+    }
+
+    /** Port of {@code inputGetInput} (0x4C8B78). */
+    public static int inputGetInput() {
+        gnw95ProcessMessage();
+
+        if (!programIsActive) {
+            gnw95LostFocus();
+        }
+
+        processBk();
+
+        int eventCode = dequeueInputEvent();
+        if (eventCode == -1
+                && (Mouse.mouseGetEvent() & (Mouse.EVENT_LEFT_BUTTON_DOWN | Mouse.EVENT_RIGHT_BUTTON_DOWN
+                    | Mouse.EVENT_LEFT_BUTTON_UP | Mouse.EVENT_RIGHT_BUTTON_UP)) != 0) {
+            int[] pos = new int[2];
+            Mouse.mouseGetPosition(pos);
+            inputMx = pos[0];
+            inputMy = pos[1];
+            return -2;
+        }
+
+        return WindowManager.gnwCheckMenuBars(eventCode);
+    }
+
+    /** Port of {@code _process_bk} (0x4C8BDC). */
+    static void processBk() {
+        tickersExecute();
+
+        Mouse.mouseInfo();
+
+        int keyCode = WindowManager.winCheckAllButtons();
+        if (keyCode != -1) {
+            enqueueInputEvent(keyCode);
+            return;
+        }
+
+        keyCode = Kb.kbGetch();
+        if (keyCode != -1) {
+            enqueueInputEvent(keyCode);
+        }
     }
 
     /** Port of {@code inputBlockForTocks}. */
@@ -504,6 +551,22 @@ public final class Input {
 
         buildNormalizedQwertyKeys();
         gnw95ClearTimeStamps();
+
+        mousePosition = new MousePosition() {
+            @Override
+            public int x() {
+                int[] pos = new int[2];
+                Mouse.mouseGetPosition(pos);
+                return pos[0];
+            }
+
+            @Override
+            public int y() {
+                int[] pos = new int[2];
+                Mouse.mouseGetPosition(pos);
+                return pos[1];
+            }
+        };
 
         queueWriteIndex = 0;
         queueReadIndex = -1;
