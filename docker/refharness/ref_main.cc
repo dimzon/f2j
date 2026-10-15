@@ -34,6 +34,7 @@
 #include "game_config.h"
 #include "input.h"
 #include "message.h"
+#include "region.h"
 #include "settings.h"
 #include "svga.h"
 #include "file_utils.h"
@@ -2310,6 +2311,74 @@ void sectionIfaceFont()
     fallout::settingsExit(false);
 }
 
+// regionContainsPoint lives in region.cc but is missing from region.h.
+namespace fallout {
+bool regionContainsPoint(Region* region, int x, int y);
+}
+
+void sectionRegion()
+{
+    std::puts("[region]");
+
+    fallout::Region* square = fallout::regionCreate(4);
+    std::printf("create name=[%s] flags=%d bounds=%d,%d,%d,%d centroid=%d,%d\n",
+        fallout::regionGetName(square), square->flags,
+        square->minX, square->minY, square->maxX, square->maxY,
+        square->centroidX, square->centroidY);
+
+    fallout::regionAddPoint(square, 0, 0);
+    fallout::regionAddPoint(square, 10, 0);
+    fallout::regionAddPoint(square, 10, 10);
+    fallout::regionAddPoint(square, 0, 10);
+    fallout::_regionSetBound(square);
+    std::printf("square bounds=%d,%d,%d,%d centroid=%d,%d\n",
+        square->minX, square->minY, square->maxX, square->maxY,
+        square->centroidX, square->centroidY);
+
+    std::printf("contains inside=%d vertex=%d edge=%d outside=%d neg=%d null=%d\n",
+        fallout::regionContainsPoint(square, 5, 5) ? 1 : 0,
+        fallout::regionContainsPoint(square, 0, 0) ? 1 : 0,
+        fallout::regionContainsPoint(square, 5, 0) ? 1 : 0,
+        fallout::regionContainsPoint(square, 15, 5) ? 1 : 0,
+        fallout::regionContainsPoint(square, -1, -1) ? 1 : 0,
+        fallout::regionContainsPoint(nullptr, 5, 5) ? 1 : 0);
+
+    fallout::Region* tri = fallout::regionCreate(0);
+    fallout::regionAddPoint(tri, 0, 0);
+    fallout::regionAddPoint(tri, 8, 0);
+    fallout::regionAddPoint(tri, 0, 6);
+    fallout::_regionSetBound(tri);
+    std::printf("tri bounds=%d,%d,%d,%d centroid=%d,%d in=%d out=%d\n",
+        tri->minX, tri->minY, tri->maxX, tri->maxY,
+        tri->centroidX, tri->centroidY,
+        fallout::regionContainsPoint(tri, 1, 1) ? 1 : 0,
+        fallout::regionContainsPoint(tri, 7, 5) ? 1 : 0);
+
+    fallout::regionSetName(square, "hello");
+    std::printf("name=[%s]\n", fallout::regionGetName(square));
+    fallout::regionSetName(square, nullptr);
+    std::printf("name-null=[%s]\n", fallout::regionGetName(square));
+    fallout::regionSetName(square, "0123456789abcdef0123456789abcdefXYZ");
+    std::printf("name-long=[%s]\n", fallout::regionGetName(square));
+    std::printf("name-null-region=[%s]\n", fallout::regionGetName(nullptr));
+
+    int tag = 12345;
+    std::printf("userdata-null=%d\n", fallout::regionGetUserData(square) == nullptr ? 1 : 0);
+    fallout::regionSetUserData(square, &tag);
+    std::printf("userdata-roundtrip=%d\n",
+        *(int*)fallout::regionGetUserData(square) == 12345 ? 1 : 0);
+
+    fallout::regionAddFlag(square, 1);
+    fallout::regionAddFlag(square, 4);
+    std::printf("flags=%d\n", square->flags);
+
+    fallout::regionAddPoint(nullptr, 1, 2);
+    fallout::regionDelete(nullptr);
+    fallout::regionDelete(square);
+    fallout::regionDelete(tri);
+    std::printf("deleted=1\n");
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2350,5 +2419,6 @@ int main()
     sectionDraw();
     sectionFont();
     sectionIfaceFont();
+    sectionRegion();
     return 0;
 }
