@@ -57,6 +57,8 @@
 #include "critter.h"
 #include "inventory.h"
 #include "item.h"
+#include "mouse.h"
+#include "mouse_manager.h"
 #include "obj_types.h"
 #include "perk.h"
 #include "proto.h"
@@ -64,7 +66,11 @@
 #include "proto_types.h"
 #include "skill.h"
 #include "stat.h"
+#include "touch.h"
 #include "version.h"
+#include "widget.h"
+#include "window.h"
+#include "window_manager.h"
 #include "font_manager.h"
 #include "game_config.h"
 #include "input.h"
@@ -3758,6 +3764,42 @@ void sectionAbility()
         (int)fallout::PerkProperty::Luck + 1);
 }
 
+void sectionUiTypes()
+{
+    std::puts("[uitypes]");
+
+    std::printf("wmerr-ok=%d wmerr-running=%d wmerr-title=%d wmerr-input=%d wminit-none=%d wminit-buffered=%d group-cap=%d\n",
+        (int)fallout::WINDOW_MANAGER_OK, (int)fallout::WINDOW_MANAGER_ERR_ALREADY_RUNNING,
+        (int)fallout::WINDOW_MANAGER_ERR_TITLE_NOT_SET, (int)fallout::WINDOW_MANAGER_ERR_INITIALIZING_INPUT,
+        (int)fallout::WINDOW_MANAGER_INIT_FLAG_NONE, (int)fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED,
+        BUTTON_GROUP_BUTTON_LIST_CAPACITY);
+    std::printf("win-defaults=%d win-dontmove=%d win-movetop=%d win-hidden=%d win-modal=%d win-transparent=%d win-draggable=%d win-managed=%d\n",
+        (int)fallout::WINDOW_USE_DEFAULTS, (int)fallout::WINDOW_DONT_MOVE_TOP, (int)fallout::WINDOW_MOVE_ON_TOP,
+        (int)fallout::WINDOW_HIDDEN, (int)fallout::WINDOW_MODAL, (int)fallout::WINDOW_TRANSPARENT,
+        (int)fallout::WINDOW_DRAGGABLE_BY_BACKGROUND, (int)fallout::WINDOW_MANAGED);
+    std::printf("btn-checkable=%d btn-checkondown=%d btn-notoggleoff=%d btn-disabled=%d btn-drag=%d btn-transparent=%d btn-graphic=%d btn-checked=%d btn-radio=%d btn-rightcfg=%d\n",
+        (int)fallout::BUTTON_FLAG_CHECKABLE, (int)fallout::BUTTON_FLAG_CHECK_ON_DOWN,
+        (int)fallout::BUTTON_FLAG_NO_TOGGLE_OFF, (int)fallout::BUTTON_FLAG_DISABLED,
+        (int)fallout::BUTTON_DRAG_HANDLE, (int)fallout::BUTTON_FLAG_TRANSPARENT,
+        (int)fallout::BUTTON_FLAG_GRAPHIC, (int)fallout::BUTTON_FLAG_CHECKED, (int)fallout::BUTTON_FLAG_RADIO,
+        (int)fallout::BUTTON_FLAG_RIGHT_MOUSE_BUTTON_CONFIGURED);
+    std::printf("align-left=%d align-right=%d align-center=%d mbev-count=%d mrbev-count=%d\n",
+        (int)fallout::TEXT_ALIGNMENT_LEFT, (int)fallout::TEXT_ALIGNMENT_RIGHT, (int)fallout::TEXT_ALIGNMENT_CENTER,
+        (int)fallout::MANAGED_BUTTON_MOUSE_EVENT_COUNT, (int)fallout::MANAGED_BUTTON_RIGHT_MOUSE_EVENT_COUNT);
+
+    std::printf("cursor-w=%d cursor-h=%d cursor-size=%d state-left=%d state-right=%d ev-down=%d ev-repeat=%d ev-up=%d ev-anydown=%d ev-wheel=%d repeat-time=%d sens-min=%.2f sens-max=%.2f\n",
+        MOUSE_DEFAULT_CURSOR_WIDTH, MOUSE_DEFAULT_CURSOR_HEIGHT, MOUSE_DEFAULT_CURSOR_SIZE,
+        MOUSE_STATE_LEFT_BUTTON_DOWN, MOUSE_STATE_RIGHT_BUTTON_DOWN,
+        MOUSE_EVENT_ANY_BUTTON_DOWN, MOUSE_EVENT_ANY_BUTTON_REPEAT, MOUSE_EVENT_ANY_BUTTON_UP,
+        MOUSE_EVENT_LEFT_BUTTON_DOWN | MOUSE_EVENT_RIGHT_BUTTON_DOWN, MOUSE_EVENT_WHEEL,
+        BUTTON_REPEAT_TIME, MOUSE_SENSITIVITY_MIN, MOUSE_SENSITIVITY_MAX);
+
+    std::printf("gesture-tap=%d gesture-pan=%d gstate-possible=%d gstate-ended=%d mgr-cache=%d mgr-none=%d mgr-static=%d mgr-animated=%d\n",
+        (int)fallout::kTap, (int)fallout::kPan, (int)fallout::kPossible, (int)fallout::kEnded,
+        MOUSE_MGR_CACHE_CAPACITY, (int)fallout::MOUSE_MANAGER_MOUSE_TYPE_NONE,
+        (int)fallout::MOUSE_MANAGER_MOUSE_TYPE_STATIC, (int)fallout::MOUSE_MANAGER_MOUSE_TYPE_ANIMATED);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3824,5 +3866,6 @@ int main()
     sectionPrototypes();
     sectionGameTypes();
     sectionAbility();
+    sectionUiTypes();
     return 0;
 }
