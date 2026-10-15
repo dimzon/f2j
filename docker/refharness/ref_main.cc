@@ -54,6 +54,7 @@
 #include "art_defs.h"
 #include "combat_ai_defs.h"
 #include "combat_defs.h"
+#include "obj_types.h"
 #include "version.h"
 #include "font_manager.h"
 #include "game_config.h"
@@ -3519,6 +3520,115 @@ void sectionCombatDefs()
         (int)fallout::HURT_COUNT, (int)fallout::HURT_FIRST);
 }
 
+void sectionObjTypes()
+{
+    std::puts("[objtypes]");
+
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    int rotAdd = static_cast<int>(fallout::ROTATION_NE + 2);
+    int rotSub = static_cast<int>(fallout::ROTATION_W - 3);
+    int rotMod = static_cast<int>(fallout::ROTATION_NW % fallout::ROTATION_COUNT);
+    fallout::Rotation rp = fallout::ROTATION_NW;
+    fallout::Rotation rpOld = rp++;
+    int rpNew = static_cast<int>(rp);
+    fallout::Rotation rm = fallout::ROTATION_NE;
+    --rm;
+    int rmNew = static_cast<int>(rm);
+    bool rotValidNeg = fallout::rotationIsValid(-1);
+    bool rotValidLast = fallout::rotationIsValid(fallout::ROTATION_LAST);
+    bool rotValidCount = fallout::rotationIsValid(fallout::ROTATION_COUNT);
+    std::printf("rot-first=%d rot-last=%d rot-count=%d add=%d sub=%d mod=%d post-old=%d post-new=%d pre-new=%d valid-neg=%d valid-last=%d valid-count=%d\n",
+        (int)fallout::ROTATION_FIRST, (int)fallout::ROTATION_LAST, (int)fallout::ROTATION_COUNT,
+        rotAdd, rotSub, rotMod, (int)rpOld, rpNew, rmNew,
+        rotValidNeg ? 1 : 0, rotValidLast ? 1 : 0, rotValidCount ? 1 : 0);
+
+    fallout::ObjectType ot = fallout::OBJ_TYPE_WALL;
+    fallout::ObjectType otOld = ot++;
+    int otNew = static_cast<int>(ot);
+    bool otValidLast = fallout::objectTypeIsValid(fallout::OBJ_TYPE_COUNT - 1);
+    bool otValidCount = fallout::objectTypeIsValid(fallout::OBJ_TYPE_COUNT);
+    std::printf("objtype-count=%d objtype-first=%d proto-count=%d valid-last=%d valid-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::OBJ_TYPE_COUNT, (int)fallout::OBJ_TYPE_FIRST, (int)fallout::OBJ_TYPE_PROTO_COUNT,
+        otValidLast ? 1 : 0, otValidCount ? 1 : 0, (int)otOld, otNew);
+
+    int outlineOr = static_cast<int>(fallout::OUTLINE_TYPE_HOSTILE | fallout::OUTLINE_TYPE_ITEM);
+    int outlineAnd = static_cast<int>(fallout::OUTLINE_TYPE_HOSTILE & (int)fallout::OUTLINE_TYPE_ITEM);
+    fallout::OutlineType ox = fallout::OUTLINE_TYPE_BLOCKED;
+    ox &= 0xFFu;
+    int outlineAndU = static_cast<int>(ox);
+    ox |= (unsigned int)fallout::OUTLINE_TYPE_ITEM;
+    int outlineOrU = static_cast<int>(ox);
+    std::printf("outline-or=%d outline-and=%d outline-andu=%d outline-oru=%d paletted=%d disabled=%d\n",
+        outlineOr, outlineAnd, outlineAndU, outlineOrU, OUTLINE_PALETTED, OUTLINE_DISABLED);
+
+    int inAnyHand = static_cast<int>(fallout::OBJECT_IN_ANY_HAND);
+    int equipped = static_cast<int>(fallout::OBJECT_EQUIPPED);
+    int flagFc000 = static_cast<int>(fallout::OBJECT_FLAG_0xFC000);
+    int openDoor = static_cast<int>(fallout::OBJECT_OPEN_DOOR);
+    int flagXor = static_cast<int>(fallout::OBJECT_HIDDEN ^ fallout::OBJECT_NO_SAVE);
+    int flagNot = static_cast<int>(~fallout::OBJECT_NONE);
+    fallout::ObjectFlags fx = fallout::OBJECT_NO_BLOCK;
+    fx |= fallout::OBJECT_LIGHTING;
+    int flagOr = static_cast<int>(fx);
+    fx ^= fallout::OBJECT_LIGHTING;
+    int flagXorEq = static_cast<int>(fx);
+    fx &= fallout::OBJECT_NO_BLOCK;
+    int flagAndEq = static_cast<int>(fx);
+    std::printf("objflag-anyhand=%d objflag-equipped=%d objflag-fc000=%d objflag-opendoor=%d xor=%d not=%d or=%d xoreq=%d andeq=%d\n",
+        inAnyHand, equipped, flagFc000, openDoor, flagXor, flagNot, flagOr, flagXorEq, flagAndEq);
+
+    int dudeValid = fallout::dudeStateIsValid(fallout::DUDE_STATE_COUNT - 1) ? 1 : 0;
+    int dudeInvalid = fallout::dudeStateIsValid(fallout::DUDE_STATE_COUNT) ? 1 : 0;
+    int critOr = static_cast<int>(fallout::CRITTER_NO_STEAL | fallout::CRITTER_NO_DROP);
+    int critNot = static_cast<int>(~fallout::CRITTER_NONE);
+    fallout::CritterFlags cf = fallout::CRITTER_NO_HEAL;
+    cf &= fallout::CRITTER_NO_HEAL;
+    int critAndEq = static_cast<int>(cf);
+    cf |= fallout::CRITTER_INVULNERABLE;
+    int critOrEq = static_cast<int>(cf);
+    std::printf("dude-count=%d dude-valid=%d dude-invalid=%d crit-or=%d crit-not=%d crit-andeq=%d crit-oreq=%d container-open=%d door-locked=%d obj-locked=%d obj-jammed=%d\n",
+        (int)fallout::DUDE_STATE_COUNT, dudeValid, dudeInvalid, critOr, critNot, critAndEq, critOrEq,
+        CONTAINER_FLAG_OPEN, DOOR_FLAG_LOCKED, OBJ_LOCKED, OBJ_JAMMED);
+
+    int manOr = static_cast<int>(fallout::CRITTER_MANEUVER_ENGAGING | fallout::CRITTER_MANEUVER_DISENGAGING);
+    int manNot = static_cast<int>(~fallout::CRITTER_MANEUVER_NONE);
+    std::printf("maneuver-fleeing=%d man-or=%d man-not=%d\n",
+        (int)fallout::CRITTER_MANUEVER_FLEEING, manOr, manNot);
+
+    int damCripLeg = static_cast<int>(fallout::DAM_CRIP_LEG_ANY);
+    int damCripArm = static_cast<int>(fallout::DAM_CRIP_ARM_ANY);
+    int damCrip = static_cast<int>(fallout::DAM_CRIP);
+    int damOr = static_cast<int>(fallout::DAM_DEAD | fallout::DAM_HIT);
+    int damNot = static_cast<int>(~fallout::DAM_NONE);
+    fallout::Dam dm = fallout::DAM_ON_FIRE;
+    dm |= fallout::DAM_BYPASS;
+    int damOrEq = static_cast<int>(dm);
+    dm &= fallout::DAM_ON_FIRE;
+    int damAndEq = static_cast<int>(dm);
+    std::printf("dam-cripleg=%d dam-criparm=%d dam-crip=%d dam-or=%d dam-not=%d dam-oreq=%d dam-andeq=%d\n",
+        damCripLeg, damCripArm, damCrip, damOr, damNot, damOrEq, damAndEq);
+
+    int bt = fallout::builtTileCreate(0x1ABCDE, 2);
+    int btTile = fallout::builtTileGetTile(bt);
+    int btElev = fallout::builtTileGetElevation(bt);
+    int btRot = static_cast<int>(fallout::builtTileGetRotation(bt));
+    int btFull = fallout::builtTileCreate(0x3FFFFFF, 7) | (5 << 26);
+    int btFullTile = fallout::builtTileGetTile(btFull);
+    int btFullElev = fallout::builtTileGetElevation(btFull);
+    int btFullRot = static_cast<int>(fallout::builtTileGetRotation(btFull));
+    std::printf("bt=%d bt-tile=%d bt-elev=%d bt-rot=%d btfull=%d btfull-tile=%d btfull-elev=%d btfull-rot=%d tilemask=%d elevmask=%d elevshift=%d rotmask=%d rotshift=%d\n",
+        bt, btTile, btElev, btRot, btFull, btFullTile, btFullElev, btFullRot,
+        BUILT_TILE_TILE_MASK, BUILT_TILE_ELEVATION_MASK, BUILT_TILE_ELEVATION_SHIFT,
+        BUILT_TILE_ROTATION_MASK, BUILT_TILE_ROTATION_SHIFT);
+
+    fallout::Map mp = fallout::MAP_IN_GAME_MOVIE1;
+    fallout::Map mpOld = mp++;
+    int mpNew = static_cast<int>(mp);
+    std::printf("map-transition=%d map-invalid=%d map-first=%d map-arroyo-temple=%d map-movie1=%d post-old=%d post-new=%d\n",
+        (int)fallout::MAP_TRANSITION, (int)fallout::MAP_INVALID, (int)fallout::MAP_FIRST,
+        (int)fallout::MAP_ARROYO_TEMPLE, (int)fallout::MAP_IN_GAME_MOVIE1, (int)mpOld, mpNew);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3581,5 +3691,6 @@ int main()
     sectionArtDefs();
     sectionKbFull();
     sectionCombatDefs();
+    sectionObjTypes();
     return 0;
 }
