@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.fallout2ce.spi.Sleeper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +17,7 @@ import org.junit.jupiter.api.Test;
  */
 class FpsLimiterTest {
 
-    static class RecordingSleeper implements Delay.Sleeper {
+    static class RecordingSleeper implements Sleeper {
         final List<Long> sleeps = new ArrayList<>();
 
         @Override

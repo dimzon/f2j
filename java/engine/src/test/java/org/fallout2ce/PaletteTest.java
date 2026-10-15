@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.fallout2ce.spi.VideoBackend;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +18,7 @@ import org.junit.jupiter.api.Test;
  */
 class PaletteTest {
 
-    static class RecordingVideo implements Color.Video {
+    static class RecordingVideo implements VideoBackend {
         final List<byte[]> palettes = new ArrayList<>();
         final List<Runnable> callbacks = new ArrayList<>();
 
@@ -63,6 +64,7 @@ class PaletteTest {
     void reset() {
         Palette.resetForTests();
         Color.resetForTests();
+        ColorCycle.resetForTests();
         Db.resetForTests();
         Ticks.resetForTests();
         if (!Double.isNaN(savedAnimSpeed)) {

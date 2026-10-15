@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.CRC32;
 
+import org.fallout2ce.spi.VideoBackend;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -57,7 +58,7 @@ class ColorTest {
         return crc32(copy);
     }
 
-    static class RecordingVideo implements Color.Video {
+    static class RecordingVideo implements VideoBackend {
         final List<byte[]> palettes = new ArrayList<>();
         final List<byte[]> entries = new ArrayList<>();
         int presents;

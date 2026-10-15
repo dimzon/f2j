@@ -39,6 +39,27 @@
 2. Файловый слой (`db`/`xfile`/`dfile` → `java.nio`), затем данные (art, map, proto).
 3. Платформа последней (SDL → LWJGL/обёртка; `svga`/`window`/`audio_engine`).
 
+## Платформа (SPI)
+
+- Бэкенды, которым нужны сторонние нативные библиотеки (SDL/OpenGL —
+  будущие `svga`/`window`/`audio_engine`), живут в отдельных Maven-модулях
+  и подключаются через `ServiceLoader`. Ядро (`engine`) их не видит.
+- `f2j-platform-spi`: `VideoBackend`, `SystemClock`, `Sleeper`,
+  `TickerRegistry`, `PlatformPlugin` (только JRE-типы, ноль зависимостей).
+- `f2j-platform-headless`: managed-дефолт (`headless`: null-video, системные
+  часы/слип, in-memory тикеры). `runtime`-зависимость `engine`, провайдер
+  регистрируется через `META-INF/services`.
+- `engine` по умолчанию использует только managed-код (JRE + slf4j + SPI):
+  встроенные no-op/system-дефолты швов + `headless` из коробки.
+- `Platform.load()`: `-Df2j.platform=<name>` побеждает; иначе `headless`,
+  если есть; иначе единственный провайдер; иначе (или при неизвестном
+  имени) — fail fast. Без провайдеров остаются встроенные дефолты.
+- Швы тестов (`Color.video`, `Ticks.clock`, ...) — те же SPI-типы;
+  тесты присваивают фейки напрямую, `Platform.install/resetForTests`
+  — для интеграционных проверок.
+- Игровая логика по умолчанию wired на портированный managed-код
+  (пример: `Palette.colorCycle` → `ColorCycle`), а не на no-op.
+
 ## Проверка
 
 ```powershell

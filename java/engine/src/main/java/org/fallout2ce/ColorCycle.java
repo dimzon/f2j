@@ -2,13 +2,16 @@ package org.fallout2ce;
 
 import java.util.Arrays;
 
+import org.fallout2ce.spi.TickerRegistry;
+
 /**
  * Port of {@code src/cycle.h} / {@code src/cycle.cc} (palette color cycling).
  *
  * <p>The ticker mutates the system palette in place (via
  * {@link Color#getSystemPalette}) and pushes entries 229-255 through
  * {@link Palette#paletteSetEntriesInRange}. Time comes from {@link Ticks};
- * ticker registration is a seam until the input/ticker pump is ported.
+ * ticker registration is a platform SPI seam (native input pumps plug in
+ * via ServiceLoader).
  */
 public final class ColorCycle {
 
@@ -92,12 +95,6 @@ public final class ColorCycle {
     private static int bobberDiff = -4;
 
     /** Ticker-registry seam (C {@code tickersAdd}/{@code tickersRemove}). */
-    public interface TickerRegistry {
-        void add(Runnable ticker);
-
-        void remove(Runnable ticker);
-    }
-
     private static final TickerRegistry NO_TICKERS = new TickerRegistry() {
         @Override
         public void add(Runnable ticker) {

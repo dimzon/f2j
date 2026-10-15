@@ -16,6 +16,19 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.fallout2ce</groupId>
+            <artifactId>f2j-platform-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Default managed-only provider (runtime: engine code must not
+             reference provider types, only the SPIs). -->
+        <dependency>
+            <groupId>org.fallout2ce</groupId>
+            <artifactId>f2j-platform-headless</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>

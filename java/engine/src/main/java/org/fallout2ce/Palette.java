@@ -39,22 +39,25 @@ public final class Palette {
         void enable();
     }
 
-    private static final CycleControl NO_CYCLE = new CycleControl() {
+    /** Default wiring to the ported game logic (managed, no platform). */
+    private static final CycleControl GAME_CYCLE = new CycleControl() {
         @Override
         public boolean enabled() {
-            return false;
+            return ColorCycle.colorCycleEnabled();
         }
 
         @Override
         public void disable() {
+            ColorCycle.colorCycleDisable();
         }
 
         @Override
         public void enable() {
+            ColorCycle.colorCycleEnable();
         }
     };
 
-    public static CycleControl colorCycle = NO_CYCLE;
+    public static CycleControl colorCycle = GAME_CYCLE;
 
     /** Port of {@code backgroundSoundIsEnabled() || speechIsEnabled()}. */
     public static BooleanSupplier soundEnabled = () -> false;
@@ -151,7 +154,7 @@ public final class Palette {
         Arrays.fill(gPaletteBlack, (byte) 0);
         Arrays.fill(gPalette, (byte) 0);
         fadeSteps = 0;
-        colorCycle = NO_CYCLE;
+        colorCycle = GAME_CYCLE;
         soundEnabled = () -> false;
         soundContinueAllHook = () -> {
         };

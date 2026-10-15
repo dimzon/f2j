@@ -1,11 +1,13 @@
 package org.fallout2ce;
 
+import org.fallout2ce.spi.Sleeper;
+
 /**
  * Port of {@code src/fps_limiter.h} / {@code src/fps_limiter.cc}.
  *
  * <p>Time comes from {@link Ticks} (32-bit unsigned milliseconds, as
- * {@code SDL_GetTicks}); sleeping goes through {@link Delay.Sleeper} so
- * tests assert exact frame budgets without waiting.
+ * {@code SDL_GetTicks}); sleeping goes through the platform SPI
+ * {@link Sleeper} so tests assert exact frame budgets without waiting.
  */
 public final class FpsLimiter {
 
@@ -13,7 +15,7 @@ public final class FpsLimiter {
     private long ticks;
 
     /** Sleep seam (C {@code SDL_Delay} inside {@code throttle}). */
-    public static Delay.Sleeper sleeper = Delay.sleeper;
+    public static Sleeper sleeper = Delay.sleeper;
 
     /** Port of {@code FpsLimiter(fps)}. */
     public FpsLimiter(int fps) {

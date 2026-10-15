@@ -13,6 +13,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.zip.CRC32;
 
+import org.fallout2ce.spi.TickerRegistry;
+import org.fallout2ce.spi.VideoBackend;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +24,7 @@ import org.junit.jupiter.api.Test;
  */
 class ColorCycleTest {
 
-    static class RecordingTickers implements ColorCycle.TickerRegistry {
+    static class RecordingTickers implements TickerRegistry {
         final List<Runnable> added = new ArrayList<>();
         final List<Runnable> removed = new ArrayList<>();
 
@@ -37,7 +39,7 @@ class ColorCycleTest {
         }
     }
 
-    static class RecordingVideo implements Color.Video {
+    static class RecordingVideo implements VideoBackend {
         final List<byte[]> entries = new ArrayList<>();
 
         @Override

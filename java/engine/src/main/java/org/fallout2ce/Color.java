@@ -3,6 +3,8 @@ package org.fallout2ce;
 import java.util.Arrays;
 import java.util.function.Function;
 
+import org.fallout2ce.spi.VideoBackend;
+
 /**
  * Port of {@code src/color.h} / {@code src/color.cc} (palette tables,
  * {@code colorPaletteLoad}, blend tables, brightness, fades).
@@ -14,6 +16,8 @@ import java.util.function.Function;
  * zero.
  *
  * <p>SDL / video / fps-limiter calls are seams below so unit tests run headless.
+ * The video backend type comes from the platform SPI
+ * ({@code f2j-platform-spi}); native providers plug in via ServiceLoader.
  */
 public final class Color {
 
@@ -68,15 +72,6 @@ public final class Color {
         cmap[2] = 0x3F;
     }
 
-    /** Video seam (SDL in the game, assertions in tests). */
-    public interface Video {
-        void setPalette(byte[] rgb768);
-
-        void setPaletteEntries(byte[] rgb, int start, int count);
-
-        void present();
-    }
-
     /** Fps-limiter seam ({@code sharedFpsLimiter} in C). */
     public interface FpsLimiter {
         void mark();
@@ -84,7 +79,8 @@ public final class Color {
         void throttle();
     }
 
-    private static final Video NO_VIDEO = new Video() {
+    /** Built-in managed video: calls are accepted and dropped. */
+    private static final VideoBackend NO_VIDEO = new VideoBackend() {
         @Override
         public void setPalette(byte[] rgb768) {
         }
@@ -108,7 +104,7 @@ public final class Color {
         }
     };
 
-    public static Video video = NO_VIDEO;
+    public static VideoBackend video = NO_VIDEO;
     public static FpsLimiter fpsLimiter = NO_FPS;
 
     /** Port of {@code gColorFileNameMangler} (mapper override hook). */

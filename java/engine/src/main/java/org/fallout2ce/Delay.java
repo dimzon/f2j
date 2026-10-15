@@ -1,7 +1,12 @@
 package org.fallout2ce;
 
+import org.fallout2ce.spi.Sleeper;
+
 /**
  * Port of {@code src/delay.h} / {@code src/delay.cc} ({@code delay_ms}).
+ *
+ * <p>The sleeper type comes from the platform SPI; native providers plug in
+ * their own (C {@code SDL_Delay}).
  */
 public final class Delay {
 
@@ -9,10 +14,6 @@ public final class Delay {
     }
 
     /** Sleep seam (C {@code SDL_Delay}). */
-    public interface Sleeper {
-        void sleep(long ms);
-    }
-
     private static final Sleeper REAL_SLEEP = ms -> {
         try {
             Thread.sleep(ms);
