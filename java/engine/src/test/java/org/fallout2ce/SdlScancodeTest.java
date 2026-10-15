@@ -144,4 +144,19 @@ class SdlScancodeTest {
         assertEquals(4096, SdlScancode.KMOD_NUM);
         assertEquals(32768, SdlScancode.KMOD_SCROLL);
     }
+
+    @Test
+    void extendedKeys() {
+        assertEquals(0, SdlScancode.UNKNOWN);
+        assertEquals(75, SdlScancode.PRIOR);
+        assertEquals(101, SdlScancode.APPLICATION);
+        assertEquals(103, SdlScancode.KP_EQUALS);
+        assertEquals(104, SdlScancode.F13);
+        assertEquals(105, SdlScancode.F14);
+        assertEquals(106, SdlScancode.F15);
+        assertEquals(120, SdlScancode.STOP);
+        assertEquals(133, SdlScancode.KP_COMMA);
+        assertEquals(227, SdlScancode.LGUI);
+        assertEquals(231, SdlScancode.RGUI);
+    }
 }
