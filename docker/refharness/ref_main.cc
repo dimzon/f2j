@@ -18,6 +18,7 @@
 
 #include "color.h"
 #include "dictionary.h"
+#include "art.h"
 #include "config.h"
 #include "content_config.h"
 #include "dfile.h"
@@ -1280,6 +1281,191 @@ const fallout::SettingDescriptor* findDescriptor(const char* id)
     return nullptr;
 }
 
+void dumpFrm(const char* path);
+
+void sectionArt()
+{
+    std::puts("[art]");
+    std::printf("sizeof-art=%d sizeof-frame=%d\n", (int)sizeof(fallout::Art), (int)sizeof(fallout::ArtFrame));
+
+    // Bisect artReadList("art\items\items.lst") — artInit fails on it.
+    {
+        fallout::xbaseOpen("/game-en/master.dat");
+        fallout::File* s = fallout::fileOpen("art\\items\\items.lst", "rt");
+        char string[200] = {};
+        int count = 0;
+        while (s != nullptr && fallout::fileReadString(string, sizeof(string), s)) {
+            if (count == 0) {
+                size_t n = strlen(string);
+                while (n > 0 && (string[n - 1] == '\n' || string[n - 1] == '\r')) {
+                    string[--n] = '\0';
+                }
+                std::printf("lst-first=[%s]\n", string);
+            }
+            count++;
+        }
+        int seekRc = -99;
+        if (s != nullptr) {
+            seekRc = fallout::fileSeek(s, 0, SEEK_SET);
+        }
+        int count2 = 0;
+        while (s != nullptr && fallout::fileReadString(string, sizeof(string), s)) {
+            count2++;
+        }
+        std::printf("lst-count=%d seek=%d recount=%d\n", count, seekRc, count2);
+        if (s != nullptr) {
+            fallout::fileClose(s);
+        }
+    }
+
+    // Pure Fid math (no init needed).
+    {
+        fallout::FrmId misc(fallout::OBJ_TYPE_MISC, 5);
+        std::printf("fid-misc fid=%d valid=%d type=%d frame=%d rot=%d anim=%d weapon=%d\n",
+            misc.fid(), misc.valid() ? 1 : 0, (int)misc.objectType(), misc.frameId(),
+            (int)misc.rotation(), (int)misc.animationType(), (int)misc.weaponAnimation());
+    }
+    {
+        fallout::FrmId empty;
+        std::printf("fid-empty fid=%d valid=%d\n", empty.fid(), empty.valid() ? 1 : 0);
+    }
+    {
+        // Walk forces rotation NE for non-knockdown critter anims.
+        fallout::FrmId critter(fallout::OBJ_TYPE_CRITTER, 12, fallout::ANIM_WALK,
+            fallout::WeaponAnimation::Knife, fallout::ROTATION_SE);
+        std::printf("fid-critter fid=%d rot=%d weapon=%d\n",
+            critter.fid(), (int)critter.rotation(), (int)critter.weaponAnimation());
+    }
+    {
+        fallout::FrmId fire(fallout::OBJ_TYPE_CRITTER, 7, fallout::ANIM_FIRE_SINGLE,
+            fallout::WeaponAnimation::Pistol, fallout::ROTATION_NE);
+        std::printf("fid-fire fid=%d\n", fire.fid());
+    }
+
+    fallout::xbaseOpen("/game-en/master.dat");
+    {
+        // Layer probe: linear find vs bsearch vs VFS for the same path.
+        int eflags = 0;
+        fallout::DBase* db = fallout::dbaseOpen("/game-en/master.dat", &eflags);
+        fallout::DFileFindData fd {};
+        bool lin = db != nullptr && fallout::dbaseFindFirstEntry(db, &fd, "art\\items\\items.lst");
+        fallout::DFile* df = db != nullptr ? fallout::dfileOpen(db, "art\\items\\items.lst", "rt") : nullptr;
+        fallout::File* xf = fallout::fileOpen("art\\items\\items.lst", "rt");
+        std::printf("probe lin=%d bin=%d vfs=%d found=[%s]\n", lin ? 1 : 0, df != nullptr ? 1 : 0,
+            xf != nullptr ? 1 : 0, lin ? fd.fileName : "(null)");
+        if (df != nullptr) {
+            fallout::dfileClose(df);
+        }
+        if (xf != nullptr) {
+            fallout::fileClose(xf);
+        }
+        if (db != nullptr) {
+            fallout::dbaseClose(db);
+        }
+    }
+    // artInit needs critter.dat mounted (critter lists/FRMs live there).
+    fallout::xbaseOpen("/game-en/master.dat");
+    fallout::xbaseOpen("/game-en/patch000.dat");
+    fallout::xbaseOpen("/game-en/critter.dat");
+    int initRc = fallout::artInit();
+    std::printf("artinit=%d\n", initRc);
+    if (initRc == 0) {
+        int ifaceIdx = fallout::artListIndex(fallout::OBJ_TYPE_INTERFACE, "mainmenu");
+        std::printf("listindex-mainmenu=%d\n", ifaceIdx);
+        std::printf("listindex-missing=%d\n",
+            fallout::artListIndex(fallout::OBJ_TYPE_INTERFACE, "zzz_nope"));
+        std::printf("listindex-badtype=%d\n", fallout::artListIndex(fallout::OBJ_TYPE_INVALID, "mainmenu"));
+        std::printf("typename=%s\n", fallout::artGetObjectTypeName(fallout::OBJ_TYPE_INTERFACE));
+        std::printf("hidden=%d\n", fallout::artIsObjectTypeHidden(fallout::OBJ_TYPE_INTERFACE));
+        fallout::artToggleObjectTypeHidden(fallout::OBJ_TYPE_INTERFACE);
+        std::printf("hidden-toggled=%d\n", fallout::artIsObjectTypeHidden(fallout::OBJ_TYPE_INTERFACE));
+        fallout::artToggleObjectTypeHidden(fallout::OBJ_TYPE_INTERFACE);
+
+        if (ifaceIdx >= 0) {
+            fallout::FrmId menu(fallout::OBJ_TYPE_INTERFACE, ifaceIdx);
+            std::printf("buildpath=[%s]\n", menu.filePath());
+            dumpFrm(menu.filePath());
+        }
+
+        int critIdx = fallout::artListIndex(fallout::OBJ_TYPE_CRITTER, "hmjmps");
+        std::printf("listindex-hmjmps=%d\n", critIdx);
+        if (critIdx >= 0) {
+            fallout::FrmId dude(fallout::OBJ_TYPE_CRITTER, critIdx, fallout::ANIM_WALK,
+                fallout::WeaponAnimation::None, fallout::ROTATION_NE);
+            std::printf("critterpath=[%s]\n", dude.filePath());
+            dumpFrm(dude.filePath());
+        }
+    }
+
+    // Error paths (no init needed, VFS only).
+    {
+        unsigned char small[16] = {};
+        std::printf("read-tiny-buf=%d\n", fallout::artRead("art\\intrface\\mainmenu.frm", small, sizeof(small)));
+    }
+    {
+        unsigned char buf[1024] = {};
+        std::printf("read-missing=%d\n", fallout::artRead("art\\no\\such.frm", buf, sizeof(buf)));
+    }
+    {
+        FILE* f = fopen("/tmp/trunc.frm", "wb");
+        unsigned char zeros[40] = {};
+        fwrite(zeros, 1, sizeof(zeros), f);
+        fclose(f);
+        fallout::xbaseOpen("/tmp");
+        unsigned char buf[4096] = {};
+        std::printf("read-trunc=%d\n", fallout::artRead("trunc.frm", buf, sizeof(buf)));
+    }
+    {
+        unsigned char buf[8192] = {};
+        std::printf("read-notfrm=%d\n",
+            fallout::artRead("text\\english\\game\\misc.msg", buf, sizeof(buf)));
+    }
+}
+
+void dumpFrm(const char* path)
+{
+    static unsigned char* data = (unsigned char*)malloc(4 * 1024 * 1024);
+    int rc = fallout::artRead(path, data, 4 * 1024 * 1024);
+    fallout::Art* art = (fallout::Art*)data;
+    if (rc != 0) {
+        std::printf("frm [%s] rc=%d\n", path, rc);
+        return;
+    }
+    int w = fallout::artGetWidth(art, 0, fallout::ROTATION_NE);
+    int h = fallout::artGetHeight(art, 0, fallout::ROTATION_NE);
+    int x = -9999;
+    int y = -9999;
+    fallout::artGetFrameOffsets(art, 0, fallout::ROTATION_NE, &x, &y);
+    int rx = -9999;
+    int ry = -9999;
+    fallout::artGetRotationOffsets(art, fallout::ROTATION_NE, &rx, &ry);
+    unsigned char* pixels = fallout::artGetFrameData(art, 0, fallout::ROTATION_NE);
+    uLong crc = crc32(0L, Z_NULL, 0);
+    if (pixels != nullptr && w > 0 && h > 0) {
+        crc = crc32(crc, pixels, (uInt)((unsigned int)w * (unsigned int)h));
+    }
+    std::printf("frm [%s] rc=%d ver=%d fps=%d action=%d frames=%d w=%d h=%d x=%d y=%d rx=%d ry=%d crc=%08lX\n",
+        path, rc, art->version, fallout::artGetFramesPerSecond(art), fallout::artGetActionFrame(art),
+        fallout::artGetFrameCount(art), w, h, x, y, rx, ry, crc);
+    for (int r = 0; r < fallout::ROTATION_COUNT; r++) {
+        int rw = fallout::artGetWidth(art, 0, (fallout::Rotation)r);
+        int rh = fallout::artGetHeight(art, 0, (fallout::Rotation)r);
+        int rox = -9999;
+        int roy = -9999;
+        fallout::artGetFrameOffsets(art, 0, (fallout::Rotation)r, &rox, &roy);
+        unsigned char* rpixels = fallout::artGetFrameData(art, 0, (fallout::Rotation)r);
+        uLong rcrc = crc32(0L, Z_NULL, 0);
+        if (rpixels != nullptr && rw > 0 && rh > 0) {
+            rcrc = crc32(rcrc, rpixels, (uInt)((unsigned int)rw * (unsigned int)rh));
+        }
+        std::printf("frm [%s] rot=%d w=%d h=%d x=%d y=%d crc=%08lX\n", path, r, rw, rh, rox, roy, rcrc);
+    }
+    std::printf("frm [%s] bad-frame=%d bad-rot=%d null-art=%d\n", path,
+        fallout::artGetWidth(art, 999, fallout::ROTATION_NE),
+        fallout::artGetWidth(art, 0, (fallout::Rotation)99),
+        fallout::artGetWidth(nullptr, 0, fallout::ROTATION_NE));
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1308,6 +1494,7 @@ int main()
     sectionDb();
     sectionConfig();
     sectionMessage();
+    sectionArt();
     sectionSettings();
     return 0;
 }
