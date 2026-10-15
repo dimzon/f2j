@@ -11,13 +11,16 @@
 // Randomness is seeded explicitly, so output is fully deterministic.
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <zlib.h>
 
 #include "color.h"
 #include "dictionary.h"
 #include "config.h"
+#include "content_config.h"
 #include "dfile.h"
+#include "message.h"
 #include "file_utils.h"
 #include "fpattern_windows.h"
 #include "xfile.h"
@@ -1082,6 +1085,86 @@ void sectionConfig()
     fallout::configFree(&cfg3);
 }
 
+void sectionMessage()
+{
+    std::puts("[message]");
+
+    fallout::xbaseOpen("/game-en/master.dat");
+
+    fallout::MessageList misc {};
+    fallout::messageListInit(&misc);
+    std::printf("load-misc=%d\n", fallout::messageListLoad(&misc, "game\\misc.msg"));
+    std::printf("misc-count=%d\n", misc.entries_num);
+
+    fallout::MessageListItem item {};
+    item.num = 9;
+    bool got9 = fallout::messageListGetItem(&misc, &item);
+    std::printf("misc9=%d [%s]\n", got9 ? 1 : 0, got9 ? item.text : "(null)");
+    item.num = 10;
+    bool got10 = fallout::messageListGetItem(&misc, &item);
+    std::printf("misc10=%d [%s]\n", got10 ? 1 : 0, got10 ? item.text : "(null)");
+    item.num = 999999;
+    std::printf("misc-huge=%d\n", fallout::messageListGetItem(&misc, &item) ? 1 : 0);
+
+    fallout::MessageListItem missing {};
+    char* missingText = fallout::getmsg(&misc, &missing, 999999);
+    std::printf("getmsg-missing=[%s]\n", missingText);
+
+    int countBefore = misc.entries_num;
+    fallout::messageListLoad(&misc, "game\\misc.msg");
+    std::printf("reload-count=%d (was %d)\n", misc.entries_num, countBefore);
+
+    std::printf("badwords=%d\n", fallout::badwordsInit());
+    fallout::badwordsExit();
+
+    // Gender fixture through a dir xbase.
+    system("mkdir -p /tmp/f2msg/text/english");
+    {
+        FILE* f = fopen("/tmp/f2msg/text/english/gender.msg", "wb");
+        fputs("{0}{}{<He^She> went}\n", f);
+        fputs("{1}{}{plain}\n", f);
+        fputs("{2}{}{A<man^woman> and <boy^girl> walked}\n", f);
+        fputs("{3}{}{a^b}\n", f);
+        fputs("{4}{}{<x^y}\n", f);
+        fclose(f);
+    }
+    fallout::xbaseOpen("/tmp/f2msg");
+
+    // The game enables this via content config; the bare harness must too.
+    fallout::configInit(&fallout::gContentConfig);
+    fallout::configSetString(&fallout::gContentConfig, "dialog", "gender_words", "1");
+
+    for (int g = 0; g < 2; g++) {
+        fallout::MessageList list {};
+        fallout::messageListInit(&list);
+        fallout::messageListLoad(&list, "gender.msg");
+        fallout::messageListFilterGenderWords(&list, g == 0 ? fallout::GENDER_MALE : fallout::GENDER_FEMALE);
+        std::printf("gender-%s count=%d\n", g == 0 ? "male" : "female", list.entries_num);
+        for (int i = 0; i < list.entries_num; i++) {
+            std::printf("gender-%s[%d]=[%s]\n", g == 0 ? "male" : "female",
+                list.entries[i].num, list.entries[i].text);
+        }
+        fallout::messageListFree(&list);
+    }
+
+    // Repository routing over loaded lists.
+    fallout::messageListRepositoryInit();
+    fallout::messageListRepositorySetStandardMessageList(
+        fallout::STANDARD_MESSAGE_LIST_MISC, &misc);
+    char* repoText = fallout::messageListRepositoryGetMsg(fallout::STANDARD_MESSAGE_LIST_MISC, 10);
+    std::printf("repo-misc10=[%s]\n", repoText);
+    int extraId = fallout::messageListRepositoryAddExtra("game\\misc.msg");
+    std::printf("repo-extra=%d\n", extraId);
+    char* extraText = fallout::messageListRepositoryGetMsg(extraId, 9);
+    std::printf("repo-extra9=[%s]\n", extraText);
+    char* noList = fallout::messageListRepositoryGetMsg(fallout::STANDARD_MESSAGE_LIST_COMBAT, 1);
+    std::printf("repo-unset=[%s]\n", noList);
+    fallout::messageListRepositoryReset();
+    fallout::messageListRepositoryExit();
+
+    fallout::messageListFree(&misc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1109,5 +1192,6 @@ int main()
     sectionXfile();
     sectionDb();
     sectionConfig();
+    sectionMessage();
     return 0;
 }

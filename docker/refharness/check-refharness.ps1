@@ -1,6 +1,6 @@
 # Rebuild the harness, re-run it and diff against the golden vectors.
 # Run from repo root: powershell -File docker/refharness/check-refharness.ps1
-# Exit code 0 = vectors match golden/v8.txt (v1-v7 are earlier snapshots,
+# Exit code 0 = vectors match golden/v9.txt (v1-v8 are earlier snapshots,
 # kept for history; note v1's INFO line sits on top due to pre-v2 buffering).
 param(
     [string]$GameEnDir = "C:\Work\f2j-gamedata\game-en"

@@ -66,7 +66,9 @@ Java-тест), `v4` — `[paths]`/`[fileUtils]`, `v5/v6` — `[pattern]`/
 (`F2J_GAMEDATA=.../game-en` монтируется в `/game-en`), `v7` —
 `[xbase]`/`[xfile]`/`[db]` (VFS-приоритеты, gzip-ветка, BE-чтения,
 прогресс-хендлер, списки имён), `v8` — `[config]` (INI: strtol-квирки,
-int-списки, CLI-оверрайды, standard + side-by-side запись). Java-порт обязан
+int-списки, CLI-оверрайды, standard + side-by-side запись),
+`v9` — `[message]` (`.msg` на реальных данных, badwords, gender-слова,
+репозиторий). Java-порт обязан
 воспроизводить последний golden
 побайтово (см. `java/`). При расширении покрытия харнеса —
 новый файл `golden/vN.txt`, старые не трогать.
