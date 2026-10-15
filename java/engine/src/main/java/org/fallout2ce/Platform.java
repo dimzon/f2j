@@ -17,9 +17,10 @@ import org.fallout2ce.spi.PlatformPlugin;
  * {@code headless} provider.
  *
  * <p>Selection: {@code -Df2j.platform=&lt;name&gt;} wins; otherwise the
- * {@code headless} provider wins if present; otherwise a single provider
- * wins; otherwise (or on an unknown name) loading fails fast. With no
- * providers at all the built-in managed defaults stay in place.
+ * working managed provider ({@code safe}) wins if present; otherwise
+ * {@code headless} wins if present; otherwise a single provider wins;
+ * otherwise (or on an unknown name) loading fails fast. With no providers
+ * at all the built-in managed defaults stay in place.
  */
 public final class Platform {
 
@@ -27,6 +28,9 @@ public final class Platform {
     public static final String PROPERTY = "f2j.platform";
 
     /** Provider name that always wins unless explicitly overridden. */
+    public static final String SAFE = "safe";
+
+    /** Silent managed provider (null backends), second after {@link #SAFE}. */
     public static final String HEADLESS = "headless";
 
     private Platform() {
@@ -58,8 +62,9 @@ public final class Platform {
 
     /**
      * Selection rule (pure, tested directly): explicit name wins (unknown
-     * name fails fast); otherwise {@code headless} wins if present;
-     * otherwise a single provider wins; empty resolves to {@code null}.
+     * name fails fast); otherwise {@code safe} wins if present; otherwise
+     * {@code headless} wins if present; otherwise a single provider wins;
+     * empty resolves to {@code null}.
      */
     static PlatformPlugin select(List<PlatformPlugin> providers, String wanted) {
         if (wanted != null) {
@@ -70,6 +75,11 @@ public final class Platform {
             }
             throw new IllegalStateException(
                     "Unknown " + PROPERTY + "=" + wanted + ", available: " + names(providers));
+        }
+        for (PlatformPlugin provider : providers) {
+            if (SAFE.equals(provider.name())) {
+                return provider;
+            }
         }
         for (PlatformPlugin provider : providers) {
             if (HEADLESS.equals(provider.name())) {

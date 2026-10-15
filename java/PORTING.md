@@ -45,10 +45,11 @@
   будущие `svga`/`window`/`audio_engine`), живут в отдельных Maven-модулях
   и подключаются через `ServiceLoader`. Ядро (`engine`) их не видит.
 - `f2j-platform-spi`: `VideoBackend`, `SystemClock`, `Sleeper`,
-  `TickerRegistry`, `PlatformPlugin` (только JRE-типы, ноль зависимостей).
-- `f2j-platform-headless`: managed-дефолт (`headless`: null-video, системные
-  часы/слип, in-memory тикеры). `runtime`-зависимость `engine`, провайдер
-  регистрируется через `META-INF/services`.
+  `TickerRegistry`, `AudioBackend` (WAV-байты: one-shot/mузыка-луп/громкость),
+  `PlatformPlugin` (только JRE-типы, ноль зависимостей; `audio()` по
+  умолчанию silent).
+- `f2j-platform-headless`: managed-null (`headless`, всё дропается).
+  Для тихих/тестовых стендов: `-Df2j.platform=headless`.
 - `f2j-platform-awt`: рабочий managed-рендерер (`awt`, только JRE: окно
   Swing, палитровый фреймбуфер 640x480, `component << 2` как в
   `directDrawSetPalette`). Выбор: `-Df2j.platform=awt`. Без дисплея окно не
@@ -57,11 +58,20 @@
   создаётся через `createCompatibleImage` (оптимален для текущего пайплайна
   — OpenGL при `-Dsun.java2d.opengl=True`, Direct3D, Metal), ничего не
   форсится и не отключается; проверка — `-Dsun.java2d.trace=log`.
+- `f2j-platform-audio`: managed-звук (`audio`: `javax.sound.sampled`,
+  деградация в silence без микшера; плюс явный `NullAudioBackend`).
+- `f2j-platform-safe`: дефолт (`safe`): AWT-экран + sampled-звук +
+  системные часы/слип. Именно он выбирается без флагов — игра из коробки
+  работает только на managed-коде, без SDL/DirectX и сторонних нативок.
+- `Platform.load()`: `-Df2j.platform=<name>` побеждает; иначе `safe`,
+  если есть; иначе `headless`, если есть; иначе единственный провайдер;
+  иначе (или при неизвестном имени) — fail fast.
 - `engine` по умолчанию использует только managed-код (JRE + slf4j + SPI):
   встроенные no-op/system-дефолты швов + `headless` из коробки.
-- `Platform.load()`: `-Df2j.platform=<name>` побеждает; иначе `headless`,
-  если есть; иначе единственный провайдер; иначе (или при неизвестном
-  имени) — fail fast. Без провайдеров остаются встроенные дефолты.
+- `Platform.load()`: `-Df2j.platform=<name>` побеждает; иначе `safe`,
+  если есть; иначе `headless`, если есть; иначе единственный провайдер;
+  иначе (или при неизвестном имени) — fail fast. Без провайдеров остаются
+  встроенные дефолты.
 - Швы тестов (`Color.video`, `Ticks.clock`, ...) — те же SPI-типы;
   тесты присваивают фейки напрямую, `Platform.install/resetForTests`
   — для интеграционных проверок.

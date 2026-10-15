@@ -104,9 +104,18 @@ class PlatformTest {
     }
 
     @Test
-    void selectPrefersHeadless() {
-        FakePlugin sdl = new FakePlugin("sdl");
+    void selectPrefersSafe() {
         FakePlugin headless = new FakePlugin(Platform.HEADLESS);
+        FakePlugin safe = new FakePlugin(Platform.SAFE);
+        FakePlugin sdl = new FakePlugin("sdl");
+        assertSame(safe, Platform.select(plugins(sdl, headless, safe), null));
+        assertSame(safe, Platform.select(plugins(safe, sdl), null));
+    }
+
+    @Test
+    void selectPrefersHeadlessOverPlain() {
+        FakePlugin headless = new FakePlugin(Platform.HEADLESS);
+        FakePlugin sdl = new FakePlugin("sdl");
         assertSame(headless, Platform.select(plugins(sdl, headless), null));
         assertSame(headless, Platform.select(plugins(headless, sdl), null));
     }
@@ -161,17 +170,17 @@ class PlatformTest {
     }
 
     @Test
-    void loadDiscoversHeadlessByDefault() {
+    void loadDiscoversSafeByDefault() {
         PlatformPlugin loaded = Platform.load();
 
-        assertEquals(Platform.HEADLESS, loaded.name());
+        assertEquals(Platform.SAFE, loaded.name());
         assertSame(loaded, Platform.current());
         assertSame(loaded.video(), Color.video);
         assertSame(loaded.clock(), Ticks.clock);
     }
 
     @Test
-    void loadHonorsProperty() {
+    void loadHonorsExplicitHeadless() {
         System.setProperty(Platform.PROPERTY, Platform.HEADLESS);
         try {
             assertEquals(Platform.HEADLESS, Platform.load().name());

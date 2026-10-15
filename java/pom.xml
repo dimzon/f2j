@@ -16,6 +16,8 @@
         <module>platform-spi</module>
         <module>platform-headless</module>
         <module>platform-awt</module>
+        <module>platform-audio</module>
+        <module>platform-safe</module>
         <module>engine</module>
     </modules>
 
