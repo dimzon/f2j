@@ -28,10 +28,15 @@
 #include "color.h"
 #include "config.h"
 #include "content_config.h"
+#include "content_config.h"
 #include "dfile.h"
 #include "datafile.h"
 #include "draw.h"
+#include "game_config.h"
+#include "game_config_migration.h"
+#include "game_movie.h"
 #include "pcx.h"
+#include "sfall_config.h"
 #include "font_manager.h"
 #include "game_config.h"
 #include "input.h"
@@ -2511,6 +2516,139 @@ void sectionDatafile()
     fallout::datafileSetLoader(nullptr);
 }
 
+static void printCfgValue(fallout::Config* cfg, const char* section, const char* key)
+{
+    char* value;
+    if (fallout::configGetString(cfg, section, key, &value)) {
+        std::printf("%s.%s=[%s]\n", section, key, value);
+    } else {
+        std::printf("%s.%s=<missing>\n", section, key);
+    }
+}
+
+void sectionCfgMig()
+{
+    std::puts("[cfgmig]");
+
+    system("mkdir -p /tmp/f2mig1 /tmp/f2mig2/config /tmp/f2mig3/config");
+    remove("/tmp/ddraw.ini");
+    remove("/tmp/f2mig2/config/game.cfg");
+    remove("/tmp/f2mig3/config/game.cfg");
+
+    char prog[] = "/tmp/prog";
+    char* argv0[] = { prog };
+
+    // Defaults with no ddraw.ini around.
+    std::printf("sfall-init=%d\n", fallout::sfallConfigInit(1, argv0) ? 1 : 0);
+    int overrideMode = -1;
+    fallout::configGetInt(&fallout::gSfallConfig, "Misc", "OverrideCriticalTable", &overrideMode);
+    std::printf("sfall-default=%d\n", overrideMode);
+    std::printf("sfall-reinit=%d\n", fallout::sfallConfigInit(1, argv0) ? 1 : 0);
+    fallout::sfallConfigExit();
+    fallout::sfallConfigExit();
+
+    {
+        FILE* f = fopen("/tmp/ddraw.ini", "wb");
+        fputs("[Misc]\nOverrideCriticalTable=5\nBooksFile=bks.ini\n"
+              "StartingMap=arroyo\nStartYear=2250\nWorldMapFPSPatch=1\n"
+              "WorldMapDelay2=100\nMovie1=custom.mve\nFallout1Behavior=1\n"
+              "CheckWeaponAmmoCost=1\n",
+            f);
+        fclose(f);
+    }
+    std::printf("sfall-init-file=%d\n", fallout::sfallConfigInit(1, argv0) ? 1 : 0);
+    printCfgValue(&fallout::gSfallConfig, "Misc", "OverrideCriticalTable");
+    printCfgValue(&fallout::gSfallConfig, "Misc", "BooksFile");
+
+    char sfallProg[] = "prog";
+    char* sfallArgv[] = { sfallProg };
+
+    // contentConfigInit with no master_patches dir: migrations bail early.
+    fallout::settingsInit(false, 1, sfallArgv);
+    fallout::settings.system.master_patches_path = "/tmp/f2nope";
+    fallout::contentConfigInit();
+    std::printf("content-init=%d\n", fallout::gContentConfig.isInitialized() ? 1 : 0);
+    fallout::contentConfigExit();
+
+    // F2Res game-config migration.
+    {
+        FILE* f = fopen("/tmp/f2mig1/fallout2.cfg", "wb");
+        fputs("[screen]\nwindowed=1\n", f);
+        fclose(f);
+        f = fopen("/tmp/f2mig1/f2_res.ini", "wb");
+        fputs("[MAIN]\nSCR_WIDTH=800\nSCR_HEIGHT=600\nWINDOWED=1\nSCALE_2X=1\n"
+              "[MAINMENU]\nMAIN_MENU_SIZE=2\nSCALE_BUTTONS_AND_TEXT_MENU=1\n"
+              "[IFACE]\nIFACE_BAR_MODE=1\n",
+            f);
+        fclose(f);
+    }
+    fallout::Config gameCfg;
+    fallout::configInit(&gameCfg);
+    char gameCfgPath[] = "/tmp/f2mig1/fallout2.cfg";
+    fallout::configRead(&gameCfg, gameCfgPath, false);
+    std::printf("f2res-migrate=%d\n",
+        fallout::gameConfigMigrateFromF2Res(gameCfgPath, &gameCfg) ? 1 : 0);
+    printCfgValue(&gameCfg, "screen", "resolution_x");
+    printCfgValue(&gameCfg, "screen", "scale");
+    printCfgValue(&gameCfg, "ui", "main_menu_scale_mode");
+    printCfgValue(&gameCfg, "ui", "iface_bar_mode");
+    std::printf("f2res-again=%d\n",
+        fallout::gameConfigMigrateFromF2Res(gameCfgPath, &gameCfg) ? 1 : 0);
+    fallout::configFree(&gameCfg);
+
+    // Sfall content migration (writes only when the target is absent).
+    fallout::settings.system.master_patches_path = "/tmp/f2mig2";
+    fallout::contentConfigTryMigrateFromSfall("config\\game.cfg");
+    fallout::Config migrated;
+    fallout::configInit(&migrated);
+    char migratedPath[] = "/tmp/f2mig2/config/game.cfg";
+    std::printf("sfall-migrated-file=%d\n",
+        fallout::configRead(&migrated, migratedPath, false) ? 1 : 0);
+    printCfgValue(&migrated, "start", "map");
+    printCfgValue(&migrated, "start", "year");
+    printCfgValue(&migrated, "worldmap", "travel_delay");
+    printCfgValue(&migrated, "movies", "movie1");
+    printCfgValue(&migrated, "movies", "endgame_movie_male");
+    printCfgValue(&migrated, "combat", "check_weapon_ammo_cost");
+    fallout::configFree(&migrated);
+    fallout::contentConfigTryMigrateFromSfall("config\\game.cfg");
+    std::printf("sfall-migrate-again=1\n");
+
+    // F2Res content migration.
+    strcpy(fallout::gGameConfigFilePath, "/tmp/f2mig3/fallout2.cfg");
+    {
+        FILE* f = fopen("/tmp/f2mig3/fallout2.cfg", "wb");
+        fputs("[screen]\nwindowed=1\n", f);
+        fclose(f);
+        f = fopen("/tmp/f2mig3/f2_res.ini", "wb");
+        fputs("[MAINMENU]\nMENU_BG_OFFSET_X=20\nSCALE_BUTTONS_AND_TEXT_MENU=1\n", f);
+        fclose(f);
+    }
+    fallout::settings.system.master_patches_path = "/tmp/f2mig3";
+    fallout::contentConfigTryMigrateFromF2Res("config\\game.cfg");
+    fallout::Config migrated2;
+    fallout::configInit(&migrated2);
+    char migrated2Path[] = "/tmp/f2mig3/config/game.cfg";
+    std::printf("f2res-content-file=%d\n",
+        fallout::configRead(&migrated2, migrated2Path, false) ? 1 : 0);
+    printCfgValue(&migrated2, "main_menu", "main_menu_panel_offset_x");
+    printCfgValue(&migrated2, "main_menu", "scale_buttons_and_text");
+    fallout::configFree(&migrated2);
+
+    // Movie default names (bounds included).
+    const char* movie0 = fallout::gameMovieGetDefaultFileName(0);
+    const char* movie16 = fallout::gameMovieGetDefaultFileName(16);
+    std::printf("movie0=[%s] movie16=[%s] movie-neg=%d movie-17=%d movie-32=%d\n",
+        movie0 != nullptr ? movie0 : "(null)",
+        movie16 != nullptr ? movie16 : "(null)",
+        fallout::gameMovieGetDefaultFileName(-1) == nullptr ? 1 : 0,
+        fallout::gameMovieGetDefaultFileName(17) == nullptr ? 1 : 0,
+        fallout::gameMovieGetDefaultFileName(32) == nullptr ? 1 : 0);
+
+    fallout::sfallConfigExit();
+    fallout::settingsExit(false);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2553,5 +2691,6 @@ int main()
     sectionIfaceFont();
     sectionRegion();
     sectionDatafile();
+    sectionCfgMig();
     return 0;
 }
