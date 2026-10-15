@@ -30,6 +30,7 @@ LICENSE text eol=lf
 *.cfg text eol=lf
 *.sh text eol=lf
 *.ps1 text eol=lf
+**/META-INF/services/* text eol=lf
 *.dat binary
 *.zip binary
 *.bin binary
