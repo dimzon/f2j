@@ -2,6 +2,7 @@ package org.fallout2ce.platform.awt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
@@ -169,5 +170,56 @@ class AwbVideoBackendTest {
     @Test
     void toStringNamesSize() {
         assertEquals("AwbVideoBackend[640x480]", new AwbVideoBackend().toString());
+    }
+
+    static java.awt.event.MouseEvent mouseMove(java.awt.Component target, int x, int y) {
+        return new java.awt.event.MouseEvent(target, java.awt.event.MouseEvent.MOUSE_MOVED,
+            System.currentTimeMillis(), 0, x, y, 0, false);
+    }
+
+    static java.awt.event.MouseEvent mouseButton(java.awt.Component target, int id, int x, int y,
+            int button) {
+        return new java.awt.event.MouseEvent(target, id, System.currentTimeMillis(), 0, x, y, 1,
+            false, button);
+    }
+
+    @Test
+    void mouseTracking() {
+        AwbVideoBackend backend = new AwbVideoBackend();
+        assertNotNull(backend.component());
+
+        backend.component().dispatchEvent(mouseMove(backend.component(), 120, 30));
+        assertEquals(120, backend.mouseX());
+        assertEquals(30, backend.mouseY());
+        assertFalse(backend.mouseLeft());
+        assertFalse(backend.mouseRight());
+
+        backend.component().dispatchEvent(mouseButton(backend.component(),
+            java.awt.event.MouseEvent.MOUSE_PRESSED, 120, 30,
+            java.awt.event.MouseEvent.BUTTON1));
+        assertTrue(backend.mouseLeft());
+        backend.component().dispatchEvent(mouseButton(backend.component(),
+            java.awt.event.MouseEvent.MOUSE_RELEASED, 120, 30,
+            java.awt.event.MouseEvent.BUTTON1));
+        assertFalse(backend.mouseLeft());
+
+        backend.component().dispatchEvent(mouseButton(backend.component(),
+            java.awt.event.MouseEvent.MOUSE_PRESSED, 5, 5,
+            java.awt.event.MouseEvent.BUTTON3));
+        assertTrue(backend.mouseRight());
+    }
+
+    @Test
+    void wheelDrains() {
+        AwbVideoBackend backend = new AwbVideoBackend();
+        assertEquals(0, backend.takeWheel()[0]);
+        backend.component().dispatchEvent(new java.awt.event.MouseWheelEvent(backend.component(),
+            java.awt.event.MouseEvent.MOUSE_WHEEL, System.currentTimeMillis(), 0, 10, 10, 0, false,
+            java.awt.event.MouseWheelEvent.WHEEL_UNIT_SCROLL, 1, 3));
+
+        int[] deltas = backend.takeWheel();
+        assertEquals(0, deltas[0]);
+        assertEquals(3, deltas[1]);
+        assertEquals(0, backend.takeWheel()[1]);
     }
 }

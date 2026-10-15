@@ -46,12 +46,109 @@ public final class AwbVideoBackend implements VideoBackend {
 
     private volatile JFrame window;
 
+    private final JPanel canvas = new JPanel() {
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            g.drawImage(image, 0, 0, getWidth(), getHeight(), null);
+        }
+    };
+
+    private volatile int mouseX;
+    private volatile int mouseY;
+    private volatile boolean mouseLeft;
+    private volatile boolean mouseRight;
+    private int wheelX;
+    private int wheelY;
+
     /** Fresh surfaces start with the identity gray ramp (like SDL). */
     public AwbVideoBackend() {
         for (int i = 0; i < 256; i++) {
             palette[i * 3] = (byte) i;
             palette[i * 3 + 1] = (byte) i;
             palette[i * 3 + 2] = (byte) i;
+        }
+        attachMouseTracking();
+    }
+
+    private void attachMouseTracking() {
+        canvas.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(java.awt.event.MouseEvent e) {
+                track(e);
+            }
+
+            @Override
+            public void mouseDragged(java.awt.event.MouseEvent e) {
+                track(e);
+            }
+        });
+        canvas.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                track(e);
+                buttons(e, true);
+            }
+
+            @Override
+            public void mouseReleased(java.awt.event.MouseEvent e) {
+                track(e);
+                buttons(e, false);
+            }
+        });
+        canvas.addMouseWheelListener(e -> {
+            synchronized (lock) {
+                wheelY += e.getWheelRotation();
+            }
+        });
+    }
+
+    private void track(java.awt.event.MouseEvent e) {
+        mouseX = e.getX();
+        mouseY = e.getY();
+    }
+
+    private void buttons(java.awt.event.MouseEvent e, boolean pressed) {
+        if (e.getButton() == java.awt.event.MouseEvent.BUTTON1) {
+            mouseLeft = pressed;
+        } else if (e.getButton() == java.awt.event.MouseEvent.BUTTON3) {
+            mouseRight = pressed;
+        }
+    }
+
+    /** Drawing canvas (listeners attach here; safe headless). */
+    public JPanel component() {
+        return canvas;
+    }
+
+    /** Last tracked pointer position (canvas pixels). */
+    public int mouseX() {
+        return mouseX;
+    }
+
+    /** Last tracked pointer position (canvas pixels). */
+    public int mouseY() {
+        return mouseY;
+    }
+
+    public boolean mouseLeft() {
+        return mouseLeft;
+    }
+
+    public boolean mouseRight() {
+        return mouseRight;
+    }
+
+    /**
+     * Drain accumulated wheel deltas (C drains on every
+     * {@code mouseDeviceGetData}).
+     */
+    public int[] takeWheel() {
+        synchronized (lock) {
+            int[] deltas = { wheelX, wheelY };
+            wheelX = 0;
+            wheelY = 0;
+            return deltas;
         }
     }
 
@@ -199,13 +296,6 @@ public final class AwbVideoBackend implements VideoBackend {
                 }
                 JFrame frame = new JFrame(title);
                 frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-                JPanel canvas = new JPanel() {
-                    @Override
-                    protected void paintComponent(Graphics g) {
-                        super.paintComponent(g);
-                        g.drawImage(image, 0, 0, getWidth(), getHeight(), null);
-                    }
-                };
                 frame.setContentPane(canvas);
                 frame.pack();
                 frame.setSize(width, height);

@@ -31,6 +31,7 @@
 #include "content_config.h"
 #include "dfile.h"
 #include "datafile.h"
+#include "dinput.h"
 #include "draw.h"
 #include "game_config.h"
 #include "game_config_migration.h"
@@ -2784,6 +2785,66 @@ void sectionKb()
         KEY_STATE_UP, KEY_STATE_DOWN);
 }
 
+void sectionDInput()
+{
+    std::puts("[dinput]");
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+    fallout::settingsInit(false, 1, argv0);
+    fallout::settings.screen.mouse_lock = false;
+    fallout::gProgramIsActive = true;
+
+    std::printf("uses-relative=%d\n", fallout::mouseDeviceUsesRelativeMode() ? 1 : 0);
+    std::printf("direct-init=%d\n", fallout::directInputInit() ? 1 : 0);
+    std::printf("acquire-mouse=%d acquire-kbd=%d\n",
+        fallout::mouseDeviceAcquire() ? 1 : 0,
+        fallout::keyboardDeviceAcquire() ? 1 : 0);
+
+    fallout::MouseData data;
+    memset(&data, 0xAA, sizeof(data));
+    int gotData = fallout::mouseDeviceGetData(&data) ? 1 : 0;
+    std::printf("getdata=%d pos=%d,%d buttons=%d,%d wheel=%d,%d\n",
+        gotData, data.x, data.y, (int)data.buttons[0], (int)data.buttons[1],
+        data.wheelX, data.wheelY);
+
+    SDL_Event wheel;
+    memset(&wheel, 0, sizeof(wheel));
+    wheel.type = SDL_MOUSEWHEEL;
+    wheel.wheel.x = 3;
+    wheel.wheel.y = -2;
+    fallout::handleMouseEvent(&wheel);
+    memset(&data, 0, sizeof(data));
+    fallout::mouseDeviceGetData(&data);
+    std::printf("wheel=%d,%d\n", data.wheelX, data.wheelY);
+    fallout::mouseDeviceGetData(&data);
+    std::printf("wheel-drained=%d,%d\n", data.wheelX, data.wheelY);
+
+    // Forced relative mode fails on the dummy driver, but the flag sticks.
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    fallout::settings.screen.mouse_lock = true;
+    int relInit = fallout::mouseDeviceInitMode() ? 1 : 0;
+    int relUses = fallout::mouseDeviceUsesRelativeMode() ? 1 : 0;
+    std::printf("relmode-init=%d uses-relative=%d\n", relInit, relUses);
+    fallout::settings.screen.mouse_lock = false;
+    int absInit = fallout::mouseDeviceInitMode() ? 1 : 0;
+    int absUses = fallout::mouseDeviceUsesRelativeMode() ? 1 : 0;
+    std::printf("absmode-init=%d uses-relative=%d\n", absInit, absUses);
+
+    fallout::KeyboardData kb;
+    std::printf("kbd-reset=%d kbd-data=%d kbd-unacquire=%d\n",
+        fallout::keyboardDeviceReset() ? 1 : 0,
+        fallout::keyboardDeviceGetData(&kb) ? 1 : 0,
+        fallout::keyboardDeviceUnacquire() ? 1 : 0);
+    std::printf("mouse-unacquire=%d\n", fallout::mouseDeviceUnacquire() ? 1 : 0);
+    fallout::mouseDeviceFree();
+    fallout::keyboardDeviceFree();
+    fallout::directInputFree();
+    std::printf("freed=1\n");
+
+    fallout::settingsExit(false);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2829,5 +2890,6 @@ int main()
     sectionCfgMig();
     sectionInput();
     sectionKb();
+    sectionDInput();
     return 0;
 }
