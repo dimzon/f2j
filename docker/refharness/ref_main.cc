@@ -45,6 +45,13 @@
 #include "pcx.h"
 #include "pointer_registry.h"
 #include "sfall_config.h"
+#include "stat_defs.h"
+#include "skill_defs.h"
+#include "perk_defs.h"
+#include "trait_defs.h"
+#include "map_defs.h"
+#include "animation_defs.h"
+#include "version.h"
 #include "font_manager.h"
 #include "game_config.h"
 #include "input.h"
@@ -3100,6 +3107,120 @@ void sectionPtrReg()
         fetchZero ? 1 : 0, fetchMissing ? 1 : 0, rC);
 }
 
+void sectionGameDefs()
+{
+    std::puts("[gamedefs]");
+
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    fallout::Stat s = fallout::STAT_HEALING_RATE;
+    fallout::Stat postOld = s++;
+    int postNew = static_cast<int>(s);
+    bool statValidNeg = fallout::statIsValid(-1);
+    bool statValidFirst = fallout::statIsValid(fallout::STAT_FIRST);
+    bool statValidLast = fallout::statIsValid(fallout::STAT_COUNT - 1);
+    bool statValidCount = fallout::statIsValid(fallout::STAT_COUNT);
+    fallout::PcStat pc = fallout::PC_STAT_KARMA;
+    fallout::PcStat pcPostOld = pc++;
+    int pcPostNew = static_cast<int>(pc);
+    bool pcValidNeg = fallout::pcStatIsValid(-1);
+    bool pcValidCount = fallout::pcStatIsValid(fallout::PC_STAT_COUNT);
+    std::printf("stat-count=%d stat-first=%d special=%d saveable=%d primary-count=%d primary-min=%d primary-max=%d primary-range=%d pc-level-max=%d valid-neg=%d valid-first=%d valid-last=%d valid-count=%d post-old=%d post-new=%d pc-count=%d pc-first=%d pc-post-old=%d pc-post-new=%d pc-valid-neg=%d pc-valid-count=%d\n",
+        (int)fallout::STAT_COUNT, (int)fallout::STAT_FIRST,
+        (int)fallout::SPECIAL_STAT_COUNT, (int)fallout::SAVEABLE_STAT_COUNT,
+        (int)fallout::PRIMARY_STAT_COUNT, PRIMARY_STAT_MIN, PRIMARY_STAT_MAX, PRIMARY_STAT_RANGE,
+        PC_LEVEL_MAX,
+        statValidNeg ? 1 : 0, statValidFirst ? 1 : 0, statValidLast ? 1 : 0, statValidCount ? 1 : 0,
+        (int)postOld, postNew,
+        (int)fallout::PC_STAT_COUNT, (int)fallout::PC_STAT_FIRST,
+        (int)pcPostOld, pcPostNew,
+        pcValidNeg ? 1 : 0, pcValidCount ? 1 : 0);
+
+    fallout::Skill sk = fallout::SKILL_SNEAK;
+    fallout::Skill skPostOld = sk++;
+    int skPostNew = static_cast<int>(sk);
+    bool skValidNeg = fallout::skillIsValid(-1);
+    bool skValidCount = fallout::skillIsValid(fallout::SKILL_COUNT);
+    std::printf("skill-count=%d skill-first=%d tagged=%d default-tagged=%d sneak=%d valid-neg=%d valid-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::SKILL_COUNT, (int)fallout::SKILL_FIRST,
+        NUM_TAGGED_SKILLS, DEFAULT_TAGGED_SKILLS, (int)fallout::SKILL_SNEAK,
+        skValidNeg ? 1 : 0, skValidCount ? 1 : 0,
+        (int)skPostOld, skPostNew);
+
+    fallout::Perk pk = fallout::PERK_TAG;
+    fallout::Perk pkPostOld = pk++;
+    int pkPostNew = static_cast<int>(pk);
+    bool pkValidNeg = fallout::perkIsValid(-1);
+    bool pkValidCount = fallout::perkIsValid(fallout::PERK_COUNT);
+    std::printf("perk-count=%d perk-first=%d tag=%d mutate=%d jinxed=%d valid-neg=%d valid-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::PERK_COUNT, (int)fallout::PERK_FIRST,
+        (int)fallout::PERK_TAG, (int)fallout::PERK_MUTATE, (int)fallout::PERK_JINXED,
+        pkValidNeg ? 1 : 0, pkValidCount ? 1 : 0,
+        (int)pkPostOld, pkPostNew);
+
+    fallout::Trait tr = fallout::TRAIT_GIFTED;
+    fallout::Trait trPostOld = tr++;
+    int trPostNew = static_cast<int>(tr);
+    bool trValidNeg = fallout::traitIsValid(-1);
+    bool trValidCount = fallout::traitIsValid(fallout::TRAIT_COUNT);
+    std::printf("trait-count=%d trait-first=%d max-selected=%d gifted=%d valid-neg=%d valid-count=%d post-old=%d post-new=%d\n",
+        (int)fallout::TRAIT_COUNT, (int)fallout::TRAIT_FIRST,
+        TRAITS_MAX_SELECTED_COUNT, (int)fallout::TRAIT_GIFTED,
+        trValidNeg ? 1 : 0, trValidCount ? 1 : 0,
+        (int)trPostOld, trPostNew);
+
+    fallout::MapHeaderFlags flags = fallout::MAP_HEADER_SAVED;
+    flags |= fallout::MAP_HEADER_ELEVATION_0;
+    flags |= fallout::MAP_HEADER_ELEVATION_1;
+    int flagsOr = static_cast<int>(flags);
+    flags &= fallout::MAP_HEADER_ELEVATION_1;
+    int flagsAnd = static_cast<int>(flags);
+    int notSaved = static_cast<int>(~fallout::MAP_HEADER_SAVED);
+    bool elevValid2 = fallout::elevationIsValid(2);
+    bool elevValid3 = fallout::elevationIsValid(3);
+    bool sqValid9999 = fallout::squareGridTileIsValid(9999);
+    bool sqValid10000 = fallout::squareGridTileIsValid(10000);
+    bool hexValid39999 = fallout::hexGridTileIsValid(39999);
+    bool hexValid40000 = fallout::hexGridTileIsValid(40000);
+    std::printf("elev=%d square=%d hex=%d elev-valid2=%d elev-valid3=%d sq-valid9999=%d sq-valid10000=%d hex-valid39999=%d hex-valid40000=%d flags-or=%d flags-and=%d not-saved=%d\n",
+        ELEVATION_COUNT, SQUARE_GRID_SIZE, HEX_GRID_SIZE,
+        elevValid2 ? 1 : 0, elevValid3 ? 1 : 0,
+        sqValid9999 ? 1 : 0, sqValid10000 ? 1 : 0,
+        hexValid39999 ? 1 : 0, hexValid40000 ? 1 : 0,
+        flagsOr, flagsAnd, notSaved);
+
+    fallout::AnimationRequestOptions opts = fallout::ANIMATION_REQUEST_UNRESERVED;
+    opts |= fallout::ANIMATION_REQUEST_RESERVED;
+    opts |= fallout::ANIMATION_REQUEST_NO_STAND;
+    int optsStd = static_cast<int>(opts);
+    int optsPing = static_cast<int>(fallout::ANIMATION_REQUEST_PING | fallout::ANIMATION_REQUEST_INSIGNIFICANT);
+    bool animValidNeg = fallout::animationTypeIsValid(-1);
+    bool animValidLast = fallout::animationTypeIsValid(fallout::ANIM_COUNT - 1);
+    bool animValidCount = fallout::animationTypeIsValid(fallout::ANIM_COUNT);
+    std::printf("anim-count=%d anim-first=%d anim-stand=%d anim-fire-cont=%d anim-callshot=%d knock-first=%d knock-last=%d sf-first=%d sf-last=%d opts-std=%d opts-ping=%d valid-neg=%d valid-last=%d valid-count=%d\n",
+        (int)fallout::ANIM_COUNT, (int)fallout::ANIM_FIRST,
+        (int)fallout::ANIM_STAND, (int)fallout::ANIM_FIRE_CONTINUOUS, (int)fallout::ANIM_CALLED_SHOT_PIC,
+        (int)fallout::FIRST_KNOCKDOWN_AND_DEATH_ANIM, (int)fallout::LAST_KNOCKDOWN_AND_DEATH_ANIM,
+        (int)fallout::FIRST_SF_DEATH_ANIM, (int)fallout::LAST_SF_DEATH_ANIM,
+        optsStd, optsPing,
+        animValidNeg ? 1 : 0, animValidLast ? 1 : 0, animValidCount ? 1 : 0);
+
+    // Pristine config: earlier sections never touch the shared content config,
+    // but free+init makes the default vector independent of call order.
+    fallout::configFree(&fallout::gContentConfig);
+    fallout::configInit(&fallout::gContentConfig);
+    char buf[VERSION_MAX];
+    fallout::versionGetVersion(buf, sizeof(buf));
+    std::printf("version-default=[%s]\n", buf);
+    fallout::configSetString(&fallout::gContentConfig, CONTENT_CONFIG_MAIN_MENU_SECTION, "version_string",
+        "Custom Build 123456789012345678901234567890EXTRA");
+    fallout::versionGetVersion(buf, sizeof(buf));
+    std::printf("version-custom=[%s] len=%d\n", buf, (int)strlen(buf));
+    fallout::configSetString(&fallout::gContentConfig, CONTENT_CONFIG_MAIN_MENU_SECTION, "version_string", "");
+    fallout::versionGetVersion(buf, sizeof(buf));
+    std::printf("version-empty=[%s]\n", buf);
+    fallout::configFree(&fallout::gContentConfig);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3149,5 +3270,6 @@ int main()
     sectionGraph();
     sectionOptions();
     sectionPtrReg();
+    sectionGameDefs();
     return 0;
 }
