@@ -1,0 +1,224 @@
+[rgb555]
+rgb555 000000=0
+rgb555 FFFFFF=32767
+rgb555 FF0000=31744
+rgb555 00FF00=992
+rgb555 0000FF=31
+rgb555 FF5252=32074
+rgb555 C5D6FF=25439
+rgb555 123456=2250
+rgb555 7B7B29=15845
+[rectUnion]
+union {(0,0)-(10,10)} {(5,5)-(15,15)} -> (0,0)-(15,15)
+union {(-5,-5)-(0,0)} {(10,10)-(20,20)} -> (-5,-5)-(20,20)
+union {(3,3)-(3,3)} {(3,3)-(3,3)} -> (3,3)-(3,3)
+[rectIntersection]
+isect rc=0 {(0,0)-(10,10)} {(5,5)-(15,15)} -> (5,5)-(10,10)
+isect rc=-1 {(0,0)-(10,10)} {(20,20)-(30,30)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(0,0)-(10,10)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(10,10)-(20,20)} -> (10,10)-(10,10)
+[rectClip]
+clip-hole[0] left=0 top=0 right=20 bottom=4
+clip-hole[1] left=0 top=5 right=4 bottom=10
+clip-hole[2] left=11 top=5 right=20 bottom=10
+clip-hole[3] left=0 top=11 right=20 bottom=20
+clip-hole count=4
+clip-miss[0] left=0 top=0 right=20 bottom=20
+clip-miss count=1
+[random]
+rand100[0]=15
+rand100[1]=20
+rand100[2]=21
+rand100[3]=62
+rand100[4]=43
+rand100[5]=98
+rand100[6]=50
+rand100[7]=2
+rand100[8]=58
+rand100[9]=9
+rand25[0]=11
+rand25[1]=25
+rand25[2]=25
+rand25[3]=17
+rand25[4]=2
+rand-degenerate=10
+INFO: Random number 3 is not in range 5 to 3
+rand-reversed=5
+[strParsers]
+parseInt rc=0 value=12 rest=[ 34,abc]
+parseInt-empty rc=0 value=0 rest=[]
+parseList rc=0 value=1 rest=[ x]
+INFO: 
+strParseStrFromList Error: Couldn't find match for string: seven!
+parseList-miss rc=-1 value=-1 rest=[]
+parseWithKey rc=0 value=3 rest=[ x=4]
+parseWithKey-miss rc=-1 value=-99 rest=[x=4]
+parseKeyValue rc=0 key=[count] value=3 rest=[, x=4]
+[strParseFunc]
+parseFunc rc=0 value=42 rest=[ next]
+INFO: 
+strParseStrFromFunc Error: Couldn't find match for string: nope!
+parseFunc-miss rc=-1 value=-1 rest=[]
+[wordWrap]
+wrap rc=0 len=2 text=[hi] width=100 bps=0,2
+wrap rc=-1 len=1 text=[hi] width=3 bps=0
+wrap rc=0 len=4 text=[aa bb cc] width=20 bps=0,3,6,9
+wrap rc=0 len=4 text=[abcdefgh] width=20 bps=0,3,6,9
+wrap rc=0 len=4 text=[aa-bb cc] width=20 bps=0,3,6,9
+wrap rc=0 len=2 text=[] width=100 bps=0,0
+wrap rc=0 len=3 text=[hi] width=6 bps=0,1,3
+[dict]
+uninit-get=-1
+uninit-add=-1
+uninit-free=-1
+init=0
+added length=4 capacity=6 valuesize=4 order=alpha,bravo,CHARLIE,delta
+alpha bytes=01000000
+bravo bytes=02000000
+CHARLIE bytes=03000000
+delta bytes=04000000
+get-ALPHA=0
+get-missing=-1
+add-dup=-1
+remove-bravo=0
+removed length=3 capacity=6 valuesize=4 order=alpha,CHARLIE,delta
+alpha bytes=01000000
+CHARLIE bytes=03000000
+delta bytes=04000000
+remove-missing=-1
+copy=0
+copied length=3 capacity=6 valuesize=4 order=alpha,CHARLIE,delta
+alpha bytes=01000000
+CHARLIE bytes=03000000
+delta bytes=04000000
+shrink=-1
+grow=0
+cap=10
+free=0
+free-copy=0
+use-after-free=-1
+[dictFile]
+write=0
+fixture-written
+load=0
+loaded length=2 capacity=2 valuesize=4 order=alpha,beta
+alpha bytes=01020304
+beta bytes=05060708
+[paths]
+split [/a/b/c.txt] -> drive=[] dir=[/a/b/] fname=[c] ext=[.txt]
+split [a\b\c] -> drive=[] dir=[a\b\] fname=[c] ext=[]
+split [//server/share/f.txt] -> drive=[//] dir=[/share/] fname=[f] ext=[.txt]
+split [noext] -> drive=[] dir=[] fname=[noext] ext=[]
+split [a/.h] -> drive=[] dir=[a/] fname=[] ext=[.h]
+split [a/b.] -> drive=[] dir=[a/] fname=[b] ext=[.]
+make drive=[] dir=[/a/b/] fname=[c] ext=[.txt] -> [/a/b/c.txt]
+make drive=[] dir=[a\b\] fname=[c] ext=[txt] -> [a\b\c.txt]
+make drive=[//server] dir=[/share/] fname=[f] ext=[.txt] -> [//server/share/f.txt]
+make drive=[] dir=[] fname=[c] ext=[] -> [c]
+make drive=[C:] dir=[\a\] fname=[] ext=[.txt] -> [C:\a\.txt]
+native [a/b/c/d.txt]
+resolve [/tmp/f2resolve/subdir/mixedcase.txt] -> [/tmp/f2resolve/SubDir/MixedCase.Txt]
+resolve [/tmp/f2resolve/SUBDIR/MIXEDCASE.TXT] -> [/tmp/f2resolve/SubDir/MixedCase.Txt]
+resolve [/tmp/f2resolve/subdir/nope/x] -> [/tmp/f2resolve/SubDir/nope/x]
+resolve [/tmp/f2resolve/nonexistent/y] -> [/tmp/f2resolve/nonexistent/y]
+[fileUtils]
+decompress-plain=0
+decompress-plain-content n=12 [hello world
+]
+compress=0
+compress-magic=1F8B
+decompress-gz=0
+decompress-gz-content n=12 [hello world
+]
+missing=-1
+missing-gz=-1
+[pattern]
+match [text\english\game\*.msg] [text\english\game\misc.msg] -> 1
+match [text\english\game\*.msg] [text\english\cuts\elder.sve] -> 0
+match [*.msg] [misc.msg] -> 1
+match [*.msg] [a\misc.msg] -> 1
+match [?] [a] -> 1
+match [?] [] -> 0
+match [?] [ab] -> 0
+match [f??.txt] [foo.txt] -> 1
+match [a*c] [ax-yyy.c] -> 1
+match [a[0-9]z] [a1z] -> 1
+match [a[!0-9]z] [aoz] -> 1
+match [a[!0-9]z] [a1z] -> 0
+match [a`?b] [a?b] -> 1
+match [a``b] [a`b] -> 1
+match [!a] [b] -> 1
+match [!a] [a] -> 0
+match [] [] -> 1
+match [*] [] -> 0
+match [] [a] -> 0
+match [ac] [axc] -> 1
+match [ac] [ax-yyy.c] -> 0
+match [a[x-]b] [a-b] -> 0
+match [a[!-]b] [a-b] -> 0
+match [abc] [abc] -> 1
+match [abc] [abd] -> 0
+match [MISC.MSG] [misc.msg] -> 1
+match [text\english\game\misc.msg] [TEXT\ENGLISH\GAME\MISC.MSG] -> 1
+isvalid [a[] -> 0
+isvalid [a] -> 1
+[dbase]
+open-master=1 format=0 entries=23140 errflags=0
+open-patch=1 format=0 entries=489
+open-missing=0
+open-empty=0 errflags=0
+find-msgs count=31 first=[text\english\game\CMBATAI2.msg][text\english\game\COMBAT.MSG][text\english\game\COMBATAI.MSG]
+find-none=0
+entry [text\english\game\misc.msg] size=6728 got=6728 crc=2CFB7ACD eof=0
+entry [text\english\game\misc.msg] tell=16 head=230D0A23204D697363656C6C616E656F
+entry [text\english\game\misc.msg] seek-end=0 seek-size=1
+entry [text\english\game\misc.msg] after-read4 tell=4
+entry [text\english\game\misc.msg] seek100=0 tell=100
+entry [text\english\game\misc.msg] post-seek-read n=4 tell=104 bytes=71756974
+entry [art\intrface\mainmenu.frm] size=307274 got=307274 crc=ACA95567 eof=0
+entry [art\intrface\mainmenu.frm] tell=16 head=00000004000100000001000000000000
+entry [art\intrface\mainmenu.frm] seek-end=0 seek-size=1
+entry [art\intrface\mainmenu.frm] after-read4 tell=4
+entry [art\intrface\mainmenu.frm] seek100=0 tell=100
+entry [art\intrface\mainmenu.frm] post-seek-read n=4 tell=104 bytes=6F6F6F6F
+entry [no\such\file.txt] open=NULL
+textline=[#
+]
+open-write-mode=0
+patch-find-all count=489 first=[Art\intrface\HELPSCRN.FRM]
+[zip]
+open-zip=1 format=1 entries=2 errflags=0
+entry [a.txt] size=11 got=11 crc=614791A0 eof=0
+entry [a.txt] tell=11 head=73746F7265642D64617461
+entry [a.txt] seek-end=0 seek-size=1
+entry [a.txt] after-read4 tell=4
+entry [a.txt] seek100=1 tell=4
+entry [a.txt] post-seek-read n=4 tell=8 bytes=65642D64
+entry [sub\b.txt] size=1400 got=1400 crc=7E3B8A02 eof=0
+entry [sub\b.txt] tell=16 head=6465666C617465642D646174612D6465
+entry [sub\b.txt] seek-end=0 seek-size=1
+entry [sub\b.txt] after-read4 tell=4
+entry [sub\b.txt] seek100=0 tell=100
+entry [sub\b.txt] post-seek-read n=4 tell=104 bytes=666C6174
+open-empty-zip=0 errflags=2
+[fixtureDat]
+open-fixture=1 format=0 entries=6
+entry [medium.txt] size=201 got=201 crc=D872C896 eof=0
+entry [medium.txt] tell=16 head=4A345374272A652D4F6B28613C252C58
+entry [medium.txt] seek-end=0 seek-size=1
+entry [medium.txt] after-read4 tell=4
+entry [medium.txt] seek100=0 tell=4
+entry [medium.txt] post-seek-read n=4 tell=8 bytes=494C794D
+entry [big.txt] size=8200 got=8200 crc=70C09C7F eof=0
+entry [big.txt] tell=16 head=30313233343536373839414243444546
+entry [big.txt] seek-end=0 seek-size=1
+entry [big.txt] after-read4 tell=4
+entry [big.txt] seek100=0 tell=100
+entry [big.txt] post-seek-read n=4 tell=104 bytes=34353637
+entry [empty.txt] size=0 got=0 crc=00000000 eof=0
+entry [empty.txt] tell=0 head=
+entry [empty.txt] seek-end=0 seek-size=1
+entry [empty.txt] after-read4 tell=0
+entry [empty.txt] seek100=1 tell=0
+entry [empty.txt] post-seek-read n=0 tell=0 bytes=00000000
+fixture-find-nested=1 [sub\nested.txt]

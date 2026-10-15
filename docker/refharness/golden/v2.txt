@@ -1,0 +1,69 @@
+[rgb555]
+rgb555 000000=0
+rgb555 FFFFFF=32767
+rgb555 FF0000=31744
+rgb555 00FF00=992
+rgb555 0000FF=31
+rgb555 FF5252=32074
+rgb555 C5D6FF=25439
+rgb555 123456=2250
+rgb555 7B7B29=15845
+[rectUnion]
+union {(0,0)-(10,10)} {(5,5)-(15,15)} -> (0,0)-(15,15)
+union {(-5,-5)-(0,0)} {(10,10)-(20,20)} -> (-5,-5)-(20,20)
+union {(3,3)-(3,3)} {(3,3)-(3,3)} -> (3,3)-(3,3)
+[rectIntersection]
+isect rc=0 {(0,0)-(10,10)} {(5,5)-(15,15)} -> (5,5)-(10,10)
+isect rc=-1 {(0,0)-(10,10)} {(20,20)-(30,30)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(0,0)-(10,10)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(10,10)-(20,20)} -> (10,10)-(10,10)
+[rectClip]
+clip-hole[0] left=0 top=0 right=20 bottom=4
+clip-hole[1] left=0 top=5 right=4 bottom=10
+clip-hole[2] left=11 top=5 right=20 bottom=10
+clip-hole[3] left=0 top=11 right=20 bottom=20
+clip-hole count=4
+clip-miss[0] left=0 top=0 right=20 bottom=20
+clip-miss count=1
+[random]
+rand100[0]=15
+rand100[1]=20
+rand100[2]=21
+rand100[3]=62
+rand100[4]=43
+rand100[5]=98
+rand100[6]=50
+rand100[7]=2
+rand100[8]=58
+rand100[9]=9
+rand25[0]=11
+rand25[1]=25
+rand25[2]=25
+rand25[3]=17
+rand25[4]=2
+rand-degenerate=10
+INFO: Random number 3 is not in range 5 to 3
+rand-reversed=5
+[strParsers]
+parseInt rc=0 value=12 rest=[ 34,abc]
+parseInt-empty rc=0 value=0 rest=[]
+parseList rc=0 value=1 rest=[ x]
+INFO: 
+strParseStrFromList Error: Couldn't find match for string: seven!
+parseList-miss rc=-1 value=-1 rest=[]
+parseWithKey rc=0 value=3 rest=[ x=4]
+parseWithKey-miss rc=-1 value=-99 rest=[x=4]
+parseKeyValue rc=0 key=[count] value=3 rest=[, x=4]
+[strParseFunc]
+parseFunc rc=0 value=42 rest=[ next]
+INFO: 
+strParseStrFromFunc Error: Couldn't find match for string: nope!
+parseFunc-miss rc=-1 value=-1 rest=[]
+[wordWrap]
+wrap rc=0 len=2 text=[hi] width=100 bps=0,2
+wrap rc=-1 len=1 text=[hi] width=3 bps=0
+wrap rc=0 len=4 text=[aa bb cc] width=20 bps=0,3,6,9
+wrap rc=0 len=4 text=[abcdefgh] width=20 bps=0,3,6,9
+wrap rc=0 len=4 text=[aa-bb cc] width=20 bps=0,3,6,9
+wrap rc=0 len=2 text=[] width=100 bps=0,0
+wrap rc=0 len=3 text=[hi] width=6 bps=0,1,3

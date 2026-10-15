@@ -1,0 +1,46 @@
+INFO: Random number 3 is not in range 5 to 3
+[rgb555]
+rgb555 000000=0
+rgb555 FFFFFF=32767
+rgb555 FF0000=31744
+rgb555 00FF00=992
+rgb555 0000FF=31
+rgb555 FF5252=32074
+rgb555 C5D6FF=25439
+rgb555 123456=2250
+rgb555 7B7B29=15845
+[rectUnion]
+union {(0,0)-(10,10)} {(5,5)-(15,15)} -> (0,0)-(15,15)
+union {(-5,-5)-(0,0)} {(10,10)-(20,20)} -> (-5,-5)-(20,20)
+union {(3,3)-(3,3)} {(3,3)-(3,3)} -> (3,3)-(3,3)
+[rectIntersection]
+isect rc=0 {(0,0)-(10,10)} {(5,5)-(15,15)} -> (5,5)-(10,10)
+isect rc=-1 {(0,0)-(10,10)} {(20,20)-(30,30)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(0,0)-(10,10)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(10,10)-(20,20)} -> (10,10)-(10,10)
+[rectClip]
+clip-hole[0] left=0 top=0 right=20 bottom=4
+clip-hole[1] left=0 top=5 right=4 bottom=10
+clip-hole[2] left=11 top=5 right=20 bottom=10
+clip-hole[3] left=0 top=11 right=20 bottom=20
+clip-hole count=4
+clip-miss[0] left=0 top=0 right=20 bottom=20
+clip-miss count=1
+[random]
+rand100[0]=15
+rand100[1]=20
+rand100[2]=21
+rand100[3]=62
+rand100[4]=43
+rand100[5]=98
+rand100[6]=50
+rand100[7]=2
+rand100[8]=58
+rand100[9]=9
+rand25[0]=11
+rand25[1]=25
+rand25[2]=25
+rand25[3]=17
+rand25[4]=2
+rand-degenerate=10
+rand-reversed=5

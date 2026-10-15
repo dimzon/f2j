@@ -1,0 +1,1113 @@
+// Reference differential-test harness for the f2j Java port.
+//
+// Links against ALL upstream engine objects (except main.cc.o) and prints
+// deterministic vectors for pure-ish engine functions. The Java port
+// reproduces these vectors byte-for-byte; see golden/v1.txt.
+//
+// Build & run inside the f2j-ref container:
+//   docker/refharness/build-refharness.ps1   (from repo root on the host)
+//
+// NOTE: only functions that do not require game data / video init are used.
+// Randomness is seeded explicitly, so output is fully deterministic.
+
+#include <cstdio>
+#include <cstring>
+#include <zlib.h>
+
+#include "color.h"
+#include "dictionary.h"
+#include "config.h"
+#include "dfile.h"
+#include "file_utils.h"
+#include "fpattern_windows.h"
+#include "xfile.h"
+
+namespace {
+
+// Progress probe for dbGetFileContents accounting.
+int gProgressCalls = 0;
+void progressHandler()
+{
+    gProgressCalls++;
+}
+
+} // namespace
+#include "geometry.h"
+#include "platform_compat.h"
+#include "random.h"
+#include "string_parsers.h"
+#include "text_font.h"
+#include "word_wrap.h"
+
+namespace fallout {
+// win32.cc (excluded from the harness link: it defines main()) owns this
+// global; our vectors never touch video/input, so a fixed `true` is fine.
+bool gProgramIsActive = true;
+} // namespace fallout
+
+// Fixed-metric fake font for wordWrap vectors (no game data needed).
+// Mirrors how fontSetCurrent wires FontManager procs.
+namespace {
+
+int fakeCharWidth(int ch)
+{
+    (void)ch;
+    return 5;
+}
+
+int fakeSpacing()
+{
+    return 1;
+}
+
+int fakeMonoCharWidth()
+{
+    return 6;
+}
+
+int fakeStringWidth(const char* s)
+{
+    return (int)strlen(s) * 6;
+}
+
+void fakeSetCurrent(int font)
+{
+    (void)font;
+}
+
+void installFakeFont()
+{
+    static bool installed = false;
+    if (installed) {
+        return;
+    }
+    fallout::FontManager fake {};
+    fake.minFont = 0;
+    fake.maxFont = 9;
+    fake.setCurrentProc = fakeSetCurrent;
+    fake.drawTextProc = nullptr;
+    fake.getLineHeightProc = nullptr;
+    fake.getStringWidthProc = fakeStringWidth;
+    fake.getCharacterWidthProc = fakeCharWidth;
+    fake.getMonospacedStringWidthProc = nullptr;
+    fake.getLetterSpacingProc = fakeSpacing;
+    fake.getBufferSizeProc = nullptr;
+    fake.getMonospacedCharacterWidthProc = fakeMonoCharWidth;
+    fallout::fontManagerAdd(&fake);
+    fallout::fontSetCurrent(1);
+    installed = true;
+}
+
+void printRect(const char* label, const fallout::Rect& r)
+{
+    std::printf("%s left=%d top=%d right=%d bottom=%d\n", label, r.left, r.top, r.right, r.bottom);
+}
+
+void sectionRgb555()
+{
+    std::puts("[rgb555]");
+    const int inputs[] = { 0x000000, 0xFFFFFF, 0xFF0000, 0x00FF00, 0x0000FF, 0xFF5252, 0xC5D6FF, 0x123456, 0x7B7B29 };
+    for (int rgb : inputs) {
+        std::printf("rgb555 %06X=%d\n", rgb, fallout::rgb555(rgb));
+    }
+}
+
+void sectionRectUnion()
+{
+    std::puts("[rectUnion]");
+    const fallout::Rect cases[][2] = {
+        { { 0, 0, 10, 10 }, { 5, 5, 15, 15 } },
+        { { -5, -5, 0, 0 }, { 10, 10, 20, 20 } },
+        { { 3, 3, 3, 3 }, { 3, 3, 3, 3 } },
+    };
+    for (const auto& c : cases) {
+        fallout::Rect r {};
+        fallout::rectUnion(&c[0], &c[1], &r);
+        std::printf("union {(%d,%d)-(%d,%d)} {(%d,%d)-(%d,%d)} -> (%d,%d)-(%d,%d)\n",
+            c[0].left, c[0].top, c[0].right, c[0].bottom,
+            c[1].left, c[1].top, c[1].right, c[1].bottom,
+            r.left, r.top, r.right, r.bottom);
+    }
+}
+
+void sectionRectIntersection()
+{
+    std::puts("[rectIntersection]");
+    const fallout::Rect cases[][2] = {
+        { { 0, 0, 10, 10 }, { 5, 5, 15, 15 } },
+        { { 0, 0, 10, 10 }, { 20, 20, 30, 30 } },
+        { { 0, 0, 10, 10 }, { 0, 0, 10, 10 } },
+        { { 0, 0, 10, 10 }, { 10, 10, 20, 20 } }, // edge-touching
+    };
+    for (const auto& c : cases) {
+        fallout::Rect r {};
+        int rc = fallout::rectIntersection(&c[0], &c[1], &r);
+        std::printf("isect rc=%d {(%d,%d)-(%d,%d)} {(%d,%d)-(%d,%d)} -> (%d,%d)-(%d,%d)\n",
+            rc,
+            c[0].left, c[0].top, c[0].right, c[0].bottom,
+            c[1].left, c[1].top, c[1].right, c[1].bottom,
+            r.left, r.top, r.right, r.bottom);
+    }
+}
+
+void sectionRectClip()
+{
+    std::puts("[rectClip]");
+    // Overlapping hole: b minus t yields 4 surround rects.
+    {
+        fallout::Rect b { 0, 0, 20, 20 };
+        fallout::Rect t { 5, 5, 10, 10 };
+        int n = 0;
+        for (fallout::RectListNode* node = fallout::rect_clip(&b, &t); node != nullptr; node = node->next) {
+            char label[32];
+            std::snprintf(label, sizeof(label), "clip-hole[%d]", n++);
+            printRect(label, node->rect);
+        }
+        std::printf("clip-hole count=%d\n", n);
+    }
+    // No overlap: single rect equal to b.
+    {
+        fallout::Rect b { 0, 0, 20, 20 };
+        fallout::Rect t { 30, 30, 40, 40 };
+        int n = 0;
+        for (fallout::RectListNode* node = fallout::rect_clip(&b, &t); node != nullptr; node = node->next) {
+            char label[32];
+            std::snprintf(label, sizeof(label), "clip-miss[%d]", n++);
+            printRect(label, node->rect);
+        }
+        std::printf("clip-miss count=%d\n", n);
+    }
+}
+
+void sectionRandom()
+{
+    std::puts("[random]");
+    fallout::randomSeedPrerandom(12345);
+    for (int i = 0; i < 10; i++) {
+        std::printf("rand100[%d]=%d\n", i, fallout::randomBetween(1, 100));
+    }
+    fallout::randomSeedPrerandom(1);
+    for (int i = 0; i < 5; i++) {
+        std::printf("rand25[%d]=%d\n", i, fallout::randomBetween(1, 25));
+    }
+    // Degenerate + reversed ranges (see randomBetween min/max handling).
+    std::printf("rand-degenerate=%d\n", fallout::randomBetween(10, 10));
+    fallout::randomSeedPrerandom(7);
+    std::printf("rand-reversed=%d\n", fallout::randomBetween(5, 3));
+}
+
+void sectionStrParsers()
+{
+    std::puts("[strParsers]");
+
+    {
+        char buf[64] = "  12, 34,abc";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseInt(&cursor, &value);
+        std::printf("parseInt rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+    {
+        char buf[64] = ",";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseInt(&cursor, &value);
+        std::printf("parseInt-empty rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+    {
+        const char* list[] = { "one", "two", "three" };
+        char buf[64] = "Two, x";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseStrFromList(&cursor, &value, list, 3);
+        std::printf("parseList rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+    {
+        const char* list[] = { "one", "two", "three" };
+        char buf[64] = "seven";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseStrFromList(&cursor, &value, list, 3);
+        std::printf("parseList-miss rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+    {
+        char buf[64] = "count=3, x=4";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseIntWithKey(&cursor, "count", &value, "=");
+        std::printf("parseWithKey rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+    {
+        char buf[64] = "x=4";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseIntWithKey(&cursor, "count", &value, "=");
+        std::printf("parseWithKey-miss rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+    {
+        char buf[64] = "count=3, x=4";
+        char* cursor = buf;
+        char key[64] = {};
+        int value = -99;
+        int rc = fallout::strParseKeyValue(&cursor, key, &value, "=");
+        std::printf("parseKeyValue rc=%d key=[%s] value=%d rest=[%s]\n", rc, key, value, cursor);
+    }
+}
+
+int yesNoCallback(char* string, int* valuePtr)
+{
+    if (std::strcmp(string, "yes") == 0) {
+        *valuePtr = 42;
+        return 0;
+    }
+    return 1;
+}
+
+void sectionStrParseFunc()
+{
+    std::puts("[strParseFunc]");
+    {
+        char buf[64] = "YES, next";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseStrFromFunc(&cursor, &value, yesNoCallback);
+        std::printf("parseFunc rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+    {
+        char buf[64] = "nope";
+        char* cursor = buf;
+        int value = -99;
+        int rc = fallout::strParseStrFromFunc(&cursor, &value, yesNoCallback);
+        std::printf("parseFunc-miss rc=%d value=%d rest=[%s]\n", rc, value, cursor);
+    }
+}
+
+void sectionWordWrap()
+{
+    std::puts("[wordWrap]");
+    installFakeFont();
+
+    const struct {
+        const char* text;
+        int width;
+    } cases[] = {
+        { "hi", 100 },
+        { "hi", 3 },
+        { "aa bb cc", 20 },
+        { "abcdefgh", 20 },
+        { "aa-bb cc", 20 },
+        { "", 100 },
+        { "hi", 6 },
+    };
+    for (const auto& c : cases) {
+        short breakpoints[WORD_WRAP_MAX_COUNT];
+        short len = 0;
+        int rc = fallout::wordWrap(c.text, c.width, breakpoints, &len);
+        std::printf("wrap rc=%d len=%d text=[%s] width=%d bps=", rc, len, c.text, c.width);
+        for (int i = 0; i < len; i++) {
+            std::printf("%s%d", i ? "," : "", breakpoints[i]);
+        }
+        std::puts("");
+    }
+}
+
+} // namespace
+
+void dumpDict(const char* label, fallout::Dictionary* d)
+{
+    std::printf("%s length=%d capacity=%d valuesize=%d order=",
+        label, d->entriesLength, d->entriesCapacity, (int)d->valueSize);
+    for (int i = 0; i < d->entriesLength; i++) {
+        std::printf("%s%s", i ? "," : "", d->entries[i].key);
+    }
+    std::puts("");
+    for (int i = 0; i < d->entriesLength; i++) {
+        std::printf("%s bytes=", d->entries[i].key);
+        unsigned char* bytes = (unsigned char*)d->entries[i].value;
+        if (bytes != nullptr) {
+            for (size_t k = 0; k < d->valueSize; k++) {
+                std::printf("%02X", bytes[k]);
+            }
+        } else {
+            std::printf("(null)");
+        }
+        std::puts("");
+    }
+}
+
+void sectionDict()
+{
+    std::puts("[dict]");
+
+    fallout::Dictionary d {};
+    std::printf("uninit-get=%d\n", fallout::dictionaryGetIndexByKey(&d, "a"));
+    std::printf("uninit-add=%d\n", fallout::dictionaryAddValue(&d, "a", nullptr));
+    std::printf("uninit-free=%d\n", fallout::dictionaryFree(&d));
+
+    fallout::DictionaryIO noIo { nullptr, nullptr };
+    std::printf("init=%d\n", fallout::dictionaryInit(&d, 0, 4, &noIo));
+
+    unsigned char vDelta[4] = { 4, 0, 0, 0 };
+    unsigned char vAlpha[4] = { 1, 0, 0, 0 };
+    unsigned char vCharlie[4] = { 3, 0, 0, 0 };
+    unsigned char vBravo[4] = { 2, 0, 0, 0 };
+    fallout::dictionaryAddValue(&d, "delta", vDelta);
+    fallout::dictionaryAddValue(&d, "alpha", vAlpha);
+    fallout::dictionaryAddValue(&d, "CHARLIE", vCharlie);
+    fallout::dictionaryAddValue(&d, "bravo", vBravo);
+    dumpDict("added", &d);
+
+    std::printf("get-ALPHA=%d\n", fallout::dictionaryGetIndexByKey(&d, "ALPHA"));
+    std::printf("get-missing=%d\n", fallout::dictionaryGetIndexByKey(&d, "zzz"));
+    std::printf("add-dup=%d\n", fallout::dictionaryAddValue(&d, "Alpha", vAlpha));
+
+    std::printf("remove-bravo=%d\n", fallout::dictionaryRemoveValue(&d, "BRAVO"));
+    dumpDict("removed", &d);
+    std::printf("remove-missing=%d\n", fallout::dictionaryRemoveValue(&d, "bravo"));
+
+    fallout::Dictionary c {};
+    std::printf("copy=%d\n", fallout::dictionaryCopy(&c, &d));
+    dumpDict("copied", &c);
+
+    std::printf("shrink=%d\n", fallout::dictionarySetCapacity(&d, 1));
+    std::printf("grow=%d\n", fallout::dictionarySetCapacity(&d, 10));
+    std::printf("cap=%d\n", d.entriesCapacity);
+
+    std::printf("free=%d\n", fallout::dictionaryFree(&d));
+    std::printf("free-copy=%d\n", fallout::dictionaryFree(&c));
+    std::printf("use-after-free=%d\n", fallout::dictionaryGetIndexByKey(&d, "alpha"));
+}
+
+void sectionDictFile()
+{
+    std::puts("[dictFile]");
+
+    fallout::Dictionary d {};
+    fallout::dictionaryInit(&d, 0, 4, nullptr);
+    unsigned char vAlpha[4] = { 1, 2, 3, 4 };
+    unsigned char vBeta[4] = { 5, 6, 7, 8 };
+    fallout::dictionaryAddValue(&d, "alpha", vAlpha);
+    fallout::dictionaryAddValue(&d, "beta", vBeta);
+
+    const char* tmpPath = "/tmp/dict.bin";
+    // Fixture for the Java port (loaded by DictionaryTest from resources).
+    const char* fixturePath = "/src/java/engine/src/test/resources/fixtures/dict-v1.bin";
+
+    FILE* out = fopen(tmpPath, "wb");
+    std::printf("write=%d\n", fallout::dictionaryWrite(out, &d, 0));
+    fclose(out);
+
+    out = fopen(fixturePath, "wb");
+    if (out != nullptr) {
+        fallout::dictionaryWrite(out, &d, 0);
+        fclose(out);
+        std::puts("fixture-written");
+    } else {
+        std::puts("fixture-SKIPPED");
+    }
+
+    fallout::Dictionary e {};
+    fallout::dictionaryInit(&e, 0, 0, nullptr);
+    FILE* in = fopen(tmpPath, "rb");
+    std::printf("load=%d\n", fallout::dictionaryLoad(in, &e, 0));
+    fclose(in);
+    dumpDict("loaded", &e);
+
+    fallout::dictionaryFree(&d);
+    fallout::dictionaryFree(&e);
+}
+
+void sectionPaths()
+{
+    std::puts("[paths]");
+
+    const char* splitCases[] = {
+        "/a/b/c.txt",
+        "a\\b\\c",
+        "//server/share/f.txt",
+        "noext",
+        "a/.h",
+        "a/b.",
+    };
+    for (const char* input : splitCases) {
+        char drive[COMPAT_MAX_DRIVE] = {};
+        char dir[COMPAT_MAX_DIR] = {};
+        char fname[COMPAT_MAX_FNAME] = {};
+        char ext[COMPAT_MAX_EXT] = {};
+        fallout::compat_splitpath(input, drive, dir, fname, ext);
+        std::printf("split [%s] -> drive=[%s] dir=[%s] fname=[%s] ext=[%s]\n",
+            input, drive, dir, fname, ext);
+    }
+
+    struct MakeCase {
+        const char* drive;
+        const char* dir;
+        const char* fname;
+        const char* ext;
+    };
+    const MakeCase makeCases[] = {
+        { "", "/a/b/", "c", ".txt" },
+        { "", "a\\b\\", "c", "txt" },
+        { "//server", "/share/", "f", ".txt" },
+        { "", "", "c", "" },
+        { "C:", "\\a\\", "", ".txt" },
+    };
+    for (const auto& c : makeCases) {
+        char path[COMPAT_MAX_PATH] = {};
+        fallout::compat_makepath(path, c.drive, c.dir, c.fname, c.ext);
+        std::printf("make drive=[%s] dir=[%s] fname=[%s] ext=[%s] -> [%s]\n",
+            c.drive, c.dir, c.fname, c.ext, path);
+    }
+
+    {
+        char path[COMPAT_MAX_PATH] = "a\\b/c\\d.txt";
+        fallout::compat_windows_path_to_native(path);
+        std::printf("native [%s]\n", path);
+    }
+
+    // Case-insensitive resolution against a real fixture tree.
+    // Built by the build-refharness container command (see below).
+    const char* resolveCases[] = {
+        "/tmp/f2resolve/subdir/mixedcase.txt",
+        "/tmp/f2resolve/SUBDIR/MIXEDCASE.TXT",
+        "/tmp/f2resolve/subdir/nope/x",
+        "/tmp/f2resolve/nonexistent/y",
+    };
+    for (const char* input : resolveCases) {
+        char path[COMPAT_MAX_PATH] = {};
+        snprintf(path, sizeof(path), "%s", input);
+        fallout::compat_resolve_path(path);
+        std::printf("resolve [%s] -> [%s]\n", input, path);
+    }
+}
+
+void sectionFileUtils()
+{
+    std::puts("[fileUtils]");
+
+    const char* plain = "/tmp/fu-plain.txt";
+    const char* gz = "/tmp/fu-arch.gz";
+    const char* back = "/tmp/fu-back.txt";
+    const char* missing = "/tmp/fu-nope.txt";
+
+    {
+        FILE* f = fopen(plain, "wb");
+        fputs("hello world\n", f);
+        fclose(f);
+    }
+
+    std::printf("decompress-plain=%d\n", fallout::fileCopyDecompressed(plain, back));
+    {
+        FILE* f = fopen(back, "rb");
+        char buf[64] = {};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+        fclose(f);
+        std::printf("decompress-plain-content n=%d [%s]\n", (int)n, buf);
+    }
+
+    std::printf("compress=%d\n", fallout::fileCopyCompressed(plain, gz));
+    {
+        FILE* f = fopen(gz, "rb");
+        int b0 = fgetc(f);
+        int b1 = fgetc(f);
+        fclose(f);
+        std::printf("compress-magic=%02X%02X\n", b0, b1);
+    }
+
+    std::printf("decompress-gz=%d\n", fallout::fileCopyDecompressed(gz, back));
+    {
+        FILE* f = fopen(back, "rb");
+        char buf[64] = {};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+        fclose(f);
+        std::printf("decompress-gz-content n=%d [%s]\n", (int)n, buf);
+    }
+
+    std::printf("missing=%d\n", fallout::fileCopyDecompressed(missing, back));
+    std::printf("missing-gz=%d\n", fallout::_gzdecompress_file(missing, back));
+}
+
+void sectionPattern()
+{
+    std::puts("[pattern]");
+    // fpattern_windows_match (DOS variant, DELIM=0): 1 = match.
+    const struct {
+        const char* pat;
+        const char* name;
+    } cases[] = {
+        { "text\\english\\game\\*.msg", "text\\english\\game\\misc.msg" },
+        { "text\\english\\game\\*.msg", "text\\english\\cuts\\elder.sve" },
+        { "*.msg", "misc.msg" },
+        { "*.msg", "a\\misc.msg" },
+        { "?", "a" },
+        { "?", "" },
+        { "?", "ab" },
+        { "f??.txt", "foo.txt" },
+        { "a*c", "ax-yyy.c" },
+        { "a[0-9]z", "a1z" },
+        { "a[!0-9]z", "aoz" },
+        { "a[!0-9]z", "a1z" },
+        { "a`?b", "a?b" },
+        { "a``b", "a`b" },
+        { "!a", "b" },
+        { "!a", "a" },
+        { "", "" },
+        { "*", "" },
+        { "", "a" },
+        { "a\x1A"
+          "c",
+            "axc" },
+        { "a\x1A"
+          "c",
+            "ax-yyy.c" },
+        { "a[x-]b", "a-b" },
+        { "a[!-]b", "a-b" },
+        { "abc", "abc" },
+        { "abc", "abd" },
+        { "MISC.MSG", "misc.msg" },
+        { "text\\english\\game\\misc.msg", "TEXT\\ENGLISH\\GAME\\MISC.MSG" },
+    };
+    for (const auto& c : cases) {
+        std::printf("match [%s] [%s] -> %d\n", c.pat, c.name, fpattern_windows_match(c.pat, c.name));
+    }
+    std::printf("isvalid [a[] -> %d\n", fpattern_windows_isvalid("a["));
+    std::printf("isvalid [a] -> %d\n", fpattern_windows_isvalid("a"));
+}
+
+void dumpEntry(fallout::DBase* db, const char* entryPath)
+{
+    fallout::DFile* f = fallout::dfileOpen(db, entryPath, "rb");
+    if (f == nullptr) {
+        std::printf("entry [%s] open=NULL\n", entryPath);
+        return;
+    }
+    long size = fallout::dfileGetSize(f);
+    unsigned char* data = (unsigned char*)malloc(size > 0 ? size : 1);
+    long got = 0;
+    if (size > 0) {
+        size_t remaining = (size_t)size;
+        while (remaining > 0) {
+            size_t n = fallout::dfileRead(data + got, 1, remaining, f);
+            if (n == 0) {
+                break;
+            }
+            got += n;
+            remaining -= n;
+        }
+    }
+    uLong crc = crc32(0L, Z_NULL, 0);
+    if (got > 0) {
+        crc = crc32(crc, data, (uInt)got);
+    }
+    std::printf("entry [%s] size=%ld got=%ld crc=%08lX eof=%d\n",
+        entryPath, size, got, crc, fallout::dfileEof(f) != 0);
+
+    // Seek/tell probe.
+    fallout::dfileRewind(f);
+    unsigned char head[16] = {};
+    fallout::dfileRead(head, 1, sizeof(head) > (size_t)size ? (size_t)size : sizeof(head), f);
+    std::printf("entry [%s] tell=%ld head=", entryPath, fallout::dfileTell(f));
+    long shown = size < 16 ? size : 16;
+    for (long i = 0; i < shown; i++) {
+        std::printf("%02X", head[i]);
+    }
+    std::puts("");
+    int seekEndRc = fallout::dfileSeek(f, -1, SEEK_END);
+    int seekSizeRc = fallout::dfileSeek(f, size, SEEK_SET);
+    std::printf("entry [%s] seek-end=%d seek-size=%d\n", entryPath, seekEndRc, seekSizeRc);
+
+    // Stale-position probe: uncompressed non-zero seeks move the file
+    // pointer but not the tracked position (mirrored quirk).
+    fallout::DFile* s = fallout::dfileOpen(db, entryPath, "rb");
+    if (s != nullptr) {
+        unsigned char tmp[4] = {};
+        fallout::dfileRead(tmp, 1, 4, s);
+        std::printf("entry [%s] after-read4 tell=%ld\n", entryPath, fallout::dfileTell(s));
+        int seekRc = fallout::dfileSeek(s, 100, SEEK_SET);
+        long seekTell = fallout::dfileTell(s);
+        std::printf("entry [%s] seek100=%d tell=%ld\n", entryPath, seekRc, seekTell);
+        unsigned char four[4] = {};
+        size_t n = fallout::dfileRead(four, 1, 4, s);
+        std::printf("entry [%s] post-seek-read n=%d tell=%ld bytes=%02X%02X%02X%02X\n", entryPath,
+            (int)n, fallout::dfileTell(s), four[0], four[1], four[2], four[3]);
+        fallout::dfileClose(s);
+    }
+
+    fallout::dfileClose(f);
+    free(data);
+}
+
+void sectionDbase()
+{
+    std::puts("[dbase]");
+
+    int errorFlags = 0;
+    fallout::DBase* master = fallout::dbaseOpen("/game-en/master.dat", &errorFlags);
+    std::printf("open-master=%d format=%d entries=%d errflags=%d\n",
+        master != nullptr, master != nullptr ? (int)master->format : -1,
+        master != nullptr ? master->entriesLength : -1, errorFlags);
+
+    fallout::DBase* patch = fallout::dbaseOpen("/game-en/patch000.dat", &errorFlags);
+    std::printf("open-patch=%d format=%d entries=%d\n",
+        patch != nullptr, patch != nullptr ? (int)patch->format : -1,
+        patch != nullptr ? patch->entriesLength : -1);
+
+    fallout::DBase* missing = fallout::dbaseOpen("/game-en/nope.dat", &errorFlags);
+    std::printf("open-missing=%d\n", missing != nullptr);
+
+    {
+        FILE* tmp = fopen("/tmp/empty.dat", "wb");
+        fclose(tmp);
+        errorFlags = 0;
+        fallout::DBase* empty = fallout::dbaseOpen("/tmp/empty.dat", &errorFlags);
+        std::printf("open-empty=%d errflags=%d\n", empty != nullptr, errorFlags);
+    }
+
+    if (master != nullptr) {
+        fallout::DFileFindData fd {};
+        int msgCount = 0;
+        char first[3][256] = {};
+        if (fallout::dbaseFindFirstEntry(master, &fd, "text\\english\\game\\*.msg")) {
+            do {
+                if (msgCount < 3) {
+                    snprintf(first[msgCount], sizeof(first[msgCount]), "%s", fd.fileName);
+                }
+                msgCount++;
+            } while (msgCount <= master->entriesLength + 1 && fallout::dbaseFindNextEntry(master, &fd));
+        }
+        std::printf("find-msgs count=%d first=[%s][%s][%s]\n", msgCount, first[0], first[1], first[2]);
+
+        fallout::DFileFindData fd2 {};
+        std::printf("find-none=%d\n",
+            fallout::dbaseFindFirstEntry(master, &fd2, "zzz_no_such\\*.qqq") ? 1 : 0);
+
+        dumpEntry(master, "text\\english\\game\\misc.msg");
+        dumpEntry(master, "art\\intrface\\mainmenu.frm");
+        dumpEntry(master, "no\\such\\file.txt");
+
+        // Text-mode read (exercises \r\n collapsing path).
+        fallout::DFile* t = fallout::dfileOpen(master, "text\\english\\game\\misc.msg", "rt");
+        if (t != nullptr) {
+            char line[128] = {};
+            char* r = fallout::dfileReadString(line, sizeof(line), t);
+            std::printf("textline=[%s]\n", r != nullptr ? line : "(null)");
+            fallout::dfileClose(t);
+        }
+
+        fallout::DFile* w = fallout::dfileOpen(master, "text\\english\\game\\misc.msg", "wb");
+        std::printf("open-write-mode=%d\n", w != nullptr);
+        if (w != nullptr) {
+            fallout::dfileClose(w);
+        }
+
+        fallout::dbaseClose(master);
+    }
+
+    if (patch != nullptr) {
+        fallout::DFileFindData fd {};
+        int count = 0;
+        char first[256] = {};
+        if (fallout::dbaseFindFirstEntry(patch, &fd, "*")) {
+            snprintf(first, sizeof(first), "%s", fd.fileName);
+            count = 1;
+            while (count <= patch->entriesLength + 1 && fallout::dbaseFindNextEntry(patch, &fd)) {
+                count++;
+            }
+        }
+        std::printf("patch-find-all count=%d first=[%s]\n", count, first);
+        fallout::dbaseClose(patch);
+    }
+}
+
+void sectionZip()
+{
+    std::puts("[zip]");
+
+    int errorFlags = 0;
+    fallout::DBase* zip = fallout::dbaseOpen("/tmp/f2test.zip", &errorFlags);
+    std::printf("open-zip=%d format=%d entries=%d errflags=%d\n",
+        zip != nullptr, zip != nullptr ? (int)zip->format : -1,
+        zip != nullptr ? zip->entriesLength : -1, errorFlags);
+
+    if (zip != nullptr) {
+        dumpEntry(zip, "a.txt");
+        dumpEntry(zip, "sub\\b.txt");
+        fallout::dbaseClose(zip);
+    }
+
+    errorFlags = 0;
+    fallout::DBase* empty = fallout::dbaseOpen("/tmp/f2empty.zip", &errorFlags);
+    std::printf("open-empty-zip=%d errflags=%d\n", empty != nullptr, errorFlags);
+}
+
+void sectionFixtureDat()
+{
+    std::puts("[fixtureDat]");
+
+    // Committed fixture (also loaded by the Java tests).
+    fallout::DBase* db = fallout::dbaseOpen(
+        "/src/java/engine/src/test/resources/fixtures/f2j-test.dat", nullptr);
+    std::printf("open-fixture=%d format=%d entries=%d\n",
+        db != nullptr, db != nullptr ? (int)db->format : -1,
+        db != nullptr ? db->entriesLength : -1);
+    if (db == nullptr) {
+        return;
+    }
+
+    dumpEntry(db, "medium.txt");
+    dumpEntry(db, "big.txt");
+    dumpEntry(db, "empty.txt");
+
+    fallout::DFileFindData fd {};
+    std::printf("fixture-find-nested=%d [%s]\n",
+        fallout::dbaseFindFirstEntry(db, &fd, "sub\\*") ? 1 : 0, fd.fileName);
+
+    fallout::dbaseClose(db);
+}
+
+void dumpXfile(const char* path)
+{
+    fallout::File* f = fallout::fileOpen(path, "rb");
+    if (f == nullptr) {
+        std::printf("xfile [%s] open=NULL\n", path);
+        return;
+    }
+    long size = fallout::fileGetSize(f);
+    // NOTE: GZFILE reports size 0 (quirk); still probe bounded content.
+    size_t cap = size > 0 ? (size_t)size : 256;
+    unsigned char* data = (unsigned char*)malloc(cap > 0 ? cap : 1);
+    long got = 0;
+    {
+        size_t remaining = cap;
+        while (remaining > 0) {
+            size_t n = fallout::fileRead(data + got, 1, remaining, f);
+            if (n == 0) {
+                break;
+            }
+            got += n;
+            remaining -= n;
+        }
+    }
+    uLong crc = crc32(0L, Z_NULL, 0);
+    if (got > 0) {
+        crc = crc32(crc, data, (uInt)got);
+    }
+    std::printf("xfile [%s] size=%ld got=%ld crc=%08lX\n", path, size, got, crc);
+    fallout::fileClose(f);
+    free(data);
+}
+
+void sectionXbase()
+{
+    std::puts("[xbase]");
+    std::printf("open-master=%d\n", fallout::xbaseOpen("/game-en/master.dat"));
+    std::printf("open-patch=%d\n", fallout::xbaseOpen("/game-en/patch000.dat"));
+    std::printf("open-dira=%d\n", fallout::xbaseOpen("/tmp/f2xbase_a"));
+    std::printf("open-dirb=%d\n", fallout::xbaseOpen("/tmp/f2xbase_b"));
+    std::printf("open-missing=%d\n", fallout::xbaseOpen("/tmp/f2nope"));
+    // Re-open moves to the top (observable in sectionXfile priority below).
+    std::printf("open-dup-a=%d\n", fallout::xbaseOpen("/tmp/f2xbase_a"));
+    std::printf("isdir-a=%d\n", fallout::xbaseIsValidDirectory("/tmp/f2xbase_a"));
+    std::printf("isdir-a-slash=%d\n", fallout::xbaseIsValidDirectory("/tmp/f2xbase_a/"));
+    std::printf("isdir-a-upper=%d\n", fallout::xbaseIsValidDirectory("/TMP/F2XBASE_A"));
+    std::printf("isdir-dat=%d\n", fallout::xbaseIsValidDirectory("/game-en/master.dat"));
+    std::printf("isdir-missing=%d\n", fallout::xbaseIsValidDirectory("/tmp/f2nope"));
+    std::printf("isdir-empty=%d\n", fallout::xbaseIsValidDirectory(""));
+}
+
+void sectionXfile()
+{
+    std::puts("[xfile]");
+    // Priority: dir-a was re-opened last, so its shared.txt ("A") wins.
+    dumpXfile("shared.txt");
+    // Absolute paths bypass xbases.
+    dumpXfile("/tmp/f2xbase_b/shared.txt");
+    // DAT entry through the VFS.
+    dumpXfile("text\\english\\game\\misc.msg");
+    // Plain file with gzip magic takes the GZFILE branch (size quirk: 0).
+    dumpXfile("arch.gz");
+    {
+        // Explicit GZ content probe (size lies, content does not).
+        fallout::File* g = fallout::fileOpen("arch.gz", "rb");
+        if (g != nullptr) {
+            char content[64] = {};
+            size_t n = fallout::fileRead(content, 1, sizeof(content) - 1, g);
+            long tell = fallout::fileTell(g);
+            int eof = fallout::fileEof(g);
+            std::printf("gzread n=%d tell=%ld eof=%d [%s]\n", (int)n, tell, eof, content);
+            fallout::fileClose(g);
+        }
+    }
+    std::printf("open-missing=%d\n", fallout::xfileOpen("no_such_file.xyz", "rb") != nullptr);
+
+    // Seek/tell/rewind/eof through the VFS handle.
+    fallout::File* f = fallout::fileOpen("text\\english\\game\\misc.msg", "rb");
+    if (f != nullptr) {
+        unsigned char buf[4] = {};
+        fallout::fileRead(buf, 1, 4, f);
+        long tell1 = fallout::fileTell(f);
+        fallout::fileRewind(f);
+        long tell2 = fallout::fileTell(f);
+        std::printf("vfs-seek tell1=%ld tell2=%ld eof=%d\n", tell1, tell2, fallout::fileEof(f));
+        fallout::fileClose(f);
+    }
+
+    // compat_fgets \r\n collapsing through the VFS.
+    fallout::File* t = fallout::fileOpen("crlf.txt", "rb");
+    if (t != nullptr) {
+        char line[128] = {};
+        char* r = fallout::fileReadString(line, sizeof(line), t);
+        std::printf("vfs-textline=[%s]\n", r != nullptr ? line : "(null)");
+        fallout::fileClose(t);
+    }
+
+    // Write round-trip through the VFS (lands in dir-a: first dir xbase).
+    fallout::File* w = fallout::fileOpen("wtest.bin", "wb");
+    if (w != nullptr) {
+        int v = 0x01020304;
+        // Big-endian write, byte by byte like the engine does.
+        unsigned char be[4] = { 0x01, 0x02, 0x03, 0x04 };
+        size_t n = fallout::fileWrite(be, 1, 4, w);
+        (void)v;
+        fallout::fileClose(w);
+        std::printf("vfs-write n=%d\n", (int)n);
+    }
+    dumpXfile("/tmp/f2xbase_a/wtest.bin");
+}
+
+void sectionDb()
+{
+    std::puts("[db]");
+    std::printf("dbopen=%d\n", fallout::dbOpen("/game-en/master.dat", "/game-en/patch000.dat"));
+    std::printf("dbopen-missing=%d\n", fallout::dbOpen("/game-en/nope.dat", nullptr));
+    std::printf("dbtotal=%d\n", fallout::db_total());
+
+    int miscSize = -99;
+    int miscRc = fallout::dbGetFileSize("text\\english\\game\\misc.msg", &miscSize);
+    std::printf("dbsize-misc=%d size=%d\n", miscRc, miscSize);
+    int missingRc = fallout::dbGetFileSize("no\\such\\file.txt", &miscSize);
+    std::printf("dbsize-missing=%d\n", missingRc);
+
+    // Big-endian typed reads (be.bin = 01 02 03 04, zeros.bin = 0).
+    fallout::File* b = fallout::fileOpen("be.bin", "rb");
+    if (b != nullptr) {
+        int i32 = 0;
+        fallout::fileReadInt32(b, &i32);
+        fallout::fileClose(b);
+        std::printf("be-i32=%d\n", i32);
+    }
+    fallout::File* z = fallout::fileOpen("zeros.bin", "rb");
+    if (z != nullptr) {
+        int i32 = -99;
+        bool bval = true;
+        fallout::fileReadInt32(z, &i32);
+        fallout::fileRewind(z);
+        fallout::fileReadBool(z, &bval);
+        fallout::fileClose(z);
+        std::printf("zero-i32=%d zero-bool=%d\n", i32, bval ? 1 : 0);
+    }
+
+    // Progress-handler accounting (size via db, like callers do).
+    fallout::fileSetReadProgressHandler(progressHandler, 4);
+    gProgressCalls = 0;
+    int contentSize = 0;
+    fallout::dbGetFileSize("text\\english\\game\\misc.msg", &contentSize);
+    fallout::File* m = fallout::fileOpen("text\\english\\game\\misc.msg", "rb");
+    if (m != nullptr && contentSize > 0) {
+        unsigned char* data = (unsigned char*)malloc((size_t)contentSize);
+        fallout::dbGetFileContents("text\\english\\game\\misc.msg", data);
+        uLong crc = crc32(0L, Z_NULL, 0);
+        crc = crc32(crc, data, (uInt)contentSize);
+        std::printf("progress-calls=%d size=%d crc=%08lX\n", gProgressCalls, contentSize, crc);
+        free(data);
+        fallout::fileClose(m);
+    }
+    fallout::fileSetReadProgressHandler(nullptr, 0);
+
+    // Sorted/deduped/basename file list across all xbases.
+    char** names = nullptr;
+    int count = fallout::fileNameListInit("Art\\*", &names);
+    std::printf("namelist count=%d\n", count);
+    for (int i = 0; i < count && i < 3; i++) {
+        std::printf("namelist[%d]=[%s]\n", i, names[i]);
+    }
+    if (count > 3) {
+        std::printf("namelist[last]=[%s]\n", names[count - 1]);
+    }
+    fallout::fileNameListFree(&names, 0);
+
+    // Directories only.
+    {
+        fallout::XList xlist {};
+        int dircount = 0;
+        if (fallout::xlistInitDirectories("sub\\*", &xlist)) {
+            dircount = xlist.fileNamesLength;
+            for (int i = 0; i < dircount; i++) {
+                std::printf("dirlist[%d]=[%s]\n", i, xlist.fileNames[i]);
+            }
+        }
+        std::printf("dirlist count=%d\n", dircount);
+        fallout::xlistFree(&xlist);
+    }
+}
+
+void sectionConfig()
+{
+    std::puts("[config]");
+
+    fallout::Config cfg {};
+    std::printf("init=%d\n", fallout::configInit(&cfg));
+    std::printf("read=%d\n", fallout::configRead(&cfg, "/game-en/fallout2.cfg", false));
+
+    char* s = nullptr;
+    bool gotMaster = fallout::configGetString(&cfg, "system", "master_dat", &s);
+    std::printf("get-master=%d [%s]\n", gotMaster ? 1 : 0, s != nullptr ? s : "(null)");
+
+    int i = -99;
+    bool gotResx = fallout::configGetInt(&cfg, "screen", "resolution_x", &i);
+    std::printf("get-resx=%d %d\n", gotResx ? 1 : 0, i);
+
+    bool b = false;
+    bool gotMusic = fallout::configGetBool(&cfg, "sound", "music", &b);
+    std::printf("get-music=%d %d\n", gotMusic ? 1 : 0, b ? 1 : 0);
+
+    char* missing = nullptr;
+    std::printf("get-missing=%d\n", fallout::configGetString(&cfg, "nope", "nope", &missing));
+    char* withDefault = nullptr;
+    fallout::configGetString(&cfg, "nope", "nope", &withDefault, "DEF");
+    std::printf("get-default=[%s]\n", withDefault);
+    int idef = -99;
+    fallout::configGetInt(&cfg, "nope", "nope", &idef, 42);
+    std::printf("get-int-default=%d\n", idef);
+
+    // strtol quirks: hex, octal, trailing garbage, empty, overflow.
+    fallout::configSetString(&cfg, "probe", "hex", "0x10");
+    fallout::configSetString(&cfg, "probe", "oct", "010");
+    fallout::configSetString(&cfg, "probe", "pct", "38%");
+    fallout::configSetString(&cfg, "probe", "trail", "12x");
+    fallout::configSetString(&cfg, "probe", "empty", "");
+    fallout::configSetString(&cfg, "probe", "huge", "9999999999999999999");
+    int v = 0;
+    fallout::configGetInt(&cfg, "probe", "hex", &v);
+    std::printf("int-hex=%d\n", v);
+    fallout::configGetInt(&cfg, "probe", "oct", &v);
+    std::printf("int-oct=%d\n", v);
+    fallout::configGetInt(&cfg, "probe", "pct", &v);
+    std::printf("int-pct=%d\n", v);
+    fallout::configGetInt(&cfg, "probe", "trail", &v);
+    std::printf("int-trail=%d\n", v);
+    bool okEmpty = fallout::configGetInt(&cfg, "probe", "empty", &v);
+    std::printf("int-empty=%d %d\n", okEmpty ? 1 : 0, v);
+    fallout::configGetInt(&cfg, "probe", "huge", &v);
+    std::printf("int-huge=%d\n", v);
+
+    // Base-16 reads (sfall colors) and doubles.
+    int b16 = 0;
+    fallout::configGetIntBase(&cfg, "probe", "hex", &b16, 0, 16);
+    std::printf("int-base16=%d\n", b16);
+    fallout::configSetDouble(&cfg, "probe", "pi", 3.14159);
+    double d = 0;
+    fallout::configGetDouble(&cfg, "probe", "pi", &d);
+    std::printf("double-pi=%f\n", d);
+
+    // Int list protocol (synthetic).
+    fallout::configSetString(&cfg, "probe", "list", "1,2,3");
+    int arr[3] = {};
+    bool gotList = fallout::configGetIntList(&cfg, "probe", "list", arr, 3);
+    std::printf("intlist=%d [%d,%d,%d]\n", gotList ? 1 : 0, arr[0], arr[1], arr[2]);
+    fallout::configSetString(&cfg, "probe", "short", "7,8");
+    int arr2[3] = { -1, -1, -1 };
+    bool gotShort = fallout::configGetIntList(&cfg, "probe", "short", arr2, 3);
+    std::printf("intlist-short=%d [%d,%d,%d]\n", gotShort ? 1 : 0, arr2[0], arr2[1], arr2[2]);
+
+    // Command-line overrides ("[section]key=value"; section untrimmed).
+    // NOTE: writable buffers — the parser temporarily writes NULs.
+    char arg0[] = "prog";
+    char arg1[] = "[screen]resolution_x=1024";
+    char arg2[] = "junk";
+    char arg3[] = "[bad";
+    char arg4[] = "[s]k=v=w";
+    char arg5[] = "[ sp ]k2 = v2 ";
+    char* argv[] = { arg0, arg1, arg2, arg3, arg4, arg5 };
+    fallout::configParseCommandLineArguments(&cfg, 6, argv, nullptr);
+    fallout::configGetInt(&cfg, "screen", "resolution_x", &v);
+    std::printf("cli-resx=%d\n", v);
+    char* kv = nullptr;
+    fallout::configGetString(&cfg, "s", "k", &kv);
+    std::printf("cli-kv=[%s]\n", kv != nullptr ? kv : "(null)");
+    char* k2 = nullptr;
+    fallout::configGetString(&cfg, " sp ", "k2", &k2);
+    std::printf("cli-sp=[%s]\n", k2 != nullptr ? k2 : "(null)");
+
+    // Standard write + re-read round-trip.
+    fallout::configSetString(&cfg, "news", "nk", "nv");
+    std::printf("write-std=%d\n", fallout::configWrite(&cfg, "/tmp/cfg-std.ini", false));
+    fallout::Config cfg2 {};
+    fallout::configInit(&cfg2);
+    fallout::configRead(&cfg2, "/tmp/cfg-std.ini", false);
+    char* nv = nullptr;
+    fallout::configGetString(&cfg2, "news", "nk", &nv);
+    std::printf("reread=[%s]\n", nv != nullptr ? nv : "(null)");
+
+    // Side-by-side: comments/order/unknown keys survive.
+    {
+        FILE* f = fopen("/tmp/cfg-orig.ini", "wb");
+        fputs("; top comment\n[screen]\n; res comment\nresolution_x=800 ; inline\nunknown_key=zzz\n\n[new]\na=1\n", f);
+        fclose(f);
+    }
+    fallout::Config cfg3 {};
+    fallout::configInit(&cfg3);
+    fallout::configRead(&cfg3, "/tmp/cfg-orig.ini", false);
+    fallout::configSetString(&cfg3, "screen", "resolution_x", "1024");
+    fallout::configSetString(&cfg3, "added", "k", "v");
+    fallout::configRemoveKey(&cfg3, "new", "a");
+    std::printf("write-sbs=%d\n", fallout::configWriteEx(&cfg3, "/tmp/cfg-orig.ini",
+        fallout::CONFIG_RETAIN_ALL));
+    {
+        FILE* f = fopen("/tmp/cfg-orig.ini", "rb");
+        char line[512];
+        while (fgets(line, sizeof(line), f) != nullptr) {
+            // Trim trailing newline for stable vectors.
+            size_t n = strlen(line);
+            while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
+                line[--n] = '\0';
+            }
+            std::printf("sbs-line=[%s]\n", line);
+        }
+        fclose(f);
+    }
+
+    fallout::configFree(&cfg);
+    fallout::configFree(&cfg2);
+    fallout::configFree(&cfg3);
+}
+
+int main()
+{
+    // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
+    // so without this the merged capture would group all stderr first.
+    // v1.txt predates this fix (its INFO line sits on top).
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
+    sectionRgb555();
+    sectionRectUnion();
+    sectionRectIntersection();
+    sectionRectClip();
+    sectionRandom();
+    sectionStrParsers();
+    sectionStrParseFunc();
+    sectionWordWrap();
+    sectionDict();
+    sectionDictFile();
+    sectionPaths();
+    sectionFileUtils();
+    sectionPattern();
+    sectionDbase();
+    sectionZip();
+    sectionFixtureDat();
+    sectionXbase();
+    sectionXfile();
+    sectionDb();
+    sectionConfig();
+    return 0;
+}

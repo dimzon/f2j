@@ -412,3 +412,16 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 opencode.json
+# f2j java port + reference harness (untracked workdirs)
+/java/*/target/
+/docker/refharness/build/
+
+
+# f2j: Eclipse metadata in java modules
+java/.project
+java/.settings/
+
+*.project
+.classpath
+.settings/
+
