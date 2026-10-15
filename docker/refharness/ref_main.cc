@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
+#include <variant>
 #include <zlib.h>
 
 #include <SDL.h>
@@ -39,6 +40,8 @@
 #include "game_movie.h"
 #include "input.h"
 #include "kb.h"
+#include "options_schema.h"
+#include "options_settings_model.h"
 #include "pcx.h"
 #include "sfall_config.h"
 #include "font_manager.h"
@@ -2944,6 +2947,135 @@ void sectionGraph()
     fallout::settingsExit(false);
 }
 
+static void printSchemaDescriptor(const fallout::SettingDescriptor& desc)
+{
+    std::printf("schema id=[%s] type=%d cat=%d section=[%s] key=[%s] source=[%s]",
+        desc.id.c_str(), (int)desc.valueType, (int)desc.category,
+        desc.section.c_str(), desc.key.c_str(), desc.source.c_str());
+    std::printf(" default=");
+    if (std::holds_alternative<bool>(desc.defaultValue)) {
+        std::printf("%d", std::get<bool>(desc.defaultValue) ? 1 : 0);
+    } else if (std::holds_alternative<int>(desc.defaultValue)) {
+        std::printf("%d", std::get<int>(desc.defaultValue));
+    } else if (std::holds_alternative<double>(desc.defaultValue)) {
+        std::printf("%.2f", std::get<double>(desc.defaultValue));
+    } else {
+        std::printf("[%s]", std::get<std::string>(desc.defaultValue).c_str());
+    }
+    std::printf(" label=%d:[%s] apply=%d choices=%d\n",
+        desc.labelMessageId, desc.fallbackLabel.c_str(),
+        (int)desc.applyPolicy, (int)desc.choices.size());
+}
+
+void sectionOptions()
+{
+    std::puts("[options]");
+
+    {
+        FILE* f = fopen("/tmp/schema.cfg", "wb");
+        fputs("[screen.resolution_x]\nfile = fallout2.cfg\ntype = int\ncategory = screen\n"
+              "default = 640\nlabel_id = 10\nlabel = Resolution Width\n"
+              "desc_id = 11\ndescription = Horizontal resolution.\napply = restart\n"
+              "[ui.anim_speed]\nfile = fallout2.cfg\ntype = real\ncategory = interface\n"
+              "default = 1.0\n"
+              "[preferences.combat_speed]\ntype = choice\ncategory = gameplay\n"
+              "choices = 0:Slow, 1:Normal, 2:Fast\ndefault = 1\nvanilla = 1\n"
+              "[debug.show_fps]\ntype = bool\ncategory = debug\ndefault = 0\n"
+              "[ui.motd]\ntype = text\ncategory = interface\ndefault = hello\n"
+              "[ui.hotkey]\ntype = keybinding\ncategory = interface\ndefault = 13\n",
+            f);
+        fclose(f);
+        f = fopen("/tmp/schema-bad.cfg", "wb");
+        fputs("[screen.ok]\ntype = int\ncategory = screen\ndefault = 1\n"
+              "[screen.bad]\ntype = frobnicate\ncategory = screen\ndefault = 1\n",
+            f);
+        fclose(f);
+    }
+
+    fallout::Config schema;
+    fallout::configInit(&schema);
+    fallout::configRead(&schema, "/tmp/schema.cfg", false);
+    std::vector<fallout::SettingDescriptor> descriptors;
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    bool parsed = fallout::optionsSchemaParse(&schema, &descriptors);
+    std::printf("parse-all=%d count=%d\n", parsed ? 1 : 0, (int)descriptors.size());
+    for (const auto& desc : descriptors) {
+        printSchemaDescriptor(desc);
+    }
+    fallout::configFree(&schema);
+
+    fallout::Config badSchema;
+    fallout::configInit(&badSchema);
+    fallout::configRead(&badSchema, "/tmp/schema-bad.cfg", false);
+    std::vector<fallout::SettingDescriptor> badDescriptors;
+    bool parsedBad = fallout::optionsSchemaParse(&badSchema, &badDescriptors);
+    std::printf("parse-bad=%d\n", parsedBad ? 1 : 0);
+    fallout::configFree(&badSchema);
+
+    fallout::SettingDescriptor noDot;
+    fallout::Config empty;
+    fallout::configInit(&empty);
+    bool parsedNoDot = fallout::optionsSchemaParseSection(&empty, "screennodot", &noDot);
+    bool parsedNull = fallout::optionsSchemaParseSection(nullptr, "screen.x", &noDot);
+    std::printf("parse-nodot=%d parse-null=%d\n",
+        parsedNoDot ? 1 : 0, parsedNull ? 1 : 0);
+    fallout::configFree(&empty);
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+    // Hermetic config: the [settings] section leaves its own file behind.
+    {
+        FILE* f = fopen("/tmp/fallout2.cfg", "wb");
+        fputs("[screen]\nresolution_x=640\n", f);
+        fclose(f);
+    }
+    fallout::settingsInit(false, 1, argv0);
+
+    fallout::OptionsSettingsModel model;
+    std::printf("model-edits=%d dirty=%d\n",
+        (int)model.edits().size(), model.isDirty() ? 1 : 0);
+
+    std::string error;
+    bool setResx = model.setValue("screen.resolution_x", 800, &error);
+    std::printf("set-resx=%d\n", setResx ? 1 : 0);
+    bool dirtyAll = model.isDirty();
+    bool dirtyResx = model.isDirty("screen.resolution_x");
+    bool dirtyMusic = model.isDirty("sound.music");
+    std::printf("dirty=%d dirty-resx=%d dirty-music=%d\n",
+        dirtyAll ? 1 : 0, dirtyResx ? 1 : 0, dirtyMusic ? 1 : 0);
+    error.clear();
+    bool setUnknown = model.setValue("nope.nope", 1, &error);
+    std::printf("set-unknown=%d err=[%s]\n", setUnknown ? 1 : 0, error.c_str());
+    error.clear();
+    bool setBool = model.setValue("screen.resolution_x", true, &error);
+    std::printf("set-bool=%d err=[%s]\n", setBool ? 1 : 0, error.c_str());
+    model.rollback();
+    std::printf("rollback-dirty=%d\n", model.isDirty() ? 1 : 0);
+    error.clear();
+    bool resetDefault = model.resetToDefault("screen.resolution_x", &error);
+    std::printf("reset-default=%d\n", resetDefault ? 1 : 0);
+    model.rollback();
+
+    model.setValue("screen.resolution_x", 800, nullptr);
+    error.clear();
+    bool committed = model.commit(&error);
+    int active = std::get<int>(fallout::settingsGetValue(*findDescriptor("screen.resolution_x")));
+    int configured =
+        std::get<int>(fallout::settingsGetConfiguredValue(*findDescriptor("screen.resolution_x")));
+    std::printf("commit=%d active=%d configured=%d\n", committed ? 1 : 0, active, configured);
+    std::printf("commit-dirty=%d\n", model.isDirty() ? 1 : 0);
+
+    char arg1[] = "[screen]resolution_x=1024";
+    char* argv[] = { prog, arg1 };
+    fallout::settingsExit(false);
+    fallout::settingsInit(false, 2, argv);
+    fallout::OptionsSettingsModel modelCli;
+    error.clear();
+    bool setOverridden = modelCli.setValue("screen.resolution_x", 800, &error);
+    std::printf("set-overridden=%d err=[%s]\n", setOverridden ? 1 : 0, error.c_str());
+    fallout::settingsExit(false);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2991,5 +3123,6 @@ int main()
     sectionKb();
     sectionDInput();
     sectionGraph();
+    sectionOptions();
     return 0;
 }
