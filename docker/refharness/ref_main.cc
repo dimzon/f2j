@@ -3263,6 +3263,172 @@ void sectionArtDefs()
         (int)fallout::SkillDexFrameId::Reputation, (int)fallout::SkillDexFrameId::DrugResistant);
 }
 
+void kbSimulate(int scancode, int down)
+{
+    fallout::KeyboardData data;
+    data.key = scancode;
+    data.down = (char)(down != 0 ? 1 : 0);
+    fallout::_kb_simulate_key(&data);
+}
+
+void sectionKbFull()
+{
+    std::puts("[kbfull]");
+
+    // SDL scancode values used by kb.cc (transcribed to SdlScancode.java).
+    std::printf("num-scancodes=%d\n", SDL_NUM_SCANCODES);
+    std::printf("sc-a=%d sc-b=%d sc-c=%d sc-d=%d sc-e=%d sc-f=%d sc-g=%d sc-h=%d sc-i=%d sc-j=%d sc-k=%d sc-l=%d sc-m=%d\n",
+        SDL_SCANCODE_A, SDL_SCANCODE_B, SDL_SCANCODE_C, SDL_SCANCODE_D, SDL_SCANCODE_E, SDL_SCANCODE_F,
+        SDL_SCANCODE_G, SDL_SCANCODE_H, SDL_SCANCODE_I, SDL_SCANCODE_J, SDL_SCANCODE_K, SDL_SCANCODE_L,
+        SDL_SCANCODE_M);
+    std::printf("sc-n=%d sc-o=%d sc-p=%d sc-q=%d sc-r=%d sc-s=%d sc-t=%d sc-u=%d sc-v=%d sc-w=%d sc-x=%d sc-y=%d sc-z=%d\n",
+        SDL_SCANCODE_N, SDL_SCANCODE_O, SDL_SCANCODE_P, SDL_SCANCODE_Q, SDL_SCANCODE_R, SDL_SCANCODE_S,
+        SDL_SCANCODE_T, SDL_SCANCODE_U, SDL_SCANCODE_V, SDL_SCANCODE_W, SDL_SCANCODE_X, SDL_SCANCODE_Y,
+        SDL_SCANCODE_Z);
+    std::printf("sc-1=%d sc-2=%d sc-3=%d sc-4=%d sc-5=%d sc-6=%d sc-7=%d sc-8=%d sc-9=%d sc-0=%d\n",
+        SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_5,
+        SDL_SCANCODE_6, SDL_SCANCODE_7, SDL_SCANCODE_8, SDL_SCANCODE_9, SDL_SCANCODE_0);
+    std::printf("sc-return=%d sc-escape=%d sc-backspace=%d sc-tab=%d sc-space=%d\n",
+        SDL_SCANCODE_RETURN, SDL_SCANCODE_ESCAPE, SDL_SCANCODE_BACKSPACE, SDL_SCANCODE_TAB, SDL_SCANCODE_SPACE);
+    std::printf("sc-minus=%d sc-equals=%d sc-leftbracket=%d sc-rightbracket=%d sc-backslash=%d\n",
+        SDL_SCANCODE_MINUS, SDL_SCANCODE_EQUALS, SDL_SCANCODE_LEFTBRACKET, SDL_SCANCODE_RIGHTBRACKET,
+        SDL_SCANCODE_BACKSLASH);
+    std::printf("sc-semicolon=%d sc-apostrophe=%d sc-grave=%d sc-comma=%d sc-period=%d sc-slash=%d\n",
+        SDL_SCANCODE_SEMICOLON, SDL_SCANCODE_APOSTROPHE, SDL_SCANCODE_GRAVE, SDL_SCANCODE_COMMA,
+        SDL_SCANCODE_PERIOD, SDL_SCANCODE_SLASH);
+    std::printf("sc-capslock=%d sc-f1=%d sc-f2=%d sc-f3=%d sc-f4=%d sc-f5=%d sc-f6=%d sc-f7=%d sc-f8=%d sc-f9=%d sc-f10=%d sc-f11=%d sc-f12=%d\n",
+        SDL_SCANCODE_CAPSLOCK, SDL_SCANCODE_F1, SDL_SCANCODE_F2, SDL_SCANCODE_F3, SDL_SCANCODE_F4,
+        SDL_SCANCODE_F5, SDL_SCANCODE_F6, SDL_SCANCODE_F7, SDL_SCANCODE_F8, SDL_SCANCODE_F9, SDL_SCANCODE_F10,
+        SDL_SCANCODE_F11, SDL_SCANCODE_F12);
+    std::printf("sc-insert=%d sc-home=%d sc-pageup=%d sc-delete=%d sc-end=%d sc-pagedown=%d\n",
+        SDL_SCANCODE_INSERT, SDL_SCANCODE_HOME, SDL_SCANCODE_PAGEUP, SDL_SCANCODE_DELETE, SDL_SCANCODE_END,
+        SDL_SCANCODE_PAGEDOWN);
+    std::printf("sc-right=%d sc-left=%d sc-down=%d sc-up=%d sc-numlock=%d sc-scrolllock=%d\n",
+        SDL_SCANCODE_RIGHT, SDL_SCANCODE_LEFT, SDL_SCANCODE_DOWN, SDL_SCANCODE_UP,
+        SDL_SCANCODE_NUMLOCKCLEAR, SDL_SCANCODE_SCROLLLOCK);
+    std::printf("sc-kp-divide=%d sc-kp-multiply=%d sc-kp-minus=%d sc-kp-plus=%d sc-kp-enter=%d\n",
+        SDL_SCANCODE_KP_DIVIDE, SDL_SCANCODE_KP_MULTIPLY, SDL_SCANCODE_KP_MINUS, SDL_SCANCODE_KP_PLUS,
+        SDL_SCANCODE_KP_ENTER);
+    std::printf("sc-kp-1=%d sc-kp-2=%d sc-kp-3=%d sc-kp-4=%d sc-kp-5=%d sc-kp-6=%d sc-kp-7=%d sc-kp-8=%d sc-kp-9=%d sc-kp-0=%d\n",
+        SDL_SCANCODE_KP_1, SDL_SCANCODE_KP_2, SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_5,
+        SDL_SCANCODE_KP_6, SDL_SCANCODE_KP_7, SDL_SCANCODE_KP_8, SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_0);
+    std::printf("sc-kp-decimal=%d sc-lctrl=%d sc-lshift=%d sc-lalt=%d sc-rctrl=%d sc-rshift=%d sc-ralt=%d\n",
+        SDL_SCANCODE_KP_DECIMAL, SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_LALT,
+        SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_RALT);
+    std::printf("kmod-caps=%d kmod-num=%d kmod-scroll=%d\n", KMOD_CAPS, KMOD_NUM, KMOD_SCROLL);
+
+    int initRc = fallout::keyboardInit();
+    int initAgainRc = fallout::keyboardInit();
+    std::printf("init=%d init-again=%d layout=%d\n",
+        initRc, initAgainRc, fallout::keyboardGetLayout());
+
+    fallout::keyboardSetLayout(99);
+    int layoutBad = fallout::keyboardGetLayout();
+    fallout::keyboardSetLayout(fallout::KEYBOARD_LAYOUT_QWERTY);
+    int layoutQwerty = fallout::keyboardGetLayout();
+    std::printf("layout-bad=%d layout-qwerty=%d\n", layoutBad, layoutQwerty);
+
+    fallout::keyboardDisable();
+    int disabled1 = fallout::keyboardIsDisabled();
+    fallout::keyboardEnable();
+    int disabled0 = fallout::keyboardIsDisabled();
+    std::printf("disabled=%d enabled=%d\n", disabled1, disabled0);
+
+    // Pressed-count wraps in unsigned char; skip lock keys (they would
+    // latch modifier state for the vectors below).
+    for (int sc = 0; sc < 300; sc++) {
+        if (sc == SDL_SCANCODE_CAPSLOCK || sc == SDL_SCANCODE_NUMLOCKCLEAR || sc == SDL_SCANCODE_SCROLLLOCK) {
+            continue;
+        }
+        kbSimulate(sc, 1);
+    }
+    int pressCount = (int)fallout::gPressedPhysicalKeysCount;
+    for (int sc = 0; sc < 300; sc++) {
+        if (sc == SDL_SCANCODE_CAPSLOCK || sc == SDL_SCANCODE_NUMLOCKCLEAR || sc == SDL_SCANCODE_SCROLLLOCK) {
+            continue;
+        }
+        kbSimulate(sc, 0);
+    }
+    int releaseCount = (int)fallout::gPressedPhysicalKeysCount;
+    std::printf("press-count=%d release-count=%d\n", pressCount, releaseCount);
+    fallout::keyboardReset();
+    int resetEmpty = fallout::_kb_getch();
+    std::printf("reset-empty=%d\n", resetEmpty);
+
+    kbSimulate(SDL_SCANCODE_A, 1);
+    int aKey = fallout::_kb_getch();
+    int afterA = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_A, 0);
+    std::printf("a=%d empty=%d\n", aKey, afterA);
+
+    kbSimulate(SDL_SCANCODE_LSHIFT, 1);
+    kbSimulate(SDL_SCANCODE_A, 1);
+    int shiftEv = fallout::_kb_getch();
+    int shiftA = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_A, 0);
+    kbSimulate(SDL_SCANCODE_LSHIFT, 0);
+    std::printf("shift-ev=%d shift-a=%d\n", shiftEv, shiftA);
+
+    kbSimulate(SDL_SCANCODE_F1, 1);
+    int f1 = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_F1, 0);
+    std::printf("f1=%d\n", f1);
+
+    kbSimulate(SDL_SCANCODE_LALT, 1);
+    kbSimulate(SDL_SCANCODE_X, 1);
+    int altEv = fallout::_kb_getch();
+    int altX = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_X, 0);
+    kbSimulate(SDL_SCANCODE_LALT, 0);
+    std::printf("alt-ev=%d alt-x=%d\n", altEv, altX);
+
+    kbSimulate(SDL_SCANCODE_CAPSLOCK, 1);
+    int capsEv = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_CAPSLOCK, 0);
+    kbSimulate(SDL_SCANCODE_A, 1);
+    int capsA = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_A, 0);
+    kbSimulate(SDL_SCANCODE_LSHIFT, 1);
+    kbSimulate(SDL_SCANCODE_A, 1);
+    int capsShiftEv = fallout::_kb_getch();
+    int capsShiftA = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_A, 0);
+    kbSimulate(SDL_SCANCODE_LSHIFT, 0);
+    kbSimulate(SDL_SCANCODE_CAPSLOCK, 1);
+    int capsEv2 = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_CAPSLOCK, 0);
+    kbSimulate(SDL_SCANCODE_A, 1);
+    int capsOffA = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_A, 0);
+    std::printf("caps-ev=%d caps-a=%d caps-shift-ev=%d caps-shift-a=%d caps-ev2=%d caps-off-a=%d\n",
+        capsEv, capsA, capsShiftEv, capsShiftA, capsEv2, capsOffA);
+
+    for (int i = 0; i < 70; i++) {
+        kbSimulate(SDL_SCANCODE_A, 1);
+    }
+    int drainMatches = 0;
+    for (int i = 0; i < 63; i++) {
+        if (fallout::_kb_getch() == 97) {
+            drainMatches++;
+        }
+    }
+    int drainEmpty = fallout::_kb_getch();
+    kbSimulate(SDL_SCANCODE_A, 0);
+    std::printf("drain-matches=%d drain-empty=%d\n", drainMatches, drainEmpty);
+
+    kbSimulate(SDL_SCANCODE_A, 1);
+    fallout::keyboardReset();
+    int resetCount = (int)fallout::gPressedPhysicalKeysCount;
+    int resetGetch = fallout::_kb_getch();
+    std::printf("reset-count=%d reset-getch=%d\n", resetCount, resetGetch);
+
+    fallout::keyboardFree();
+    int freeGetch = fallout::_kb_getch();
+    std::printf("free-getch=%d\n", freeGetch);
+    // Reset while uninstalled still flushes device state (must not crash).
+    fallout::keyboardReset();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3314,5 +3480,6 @@ int main()
     sectionPtrReg();
     sectionGameDefs();
     sectionArtDefs();
+    sectionKbFull();
     return 0;
 }

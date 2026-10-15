@@ -158,6 +158,29 @@ public final class Input {
         return tickerLastTimestamp;
     }
 
+    /** Port of {@code RepeatInfo} (input.cc): per-scancode press timing. */
+    static final class Gnw95KeyTimeStamp {
+        int tick = -1;
+        int repeatCount;
+    }
+
+    private static final Gnw95KeyTimeStamp[] gnw95KeyTimeStamps =
+        new Gnw95KeyTimeStamp[SdlScancode.NUM_SCANCODES];
+
+    static {
+        for (int index = 0; index < gnw95KeyTimeStamps.length; index++) {
+            gnw95KeyTimeStamps[index] = new Gnw95KeyTimeStamp();
+        }
+    }
+
+    /** Port of {@code _GNW95_clear_time_stamps} (input.cc). */
+    public static void gnw95ClearTimeStamps() {
+        for (int index = 0; index < gnw95KeyTimeStamps.length; index++) {
+            gnw95KeyTimeStamps[index].tick = -1;
+            gnw95KeyTimeStamps[index].repeatCount = 0;
+        }
+    }
+
     /** Port of {@code enqueueInputEvent}. */
     public static void enqueueInputEvent(int logicalKey) {
         if (logicalKey == -1) {
