@@ -36,6 +36,7 @@
 #include "game_config_migration.h"
 #include "game_movie.h"
 #include "input.h"
+#include "kb.h"
 #include "pcx.h"
 #include "sfall_config.h"
 #include "font_manager.h"
@@ -2745,6 +2746,44 @@ void sectionInput()
     std::printf("png=%d size=%ld crc=%08lX\n", pngRc, pngSize, pngCrc);
 }
 
+void sectionKb()
+{
+    std::puts("[kb]");
+    std::printf("esc=%d tab=%d backspace=%d enter=%d space=%d del=%d\n",
+        (int)fallout::KEY_ESCAPE, (int)fallout::KEY_TAB, (int)fallout::KEY_BACKSPACE,
+        (int)fallout::KEY_RETURN, (int)fallout::KEY_SPACE, (int)fallout::KEY_DEL);
+    std::printf("a=%d z=%d A=%d Z=%d 0=%d 9=%d\n",
+        (int)fallout::KEY_LOWERCASE_A, (int)fallout::KEY_LOWERCASE_Z,
+        (int)fallout::KEY_UPPERCASE_A, (int)fallout::KEY_UPPERCASE_Z,
+        (int)fallout::KEY_0, (int)fallout::KEY_9);
+    std::printf("f1=%d f10=%d f11=%d f12=%d\n",
+        (int)fallout::KEY_F1, (int)fallout::KEY_F10,
+        (int)fallout::KEY_F11, (int)fallout::KEY_F12);
+    std::printf("shift-f1=%d ctrl-f1=%d alt-f1=%d\n",
+        (int)fallout::KEY_SHIFT_F1, (int)fallout::KEY_CTRL_F1, (int)fallout::KEY_ALT_F1);
+    std::printf("up=%d down=%d left=%d right=%d\n",
+        (int)fallout::KEY_ARROW_UP, (int)fallout::KEY_ARROW_DOWN,
+        (int)fallout::KEY_ARROW_LEFT, (int)fallout::KEY_ARROW_RIGHT);
+    std::printf("ctrl-up=%d alt-up=%d\n",
+        (int)fallout::KEY_CTRL_ARROW_UP, (int)fallout::KEY_ALT_ARROW_UP);
+    std::printf("home=%d end=%d pgup=%d pgdn=%d ins=%d\n",
+        (int)fallout::KEY_HOME, (int)fallout::KEY_END, (int)fallout::KEY_PAGE_UP,
+        (int)fallout::KEY_PAGE_DOWN, (int)fallout::KEY_INSERT);
+    std::printf("alt-c=%d ctrl-c=%d alt-x=%d\n",
+        (int)fallout::KEY_ALT_C, (int)fallout::KEY_CTRL_C, (int)fallout::KEY_ALT_X);
+    std::printf("ctrl-a=%d alt-m=%d numpad5=%d\n",
+        (int)fallout::KEY_CTRL_A, (int)fallout::KEY_ALT_M, (int)fallout::KEY_NUMBERPAD_5);
+    std::printf("first-char=%d last-char=%d queue=%d\n",
+        (int)fallout::KEY_FIRST_INPUT_CHARACTER, (int)fallout::KEY_LAST_INPUT_CHARACTER,
+        KEY_QUEUE_SIZE);
+    std::printf("mod-shift=%d mod-ctrl=%d mod-alt=%d any-shift=%d\n",
+        KEYBOARD_EVENT_MODIFIER_LEFT_SHIFT, KEYBOARD_EVENT_MODIFIER_LEFT_CONTROL,
+        KEYBOARD_EVENT_MODIFIER_LEFT_ALT, KEYBOARD_EVENT_MODIFIER_ANY_SHIFT);
+    std::printf("lock-num=%d lock-caps=%d state-up=%d state-down=%d\n",
+        MODIFIER_KEY_STATE_NUM_LOCK, MODIFIER_KEY_STATE_CAPS_LOCK,
+        KEY_STATE_UP, KEY_STATE_DOWN);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2789,5 +2828,6 @@ int main()
     sectionDatafile();
     sectionCfgMig();
     sectionInput();
+    sectionKb();
     return 0;
 }
