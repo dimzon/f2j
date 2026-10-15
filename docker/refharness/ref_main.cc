@@ -29,7 +29,9 @@
 #include "config.h"
 #include "content_config.h"
 #include "dfile.h"
+#include "datafile.h"
 #include "draw.h"
+#include "pcx.h"
 #include "font_manager.h"
 #include "game_config.h"
 #include "input.h"
@@ -2379,6 +2381,136 @@ void sectionRegion()
     std::printf("deleted=1\n");
 }
 
+// datafile.cc extras missing from datafile.h upstream.
+namespace fallout {
+void datafileSetNameMangler(DatafileNameMangler* mangler);
+void datafileSetLoader(DatafileLoader* loader);
+void datafileRemapPixelsRgb8(uint8_t* data, uint8_t* palette, int width, int height);
+void datafileRemapPixelsRgb6(uint8_t* data, uint8_t* palette, int width, int height);
+uint8_t* datafileLoadPalette(char* path);
+void datafilePackUntilZero(uint8_t* data, int* widthPtr, int* heightPtr);
+}
+
+namespace {
+// Maps "alias.pcx" to the committed fixture (proves the mangler hook).
+char gAliasTarget[] = "/src/java/engine/src/test/resources/fixtures/test.pcx";
+char* testMangler(char* path)
+{
+    if (strcmp(path, "alias.pcx") == 0) {
+        return gAliasTarget;
+    }
+    return path;
+}
+
+// Canned 2x2 image (proves the loader hook); marks the palette.
+uint8_t* testLoader(char* path, uint8_t* palette, int* widthPtr, int* heightPtr)
+{
+    (void)path;
+    palette[0] = 0x42;
+    *widthPtr = 2;
+    *heightPtr = 2;
+    uint8_t* data = (uint8_t*)malloc(4);
+    data[0] = 9;
+    data[1] = 8;
+    data[2] = 7;
+    data[3] = 6;
+    return data;
+}
+} // namespace
+
+void sectionDatafile()
+{
+    std::puts("[datafile]");
+
+    fallout::xbaseOpen("/game-en/master.dat");
+    fallout::colorPaletteLoad("color.pal");
+
+    char pcx[] = "/src/java/engine/src/test/resources/fixtures/test.pcx";
+    char odd[] = "/src/java/engine/src/test/resources/fixtures/test-odd.pcx";
+
+    unsigned char pal[768];
+    memset(pal, 0xAA, sizeof(pal));
+    int w = -1;
+    int h = -1;
+    unsigned char* img = fallout::pcxRead(pcx, &w, &h, pal);
+    uLong imgCrc = img != nullptr ? crcBytes(img, w * h) : 0;
+    std::printf("pcx=%dx%d img-crc=%08lX pal-crc=%08lX\n", w, h, imgCrc,
+        crcBytes(pal, sizeof(pal)));
+
+    int ow = -1;
+    int oh = -1;
+    unsigned char opal[768];
+    unsigned char* oimg = fallout::pcxRead(odd, &ow, &oh, opal);
+    uLong oddCrc = oimg != nullptr ? crcBytes(oimg, ow * oh) : 0;
+    std::printf("odd=%dx%d img-crc=%08lX\n", ow, oh, oddCrc);
+
+    int mw = -1;
+    int mh = -1;
+    char missing[] = "/tmp/nope.pcx";
+    unsigned char* miss = fallout::pcxRead(missing, &mw, &mh, pal);
+    std::printf("missing-null=%d dims=%d,%d\n", miss == nullptr ? 1 : 0, mw, mh);
+
+    int rw = -1;
+    int rh = -1;
+    unsigned char* remapped = fallout::datafileRead(pcx, &rw, &rh);
+    uLong remapCrc = remapped != nullptr ? crcBytes(remapped, rw * rh) : 0;
+    std::printf("read=%dx%d crc=%08lX\n", rw, rh, remapCrc);
+
+    unsigned char rgb6[4] = { 0, 1, 2, 3 };
+    unsigned char pal6[768];
+    for (int i = 0; i < 768; i++) {
+        // NOTE: 6-bit VGA values (like real palettes); 8-bit input would
+        // overflow the 15-bit table index (UB, out-of-bounds read in C).
+        pal6[i] = (unsigned char)((i * 5 + 1) & 0x3F);
+    }
+    fallout::datafileRemapPixelsRgb6(rgb6, pal6, 2, 2);
+    std::printf("remap6=%02X%02X%02X%02X\n", rgb6[0], rgb6[1], rgb6[2], rgb6[3]);
+
+    unsigned char pack[12] = { 1, 2, 0, 4, 5, 6, 0, 0, 0, 0, 0, 0 };
+    int pw = 4;
+    int ph = 3;
+    fallout::datafilePackUntilZero(pack, &pw, &ph);
+    std::printf("pack=%dx%d crc=%08lX\n", pw, ph, crcBytes(pack, pw * ph));
+    int zw = 5;
+    int zh = 0;
+    fallout::datafilePackUntilZero(pack, &zw, &zh);
+    std::printf("pack-degenerate=%d,%d\n", zw, zh);
+
+    int zsize = -1;
+    char zipPath[] = "/tmp/f2test.zip";
+    unsigned char* blob = fallout::datafileLoad(zipPath, &zsize);
+    uLong blobCrc = blob != nullptr ? crcBytes(blob, zsize) : 0;
+    std::printf("load size=%d crc=%08lX\n", zsize, blobCrc);
+    int msize = -1;
+    unsigned char* mblob = fallout::datafileLoad(missing, &msize);
+    std::printf("load-missing=%d\n", mblob == nullptr ? 1 : 0);
+
+    unsigned char* loadedPal = fallout::datafileLoadPalette(pcx);
+    std::printf("loadpal=%d crc=%08lX\n", loadedPal != nullptr ? 1 : 0,
+        loadedPal != nullptr ? crcBytes(loadedPal, 768) : 0);
+    unsigned char* loadedMiss = fallout::datafileLoadPalette(missing);
+    std::printf("loadpal-missing=%d\n", loadedMiss == nullptr ? 1 : 0);
+    std::printf("getpal-crc=%08lX\n", crcBytes(fallout::datafileGetPalette(), 768));
+
+    fallout::datafileSetNameMangler(testMangler);
+    char alias[] = "alias.pcx";
+    int aw = -1;
+    int ah = -1;
+    unsigned char* aimg = fallout::datafileReadRaw(alias, &aw, &ah);
+    std::printf("mangled=%dx%d\n", aw, ah);
+    fallout::datafileSetNameMangler(fallout::datafileDefaultNameManglerImpl);
+
+    fallout::datafileSetLoader(testLoader);
+    char custom[] = "custom.xxx";
+    int cw = -1;
+    int ch = -1;
+    unsigned char* cimg = fallout::datafileRead(custom, &cw, &ch);
+    uLong customCrc = cimg != nullptr ? crcBytes(cimg, cw * ch) : 0;
+    std::printf("loaded=%dx%d crc=%08lX palmark=%02X\n", cw, ch, customCrc,
+        fallout::datafileGetPalette()[0]);
+    fallout::datafileSetLoader(nullptr);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2420,5 +2552,6 @@ int main()
     sectionFont();
     sectionIfaceFont();
     sectionRegion();
+    sectionDatafile();
     return 0;
 }

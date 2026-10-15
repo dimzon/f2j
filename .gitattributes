@@ -34,3 +34,4 @@ LICENSE text eol=lf
 *.dat binary
 *.zip binary
 *.bin binary
+*.pcx binary

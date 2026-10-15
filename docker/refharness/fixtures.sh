@@ -3,12 +3,17 @@
 set -e
 
 # Small ZIP: stored a.txt + deflated sub/b.txt (+ skipped dir entry).
+# Fixed timestamps: raw bytes must be deterministic across runs.
 python3 -c "
 import zipfile
+def fixed(name, data, compress):
+    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = compress
+    return info
 with zipfile.ZipFile('/tmp/f2test.zip', 'w') as z:
-    z.writestr('a.txt', 'stored-data', compress_type=zipfile.ZIP_STORED)
-    z.writestr('sub/b.txt', 'deflated-data-' * 100, compress_type=zipfile.ZIP_DEFLATED)
-    z.writestr('sub/', '')
+    z.writestr(fixed('a.txt', 'stored-data', zipfile.ZIP_STORED), 'stored-data')
+    z.writestr(fixed('sub/b.txt', 'x', zipfile.ZIP_DEFLATED), 'deflated-data-' * 100)
+    z.writestr(fixed('sub/', '', zipfile.ZIP_STORED), '')
 "
 
 # Empty ZIP: EOCD with zero entries.
