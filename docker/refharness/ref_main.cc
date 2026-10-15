@@ -51,6 +51,7 @@
 #include "trait_defs.h"
 #include "map_defs.h"
 #include "animation_defs.h"
+#include "art_defs.h"
 #include "version.h"
 #include "font_manager.h"
 #include "game_config.h"
@@ -3221,6 +3222,47 @@ void sectionGameDefs()
     fallout::configFree(&fallout::gContentConfig);
 }
 
+void sectionArtDefs()
+{
+    std::puts("[artdefs]");
+
+    // NOTE: separate statements (argument evaluation order is unspecified).
+    bool wValidNeg = fallout::weaponAnimationIsValid(-1);
+    bool wValidNone = fallout::weaponAnimationIsValid(0);
+    bool wValidMax = fallout::weaponAnimationIsValid(15);
+    bool wValidOver = fallout::weaponAnimationIsValid(16);
+    std::printf("weapon-none=%d weapon-sfallt=%d valid-neg=%d valid-none=%d valid-max=%d valid-over=%d\n",
+        (int)fallout::WeaponAnimation::None, (int)fallout::WeaponAnimation::SfallT,
+        wValidNeg ? 1 : 0, wValidNone ? 1 : 0, wValidMax ? 1 : 0, wValidOver ? 1 : 0);
+
+    int tileOr = static_cast<int>(fallout::TileFlags::AlwaysHidden | fallout::TileFlags::TemporarilyHidden);
+    // The C++ operator| masks with 0xF: (~0 | 2) & 0xF == 15.
+    int tileMask = static_cast<int>(~fallout::TileFlags::None | fallout::TileFlags::AlwaysHidden);
+    int tileAnd = static_cast<int>(~fallout::TileFlags::TemporarilyHidden & fallout::TileFlags::AlwaysHidden);
+    std::printf("tile-or=%d tile-mask=%d tile-and=%d tile-grid=%d tile-last=%d\n",
+        tileOr, tileMask, tileAnd,
+        (int)fallout::TileFrameId::Grid, (int)fallout::TileFrameId::Last);
+
+    std::printf("dude-looks=%d bg-vault=%d headfidget-bad=%d misc-scroll=%d scenery-ff3=%d\n",
+        (int)fallout::DUDE_NATIVE_LOOK_COUNT, (int)fallout::BackgroundFrameId::Vault,
+        (int)fallout::HeadFidget::Bad, (int)fallout::MiscFrameId::ScrollBlocker,
+        (int)fallout::SceneryFrameId::ForceField3);
+
+    std::printf("iface-first=%d iface-last=%d iface-mainmenu=%d iface-death=%d iface-partyweapup=%d iface-pipnote=%d iface-mvenum=%d\n",
+        (int)fallout::InterfaceFrameId::First, (int)fallout::InterfaceFrameId::Last,
+        (int)fallout::InterfaceFrameId::MainMenuBackgroundImage,
+        (int)fallout::InterfaceFrameId::DeathScene,
+        (int)fallout::InterfaceFrameId::PartyWeaponUp,
+        (int)fallout::InterfaceFrameId::PipBoyNoteNumbers,
+        (int)fallout::InterfaceFrameId::MovementPointsNumbers);
+
+    std::printf("sk-outdoorsman=%d sk-tag=%d sk-jinxed=%d sk-psycho=%d sk-wephandling=%d sk-rep48=%d sk-drug67=%d\n",
+        (int)fallout::SkillDexFrameId::Outdoorsman, (int)fallout::SkillDexFrameId::Tag,
+        (int)fallout::SkillDexFrameId::Jinxed, (int)fallout::SkillDexFrameId::PsychoAddiction,
+        (int)fallout::SkillDexFrameId::WeaponHandling,
+        (int)fallout::SkillDexFrameId::Reputation, (int)fallout::SkillDexFrameId::DrugResistant);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3271,5 +3313,6 @@ int main()
     sectionOptions();
     sectionPtrReg();
     sectionGameDefs();
+    sectionArtDefs();
     return 0;
 }
