@@ -13,6 +13,8 @@ public final class SdlScancode {
 
     public static final int NUM_SCANCODES = 512;
 
+    public static final int UNKNOWN = 0;
+
     public static final int KMOD_CAPS = 8192;
     public static final int KMOD_NUM = 4096;
     public static final int KMOD_SCROLL = 32768;
@@ -90,6 +92,7 @@ public final class SdlScancode {
     public static final int INSERT = 73;
     public static final int HOME = 74;
     public static final int PAGEUP = 75;
+    public static final int PRIOR = 75;
     public static final int DELETE = 76;
     public static final int END = 77;
     public static final int PAGEDOWN = 78;
@@ -116,10 +119,20 @@ public final class SdlScancode {
     public static final int KP_0 = 98;
     public static final int KP_DECIMAL = 220;
 
+    public static final int APPLICATION = 101;
+    public static final int KP_EQUALS = 103;
+    public static final int F13 = 104;
+    public static final int F14 = 105;
+    public static final int F15 = 106;
+    public static final int STOP = 120;
+    public static final int KP_COMMA = 133;
+
     public static final int LCTRL = 224;
     public static final int LSHIFT = 225;
     public static final int LALT = 226;
+    public static final int LGUI = 227;
     public static final int RCTRL = 228;
     public static final int RSHIFT = 229;
     public static final int RALT = 230;
+    public static final int RGUI = 231;
 }

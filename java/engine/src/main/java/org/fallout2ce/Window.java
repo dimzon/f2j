@@ -107,10 +107,11 @@ public final class Window {
             int srcWidth, int srcHeight, int destX, int destY);
     }
 
-    /** Port of {@code WindowDrawingProc2}. */
+    /** Port of {@code WindowDrawingProc2} (offset explicit, C++ used pointers). */
     @FunctionalInterface
     public interface WindowDrawingProc2 {
-        void draw(byte[] buf, int a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9, byte a10);
+        void draw(byte[] buf, int bufOfs, int a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9,
+            byte a10);
     }
 
     /** Port of {@code WindowInputHandler}. */

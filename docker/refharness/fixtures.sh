@@ -38,3 +38,8 @@ printf '\x01\x02\x03\x04' > /tmp/f2xbase_a/be.bin
 printf '\x00\x00\x00\x00' > /tmp/f2xbase_a/zeros.bin
 printf 'line1\r\nline2\r\n' > /tmp/f2xbase_a/crlf.txt
 printf 'GZDATA-gzip-content' | gzip > /tmp/f2xbase_b/arch.gz
+
+# Mouse cursor fixtures (copied from the repo: 8x8 PCX + descriptors).
+rm -rf /tmp/f2cursors
+mkdir -p /tmp/f2cursors
+cp /src/docker/refharness/fixtures/cur.pcx /src/docker/refharness/fixtures/cur.anim /src/docker/refharness/fixtures/ptr.txt /src/docker/refharness/fixtures/bad.anim /tmp/f2cursors/

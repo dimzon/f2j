@@ -36,3 +36,4 @@ LICENSE text eol=lf
 *.bin binary
 *.pcx binary
 *.lbm binary
+*.anim text eol=lf

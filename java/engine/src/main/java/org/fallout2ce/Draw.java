@@ -30,6 +30,12 @@ public final class Draw {
     /** Port of {@code bufferDrawLine} (horizontal quirk included: the last pixel is skipped). */
     public static void bufferDrawLine(byte[] buf, int pitch,
             int x1, int y1, int x2, int y2, int color) {
+        bufferDrawLine(buf, 0, pitch, x1, y1, x2, y2, color);
+    }
+
+    /** Port of {@code bufferDrawLine} starting at an offset (C++ pointer arithmetic). */
+    public static void bufferDrawLine(byte[] buf, int offset, int pitch,
+            int x1, int y1, int x2, int y2, int color) {
         byte c = (byte) color;
         if (x1 == x2) {
             if (y1 > y2) {
@@ -38,8 +44,8 @@ public final class Draw {
                 y2 = temp;
             }
 
-            int p1 = pitch * y1 + x1;
-            int p2 = pitch * y2 + x2;
+            int p1 = offset + pitch * y1 + x1;
+            int p2 = offset + pitch * y2 + x2;
             while (p1 <= p2) {
                 buf[p1] = c;
                 buf[p2] = c;
@@ -57,8 +63,8 @@ public final class Draw {
                 y2 = temp;
             }
 
-            int p1 = pitch * y1 + x1;
-            int p2 = pitch * y2 + x2;
+            int p1 = offset + pitch * y1 + x1;
+            int p2 = offset + pitch * y2 + x2;
             if (y1 == y2) {
                 // NOTE: memset length is p2 - p1, so the endpoint is skipped.
                 Arrays.fill(buf, p1, p2, c);
@@ -72,11 +78,11 @@ public final class Draw {
                 if (y1 <= y2) {
                     dy = y2 - y1;
                     rowStep = pitch;
-                    middlePointOffset = midX + ((y2 - y1) / 2 + y1) * pitch;
+                    middlePointOffset = offset + midX + ((y2 - y1) / 2 + y1) * pitch;
                 } else {
                     dy = y1 - y2;
                     rowStep = -pitch;
-                    middlePointOffset = midX + (y1 - (y1 - y2) / 2) * pitch;
+                    middlePointOffset = offset + midX + (y1 - (y1 - y2) / 2) * pitch;
                 }
 
                 int p3 = middlePointOffset;
@@ -223,10 +229,39 @@ public final class Draw {
         srcCopy(dest, destPitch, src, srcPitch, width, height);
     }
 
+    /** Port of {@code blitBufferToBuffer} with offsets (C++ pointer arithmetic). */
+    public static void blitBufferToBuffer(byte[] src, int srcOfs,
+            int width, int height, int srcPitch, byte[] dest, int destOfs, int destPitch) {
+        for (int y = 0; y < height; y++) {
+            System.arraycopy(src, srcOfs + y * srcPitch, dest, destOfs + y * destPitch, width);
+        }
+    }
+
     /** Port of {@code blitBufferToBufferTrans}. */
     public static void blitBufferToBufferTrans(byte[] src,
             int width, int height, int srcPitch, byte[] dest, int destPitch) {
         transSrcCopy(dest, destPitch, src, srcPitch, width, height);
+    }
+
+    /** Port of {@code blitBufferToBufferTrans} with offsets (C++ pointer arithmetic). */
+    public static void blitBufferToBufferTrans(byte[] src, int srcOfs,
+            int width, int height, int srcPitch, byte[] dest, int destOfs, int destPitch) {
+        int destSkip = destPitch - width;
+        int srcSkip = srcPitch - width;
+        int d = destOfs;
+        int s = srcOfs;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                byte c = src[s++];
+                if (c != 0) {
+                    dest[d] = c;
+                }
+                d++;
+            }
+            s += srcSkip;
+            d += destSkip;
+        }
     }
 
     /** Port of {@code blitBuffer2D} (full source). */
@@ -368,9 +403,14 @@ public final class Draw {
 
     /** Port of {@code bufferFill}. */
     public static void bufferFill(byte[] buf, int width, int height, int pitch, int value) {
+        bufferFill(buf, 0, width, height, pitch, value);
+    }
+
+    /** Port of {@code bufferFill} starting at an offset (C++ pointer arithmetic). */
+    public static void bufferFill(byte[] buf, int offset, int width, int height, int pitch, int value) {
         byte c = (byte) value;
         for (int y = 0; y < height; y++) {
-            Arrays.fill(buf, y * pitch, y * pitch + width, c);
+            Arrays.fill(buf, offset + y * pitch, offset + y * pitch + width, c);
         }
     }
 
@@ -380,12 +420,23 @@ public final class Draw {
      */
     public static void bufTexture(byte[] buf, int width, int height, int pitch,
             Object texture, int xOffset, int yOffset) {
+        bufTexture(buf, 0, width, height, pitch, texture, xOffset, yOffset);
+    }
+
+    /** Port of {@code _buf_texture} starting at an offset (C++ pointer arithmetic). */
+    public static void bufTexture(byte[] buf, int offset, int width, int height, int pitch,
+            Object texture, int xOffset, int yOffset) {
     }
 
     /** Port of {@code _lighten_buf} (needs the loaded intensity tables). */
     public static void lightenBuf(byte[] buf, int width, int height, int pitch) {
+        lightenBuf(buf, 0, width, height, pitch);
+    }
+
+    /** Port of {@code _lighten_buf} starting at an offset (C++ pointer arithmetic). */
+    public static void lightenBuf(byte[] buf, int offset, int width, int height, int pitch) {
         int skip = pitch - width;
-        int i = 0;
+        int i = offset;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 buf[i] = Color.intensityColorTable[Byte.toUnsignedInt(buf[i])][147];

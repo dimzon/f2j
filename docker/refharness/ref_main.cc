@@ -3445,6 +3445,9 @@ void sectionKbFull()
     std::printf("free-getch=%d\n", freeGetch);
     // Reset while uninstalled still flushes device state (must not crash).
     fallout::keyboardReset();
+    // Hermeticity for later sections: windowManagerInit runs inputInit,
+    // which fails when the keyboard is still installed (no output change).
+    fallout::keyboardFree();
 }
 
 void sectionCombatDefs()
@@ -3800,6 +3803,262 @@ void sectionUiTypes()
         (int)fallout::MOUSE_MANAGER_MOUSE_TYPE_STATIC, (int)fallout::MOUSE_MANAGER_MOUSE_TYPE_ANIMATED);
 }
 
+static int testVideoInit()
+{
+    return 0;
+}
+
+static void testVideoExit()
+{
+}
+
+// The dummy video driver has no SDL surface; presenting is a no-op here.
+// All refresh results stay observable in window buffers and _screen_buffer.
+static void testScrBlit(unsigned char* src, int src_pitch, int unused, int src_x, int src_y,
+    int src_width, int src_height, int dest_x, int dest_y)
+{
+}
+
+static unsigned int testMouseTime = 0;
+
+static int testMouseTimeProvider()
+{
+    return (int)testMouseTime;
+}
+
+static uLong winBufCrc(int win)
+{
+    fallout::Window* window = fallout::windowGetWindow(win);
+    uLong crc = crc32(0L, Z_NULL, 0);
+    if (window != nullptr && window->buffer != nullptr) {
+        crc = crc32(crc, window->buffer,
+            (uInt)((unsigned int)window->width * (unsigned int)window->height));
+    }
+    return crc;
+}
+
+static void kbSim(int scancode, int down)
+{
+    fallout::KeyboardData data;
+    data.key = scancode;
+    data.down = (char)(down != 0 ? 1 : 0);
+    fallout::_kb_simulate_key(&data);
+}
+
+static void fingerStart(long long fingerId, unsigned int timestamp, float x, float y)
+{
+    SDL_TouchFingerEvent event;
+    memset(&event, 0, sizeof(event));
+    event.fingerId = (SDL_FingerID)fingerId;
+    event.timestamp = timestamp;
+    event.x = x;
+    event.y = y;
+    fallout::touch_handle_start(&event);
+}
+
+static void fingerMove(long long fingerId, unsigned int timestamp, float x, float y)
+{
+    SDL_TouchFingerEvent event;
+    memset(&event, 0, sizeof(event));
+    event.fingerId = (SDL_FingerID)fingerId;
+    event.timestamp = timestamp;
+    event.x = x;
+    event.y = y;
+    fallout::touch_handle_move(&event);
+}
+
+static void fingerEnd(long long fingerId, unsigned int timestamp, float x, float y)
+{
+    SDL_TouchFingerEvent event;
+    memset(&event, 0, sizeof(event));
+    event.fingerId = (SDL_FingerID)fingerId;
+    event.timestamp = timestamp;
+    event.x = x;
+    event.y = y;
+    fallout::touch_handle_end(&event);
+}
+
+void sectionMouseWin()
+{
+    std::puts("[mousewin]");
+
+    fallout::xbaseOpen("/tmp/f2cursors");
+
+    fallout::_scr_blit = testScrBlit;
+    fallout::_mouse_blit = testScrBlit;
+
+    int wmInit = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit=%d\n", wmInit);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+
+    int win = fallout::windowCreate(10, 20, 100, 50, (fallout::ColorWithFlags)5, 0);
+    int winWidth = fallout::windowGetWidth(win);
+    int winHeight = fallout::windowGetHeight(win);
+    std::printf("win=%d width=%d height=%d\n", win, winWidth, winHeight);
+    fallout::Rect rect;
+    fallout::windowGetRect(win, &rect);
+    std::printf("rect=%d,%d,%d,%d\n", rect.left, rect.top, rect.right, rect.bottom);
+    std::printf("buf-crc=%08lX\n", winBufCrc(win));
+    fallout::windowDrawBorder(win);
+    std::printf("border-crc=%08lX\n", winBufCrc(win));
+    fallout::windowDrawText(win, (char*)"Hi", 90, 2, 2, (fallout::ColorWithFlags)3);
+    std::printf("text-crc=%08lX\n", winBufCrc(win));
+    fallout::windowDrawLine(win, 0, 0, 99, 49, (fallout::ColorWithFlags)7);
+    fallout::windowDrawRect(win, 5, 5, 20, 20, (fallout::ColorWithFlags)9);
+    fallout::windowFill(win, 10, 10, 20, 20, (fallout::ColorWithFlags)11);
+    std::printf("draw-crc=%08lX\n", winBufCrc(win));
+    fallout::windowShow(win);
+    int atShown = fallout::windowGetAtPoint(15, 25);
+    fallout::windowHide(win);
+    int atHidden = fallout::windowGetAtPoint(15, 25);
+    std::printf("at-shown=%d at-hidden=%d\n", atShown, atHidden);
+    fallout::windowDestroy(win);
+    int gone = fallout::windowGetWindow(win) == nullptr ? 1 : 0;
+    std::printf("destroyed=%d\n", gone);
+
+    // Mouse engine (cursor starts hidden; show it first).
+    fallout::mouseManagerShowMouse();
+    int shownHidden = fallout::cursorIsHidden() ? 1 : 0;
+    fallout::_mouse_set_position(100, 80);
+    int posX = -1;
+    int posY = -1;
+    fallout::mouseGetPosition(&posX, &posY);
+    fallout::mouseGetRect(&rect);
+    bool inAll = fallout::_mouse_in(0, 0, 640, 480);
+    bool inSmall = fallout::_mouse_in(0, 0, 10, 10);
+    bool clickIn = fallout::_mouse_click_in(90, 70, 110, 90);
+    bool clickOut = fallout::_mouse_click_in(0, 0, 10, 10);
+    std::printf("shown-hidden=%d pos=%d,%d rect=%d,%d,%d,%d in-all=%d in-small=%d click-in=%d click-out=%d\n",
+        shownHidden, posX, posY, rect.left, rect.top, rect.right, rect.bottom,
+        inAll ? 1 : 0, inSmall ? 1 : 0, clickIn ? 1 : 0, clickOut ? 1 : 0);
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    int evDown = fallout::mouseGetEvent();
+    int lastButtons = fallout::mouse_get_last_buttons();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    int evRepeat = fallout::mouseGetEvent();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int evUp = fallout::mouseGetEvent();
+    std::printf("ev-down=%d last-buttons=%d ev-repeat=%d ev-up=%d\n", evDown, lastButtons, evRepeat, evUp);
+    int wheelX = -1;
+    int wheelY = -1;
+    fallout::mouseGetWheel(&wheelX, &wheelY);
+    int noWheelKey = -1;
+    fallout::convertMouseWheelToArrowKey(&noWheelKey);
+    SDL_Event wheelEvent;
+    memset(&wheelEvent, 0, sizeof(wheelEvent));
+    wheelEvent.type = SDL_MOUSEWHEEL;
+    wheelEvent.wheel.y = 1;
+    fallout::handleMouseEvent(&wheelEvent);
+    fallout::_mouse_info();
+    int wheelEv = fallout::mouseGetEvent();
+    int wheelKey = -1;
+    fallout::convertMouseWheelToArrowKey(&wheelKey);
+    std::printf("wheel=%d,%d nowheel-key=%d wheel-ev=%d wheel-key=%d\n", wheelX, wheelY, noWheelKey, wheelEv, wheelKey);
+    fallout::mouseManagerHideMouse();
+    int hideHidden = fallout::cursorIsHidden() ? 1 : 0;
+    fallout::mouseManagerShowMouse();
+    int showHidden = fallout::cursorIsHidden() ? 1 : 0;
+    std::printf("hide-hidden=%d show-hidden=%d\n", hideHidden, showHidden);
+
+    // Touch gestures (screen is 640x480 here).
+    fallout::touch_set_touchscreen_mode(true);
+    int tsMode = fallout::touch_get_touchscreen_mode() ? 1 : 0;
+    fallout::touch_set_pan_mode(true);
+    int panMode = fallout::touch_get_pan_mode() ? 1 : 0;
+    fallout::touch_set_touchscreen_mode(false);
+    fallout::touch_set_pan_mode(false);
+    fingerStart(1, 1000, 0.1f, 0.2f);
+    fingerEnd(1, 1050, 0.1f, 0.2f);
+    fallout::touch_process_gesture();
+    fallout::Gesture gesture;
+    memset(&gesture, 0, sizeof(gesture));
+    int gotTap = fallout::touch_get_gesture(&gesture) ? 1 : 0;
+    int gotTapAgain = fallout::touch_get_gesture(&gesture) ? 1 : 0;
+    std::printf("ts-mode=%d pan-mode=%d tap=%d tap-type=%d tap-state=%d tap-n=%d tap-x=%d tap-y=%d tap-again=%d\n",
+        tsMode, panMode, gotTap, (int)gesture.type, (int)gesture.state, gesture.numberOfTouches,
+        gesture.x, gesture.y, gotTapAgain);
+    fingerStart(2, 2000, 0.5f, 0.5f);
+    fingerMove(2, 2100, 0.52f, 0.5f);
+    fallout::touch_process_gesture();
+    memset(&gesture, 0, sizeof(gesture));
+    int gotPan = fallout::touch_get_gesture(&gesture) ? 1 : 0;
+    fingerEnd(2, 2200, 0.52f, 0.5f);
+    fallout::touch_process_gesture();
+    fallout::Gesture gestureEnd;
+    memset(&gestureEnd, 0, sizeof(gestureEnd));
+    int gotPanEnd = fallout::touch_get_gesture(&gestureEnd) ? 1 : 0;
+    std::printf("pan=%d pan-type=%d pan-state=%d pan-n=%d pan-x=%d pan-y=%d panend=%d panend-state=%d\n",
+        gotPan, (int)gesture.type, (int)gesture.state, gesture.numberOfTouches, gesture.x, gesture.y,
+        gotPanEnd, (int)gestureEnd.state);
+    fingerStart(3, 3000, 0.3f, 0.3f);
+    SDL_Delay(600);
+    fallout::touch_process_gesture();
+    memset(&gesture, 0, sizeof(gesture));
+    int gotPress = fallout::touch_get_gesture(&gesture) ? 1 : 0;
+    fingerEnd(3, 3700, 0.3f, 0.3f);
+    fallout::touch_process_gesture();
+    memset(&gestureEnd, 0, sizeof(gestureEnd));
+    int gotPressEnd = fallout::touch_get_gesture(&gestureEnd) ? 1 : 0;
+    std::printf("press=%d press-type=%d press-state=%d press-n=%d pressend=%d pressend-state=%d\n",
+        gotPress, (int)gesture.type, (int)gesture.state, gesture.numberOfTouches,
+        gotPressEnd, (int)gestureEnd.state);
+
+    // Cursor cache (mounts /tmp/f2cursors above).
+    int setAnim = fallout::mouseManagerSetFrame((char*)"cur.anim", 0) ? 1 : 0;
+    unsigned char* palette = nullptr;
+    int hotX = -1;
+    int hotY = -1;
+    int foundW = -1;
+    int foundH = -1;
+    int foundType = -1;
+    fallout::MouseManagerCacheEntry* found = fallout::mouseManagerFindCacheEntry((char*)"cur.anim",
+        &palette, &hotX, &hotY, &foundW, &foundH, &foundType);
+    int setAnimAgain = fallout::mouseManagerSetFrame((char*)"cur.anim", 0) ? 1 : 0;
+    int setPtr = fallout::mouseManagerSetMousePointer((char*)"ptr.txt") ? 1 : 0;
+    int setShape = fallout::mouseManagerSetMouseShape((char*)"cur.pcx", 5, 6) ? 1 : 0;
+    int setMissing = fallout::mouseManagerSetMousePointer((char*)"nope.txt") ? 1 : 0;
+    int setBad = fallout::mouseManagerSetFrame((char*)"bad.anim", 0) ? 1 : 0;
+    int findHotX = -1;
+    int findHotY = -1;
+    int foundW2 = -1;
+    int foundH2 = -1;
+    int foundType2 = -1;
+    fallout::mouseManagerFindCacheEntry((char*)"cur.pcx", &palette, &findHotX, &findHotY,
+        &foundW2, &foundH2, &foundType2);
+    std::printf("set-anim=%d found=%d found-name=[%s] found-w=%d found-h=%d found-type=%d found-hot=%d,%d set-anim-again=%d set-ptr=%d set-shape=%d set-missing=%d set-bad=%d cur-hot=%d,%d cur-type=%d\n",
+        setAnim, found != nullptr ? 1 : 0, found != nullptr ? found->fileName : "(null)",
+        foundW, foundH, foundType, hotX, hotY,
+        setAnimAgain, setPtr, setShape, setMissing, setBad, findHotX, findHotY, foundType2);
+    testMouseTime = fallout::gMouseManagerTimeProvider() + 1000;
+    fallout::gMouseManagerTimeProvider = testMouseTimeProvider;
+    // Re-arm the animated cursor on frame 1 (!= current 0), then advance
+    // past its deadline.
+    fallout::mouseManagerSetFrame((char*)"cur.anim", 1);
+    fallout::mouseManagerUpdate();
+    int updHotX = -1;
+    int updHotY = -1;
+    fallout::mouseManagerFindCacheEntry((char*)"cur.anim", &palette, &updHotX, &updHotY,
+        &foundW, &foundH, &foundType);
+    fallout::gMouseManagerTimeProvider = fallout::mouseManagerTimeProviderDefaultImpl;
+    std::printf("upd-hot=%d,%d\n", updHotX, updHotY);
+    fallout::mouseManagerResetMouse();
+    fallout::mouseManagerHideMouse();
+    int mgrHide = fallout::cursorIsHidden() ? 1 : 0;
+    fallout::mouseManagerShowMouse();
+    int mgrShow = fallout::cursorIsHidden() ? 1 : 0;
+    std::printf("mgr-hide=%d mgr-show=%d\n", mgrHide, mgrShow);
+
+    // Keyboard still works through the shared init.
+    kbSim(SDL_SCANCODE_B, 1);
+    int bKey = fallout::_kb_getch();
+    kbSim(SDL_SCANCODE_B, 0);
+    std::printf("kb-b=%d\n", bKey);
+
+    fallout::windowManagerExit();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -3867,5 +4126,6 @@ int main()
     sectionGameTypes();
     sectionAbility();
     sectionUiTypes();
+    sectionMouseWin();
     return 0;
 }
