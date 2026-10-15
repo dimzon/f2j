@@ -34,10 +34,36 @@ public final class TextFont {
         public byte[] data;
     }
 
-    /** Font id range claimed by a manager (all managers are text fonts for now). */
+    /** Font id range claimed by a manager, with its implementation. */
     private static final class Manager {
         int minFont;
         int maxFont;
+        FontImpl impl;
+    }
+
+    /**
+     * Font implementation behind a manager range (C function-pointer block).
+     * {@link #TEXT} is the bitmap implementation below; interface fonts
+     * plug in their own.
+     */
+    public interface FontImpl {
+        void setCurrent(int font);
+
+        int getLineHeight();
+
+        int getStringWidth(String string);
+
+        int getCharacterWidth(int ch);
+
+        int getMonospacedStringWidth(String string);
+
+        int getLetterSpacing();
+
+        int getBufferSize(String string);
+
+        int getMonospacedCharacterWidth();
+
+        void drawText(byte[] buf, int offset, String string, int length, int pitch, int color);
     }
 
     private static final Descriptor[] descriptors = new Descriptor[TEXT_FONT_MAX];
@@ -45,6 +71,7 @@ public final class TextFont {
     private static int managersCount;
     private static int currentFont = -1;
     private static Descriptor currentDescriptor;
+    private static FontImpl currentImpl;
 
     static {
         for (int i = 0; i < TEXT_FONT_MAX; i++) {
@@ -199,6 +226,11 @@ public final class TextFont {
      * exactly, so {@code {9,9}} slips through (but stays shadowed).
      */
     public static int fontManagerAdd(int minFont, int maxFont) {
+        return fontManagerAdd(minFont, maxFont, TEXT);
+    }
+
+    /** Port of {@code fontManagerAdd} with an explicit implementation. */
+    public static int fontManagerAdd(int minFont, int maxFont, FontImpl impl) {
         if (managersCount >= FONT_MANAGER_MAX) {
             return -1;
         }
@@ -212,6 +244,7 @@ public final class TextFont {
         Manager manager = new Manager();
         manager.minFont = minFont;
         manager.maxFont = maxFont;
+        manager.impl = impl;
         managers[managersCount] = manager;
         managersCount++;
 
@@ -228,6 +261,14 @@ public final class TextFont {
         return -1;
     }
 
+    private static FontImpl requireImpl() {
+        if (currentImpl == null) {
+            // NOTE: C calls through a null proc pointer (segfault); fail fast.
+            throw new IllegalStateException("no current font");
+        }
+        return currentImpl;
+    }
+
     /** Port of {@code fontGetCurrent}. */
     public static int fontGetCurrent() {
         return currentFont;
@@ -235,9 +276,11 @@ public final class TextFont {
 
     /** Port of {@code fontSetCurrent}. */
     public static void fontSetCurrent(int font) {
-        if (fontManagerFind(font) != -1) {
+        int manager = fontManagerFind(font);
+        if (manager != -1) {
             currentFont = font;
-            textFontSetCurrentImpl(font);
+            currentImpl = managers[manager].impl;
+            currentImpl.setCurrent(font);
         }
     }
 
@@ -262,12 +305,69 @@ public final class TextFont {
         return currentDescriptor;
     }
 
+    /** The bitmap-font implementation (ports the {@code textFont*} procs). */
+    static final FontImpl TEXT = new FontImpl() {
+        @Override
+        public void setCurrent(int font) {
+            textFontSetCurrentImpl(font);
+        }
+
+        @Override
+        public int getLineHeight() {
+            return textGetLineHeight();
+        }
+
+        @Override
+        public int getStringWidth(String string) {
+            return textGetStringWidth(string);
+        }
+
+        @Override
+        public int getCharacterWidth(int ch) {
+            return textGetCharacterWidth(ch);
+        }
+
+        @Override
+        public int getMonospacedStringWidth(String string) {
+            return textGetMonospacedStringWidth(string);
+        }
+
+        @Override
+        public int getLetterSpacing() {
+            return textGetLetterSpacing();
+        }
+
+        @Override
+        public int getBufferSize(String string) {
+            return textGetBufferSize(string);
+        }
+
+        @Override
+        public int getMonospacedCharacterWidth() {
+            return textGetMonospacedCharacterWidth();
+        }
+
+        @Override
+        public void drawText(byte[] buf, int offset, String string,
+                int length, int pitch, int color) {
+            textDrawText(buf, offset, string, length, pitch, color);
+        }
+    };
+
     /**
      * Port of {@code textFontDrawImpl}. Chars outside the glyph range are
      * skipped; note C reads heap garbage there (nondeterministic), so there
      * is no stable behavior to replicate.
      */
     public static void fontDrawText(byte[] buf, int offset, String string,
+            int length, int pitch, int color) {
+        if (currentImpl == null) {
+            return;
+        }
+        currentImpl.drawText(buf, offset, string, length, pitch, color);
+    }
+
+    private static void textDrawText(byte[] buf, int offset, String string,
             int length, int pitch, int color) {
         if ((color & Color.DRAW_TEXT_FLAG_SHADOWED) != 0) {
             color &= ~Color.DRAW_TEXT_FLAG_SHADOWED;
@@ -343,11 +443,19 @@ public final class TextFont {
 
     /** Port of {@code textFontGetLineHeightImpl}. */
     public static int fontGetLineHeight() {
+        return requireImpl().getLineHeight();
+    }
+
+    private static int textGetLineHeight() {
         return requireDescriptor().lineHeight;
     }
 
     /** Port of {@code textFontGeStringWidthImpl}. */
     public static int fontGetStringWidth(String string) {
+        return requireImpl().getStringWidth(string);
+    }
+
+    private static int textGetStringWidth(String string) {
         Descriptor descriptor = requireDescriptor();
         int width = 0;
         for (int i = 0; i < string.length(); i++) {
@@ -364,27 +472,47 @@ public final class TextFont {
 
     /** Port of {@code textFontGetCharacterWidthImpl}. */
     public static int fontGetCharacterWidth(int ch) {
+        return requireImpl().getCharacterWidth(ch);
+    }
+
+    private static int textGetCharacterWidth(int ch) {
         Descriptor descriptor = requireDescriptor();
         return descriptor.glyphs[ch & 0xFF].width;
     }
 
     /** Port of {@code textFontGetMonospacedStringWidthImpl}. */
     public static int fontGetMonospacedStringWidth(String string) {
+        return requireImpl().getMonospacedStringWidth(string);
+    }
+
+    private static int textGetMonospacedStringWidth(String string) {
         return fontGetMonospacedCharacterWidth() * string.length();
     }
 
     /** Port of {@code textFontGetLetterSpacingImpl}. */
     public static int fontGetLetterSpacing() {
+        return requireImpl().getLetterSpacing();
+    }
+
+    private static int textGetLetterSpacing() {
         return requireDescriptor().letterSpacing;
     }
 
     /** Port of {@code textFontGetBufferSizeImpl}. */
     public static int fontGetBufferSize(String string) {
+        return requireImpl().getBufferSize(string);
+    }
+
+    private static int textGetBufferSize(String string) {
         return fontGetStringWidth(string) * fontGetLineHeight();
     }
 
     /** Port of {@code textFontGetMonospacedCharacterWidthImpl}. */
     public static int fontGetMonospacedCharacterWidth() {
+        return requireImpl().getMonospacedCharacterWidth();
+    }
+
+    private static int textGetMonospacedCharacterWidth() {
         Descriptor descriptor = requireDescriptor();
         int width = 0;
         for (int i = 0; i < descriptor.glyphCount; i++) {
@@ -436,5 +564,6 @@ public final class TextFont {
         managersCount = 0;
         currentFont = -1;
         currentDescriptor = null;
+        currentImpl = null;
     }
 }

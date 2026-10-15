@@ -2201,6 +2201,115 @@ void sectionFont()
     fallout::settingsExit(false);
 }
 
+void sectionIfaceFont()
+{
+    std::puts("[ifacefont]");
+
+    // Like [font]: the [wordWrap] fake is reset away (the real game never
+    // has it installed).
+    fallout::gFontManagersCount = 0;
+    fallout::gCurrentFont = -1;
+    fallout::fontDrawTextPtr = nullptr;
+    fallout::fontGetLineHeight = nullptr;
+    fallout::fontGetStringWidth = nullptr;
+    fallout::fontGetCharacterWidth = nullptr;
+    fallout::fontGetMonospacedStringWidth = nullptr;
+    fallout::fontGetLetterSpacing = nullptr;
+    fallout::fontGetBufferSize = nullptr;
+    fallout::fontGetMonospacedCharacterWidth = nullptr;
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+    fallout::settingsInit(false, 1, argv0);
+    fallout::settings.system.language = "english";
+    fallout::xbaseOpen("/game-en/master.dat");
+
+    // Pristine statics: scaled metrics degrade to zero, draws are silent.
+    fallout::ColorWithFlags plain42 = static_cast<fallout::ColorWithFlags>(42);
+    std::printf("pre width=%d\n",
+        fallout::interfaceFontGetStringWidthScaled("Hi!", plain42, 1.0f));
+    unsigned char pre[32];
+    memset(pre, 0, sizeof(pre));
+    fallout::Buffer2D predest(pre, 8, 4);
+    fallout::interfaceFontDrawTextScaled2D(predest, 0, 0, "Hi!", plain42, 1.0f);
+    std::printf("pre-draw=%08lX\n", crcBytes(pre, sizeof(pre)));
+
+    // Blend tables for the rasterizer come from color.pal.
+    fallout::colorPaletteLoad("color.pal");
+
+    int init = fallout::interfaceFontsInit();
+    std::printf("init=%d\n", init);
+
+    // Wire the modern manager like game.cc does, then draw through the
+    // public proc pointers (the path the game actually uses).
+    fallout::FontManager modern = fallout::gModernFontManager;
+    std::printf("add-modern=%d\n", fallout::fontManagerAdd(&modern));
+    fallout::fontSetCurrent(100);
+    std::printf("current=%d\n", fallout::fontGetCurrent());
+
+    std::printf("font0 height=%d spacing=%d width-Hi=%d charW-A=%d charW-space=%d monoW=%d bufsize=%d mono-str=%d\n",
+        fallout::fontGetLineHeight(),
+        fallout::fontGetLetterSpacing(),
+        fallout::fontGetStringWidth("Hi!"),
+        fallout::fontGetCharacterWidth('A'),
+        fallout::fontGetCharacterWidth(' '),
+        fallout::fontGetMonospacedCharacterWidth(),
+        fallout::fontGetBufferSize("Hi!"),
+        fallout::fontGetMonospacedStringWidth("Hi!"));
+
+    unsigned char text[64 * 32];
+    memset(text, 0, sizeof(text));
+    fallout::fontDrawText(text, "Hi!", sizeof(text), 64,
+        static_cast<fallout::ColorWithFlags>(42));
+    std::printf("draw=%08lX\n", crcBytes(text, sizeof(text)));
+
+    memset(text, 0, sizeof(text));
+    fallout::fontDrawText(text, "Hi!", sizeof(text), 64,
+        static_cast<fallout::ColorWithFlags>(42 | fallout::DRAW_TEXT_FLAG_SHADOWED));
+    std::printf("draw-shadowed=%08lX\n", crcBytes(text, sizeof(text)));
+
+    memset(text, 0, sizeof(text));
+    fallout::fontDrawText(text, "Hi!", sizeof(text), 64,
+        static_cast<fallout::ColorWithFlags>(42 | fallout::DRAW_TEXT_FLAG_MONOSPACED));
+    std::printf("draw-mono=%08lX\n", crcBytes(text, sizeof(text)));
+
+    memset(text, 0, sizeof(text));
+    fallout::fontDrawText(text, "Hi!", sizeof(text), 64,
+        static_cast<fallout::ColorWithFlags>(42 | fallout::DRAW_TEXT_FLAG_UNDERLINED));
+    std::printf("draw-underlined=%08lX\n", crcBytes(text, sizeof(text)));
+
+    memset(text, 0, sizeof(text));
+    fallout::fontDrawText(text, "Hi!", 4, 64,
+        static_cast<fallout::ColorWithFlags>(42));
+    std::printf("draw-clip4=%08lX\n", crcBytes(text, sizeof(text)));
+
+    unsigned char canvas[40 * 20];
+    memset(canvas, 0, sizeof(canvas));
+    fallout::Buffer2D dest(canvas, 40, 20);
+    fallout::interfaceFontDrawTextScaled2D(dest, 2, 2, "Hi!", plain42, 1.0f);
+    std::printf("scaled1=%08lX width1=%d\n", crcBytes(canvas, sizeof(canvas)),
+        fallout::interfaceFontGetStringWidthScaled("Hi!", plain42, 1.0f));
+
+    memset(canvas, 0, sizeof(canvas));
+    fallout::interfaceFontDrawTextScaled2D(dest, 2, 2, "Hi!", plain42, 2.0f);
+    std::printf("scaled2=%08lX width2=%d\n", crcBytes(canvas, sizeof(canvas)),
+        fallout::interfaceFontGetStringWidthScaled("Hi!", plain42, 2.0f));
+
+    fallout::fontSetCurrent(101);
+    std::printf("current101=%d height=%d\n",
+        fallout::fontGetCurrent(), fallout::fontGetLineHeight());
+
+    // Font 9 has no data: current changes, descriptor stays on font 1.
+    fallout::fontSetCurrent(109);
+    std::printf("current109=%d height=%d\n",
+        fallout::fontGetCurrent(), fallout::fontGetLineHeight());
+
+    fallout::interfaceFontsExit();
+    std::printf("reinit=%d\n", fallout::interfaceFontsInit());
+
+    fallout::settingsExit(false);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -2240,5 +2349,6 @@ int main()
     sectionSvga();
     sectionDraw();
     sectionFont();
+    sectionIfaceFont();
     return 0;
 }
