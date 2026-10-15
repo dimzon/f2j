@@ -20,6 +20,7 @@
 #include "dictionary.h"
 #include "art.h"
 #include "cache.h"
+#include "color.h"
 #include "config.h"
 #include "content_config.h"
 #include "dfile.h"
@@ -1608,6 +1609,71 @@ void sectionArtLoad()
         fallout::artUnlock(handle), fallout::artCacheFlush());
 }
 
+void sectionColor()
+{
+    std::puts("[color]");
+
+    fallout::xbaseOpen("/game-en/master.dat");
+    bool loaded = fallout::colorPaletteLoad("color.pal");
+    char* err = fallout::_colorError();
+    std::printf("load=%d err=[%s]\n", loaded ? 1 : 0, err);
+
+    std::printf("crc-cmap=%08lX\n",
+        crc32(crc32(0L, Z_NULL, 0), fallout::_cmap, COLOR_MAP_SIZE));
+    std::printf("crc-colortable=%08lX\n",
+        crc32(crc32(0L, Z_NULL, 0), (unsigned char*)fallout::_colorTable, COLOR_PALETTE_SIZE_15BIT));
+    std::printf("crc-intensity=%08lX\n",
+        crc32(crc32(0L, Z_NULL, 0), (unsigned char*)fallout::intensityColorTable, 65536));
+    std::printf("crc-mixadd=%08lX\n",
+        crc32(crc32(0L, Z_NULL, 0), (unsigned char*)fallout::colorMixAddTable, 65536));
+    std::printf("crc-mixmul=%08lX\n",
+        crc32(crc32(0L, Z_NULL, 0), (unsigned char*)fallout::colorMixMulTable, 65536));
+
+    int mapped = 0;
+    for (int i = 0; i < COLOR_COUNT; i++) {
+        if (fallout::_mappedColor[i] != 0) {
+            mapped++;
+        }
+    }
+    std::printf("mapped=%d\n", mapped);
+
+    int redIdx = fallout::rgb555(0xFF0000);
+    int whiteIdx = fallout::rgb555(0xFFFFFF);
+    int blackIdx = fallout::rgb555(0x000000);
+    std::printf("red=%d white=%d black=%d\n",
+        (int)fallout::_colorTable[redIdx] & 0xFF, (int)fallout::_colorTable[whiteIdx] & 0xFF,
+        (int)fallout::_colorTable[blackIdx] & 0xFF);
+    std::printf("rgb-white=%d\n", fallout::Color2RGB(fallout::_colorTable[whiteIdx]));
+    std::printf("calc=%d\n", (int)fallout::_calculateColor(0, fallout::_colorTable[whiteIdx]) & 0xFF);
+
+    fallout::Color* blend = fallout::_getColorBlendTable(fallout::_colorTable[redIdx]);
+    // NOTE: _buildBlendTable writes 14 of the 16 rows; the 2 trailing rows
+    // keep malloc garbage -> mask them out so the vector is deterministic.
+    unsigned char blendBuf[4096];
+    std::memcpy(blendBuf, blend, sizeof(blendBuf));
+    std::memset(blendBuf + 3584, 0, 512);
+    uLong blendCrc = crc32(crc32(0L, Z_NULL, 0), blendBuf, sizeof(blendBuf));
+    std::printf("blend-crc=%08lX\n", blendCrc);
+    fallout::Color* blend2 = fallout::_getColorBlendTable(fallout::_colorTable[redIdx]);
+    std::printf("blend-same=%d\n", blend == blend2 ? 1 : 0);
+    fallout::_freeColorBlendTable(fallout::_colorTable[redIdx]);
+    fallout::_freeColorBlendTable(fallout::_colorTable[redIdx]);
+    fallout::Color* blend3 = fallout::_getColorBlendTable(fallout::_colorTable[redIdx]);
+    uLong blendCrc3 = 0;
+    if (blend3 != nullptr) {
+        std::memcpy(blendBuf, blend3, sizeof(blendBuf));
+        std::memset(blendBuf + 3584, 0, 512);
+        blendCrc3 = crc32(crc32(0L, Z_NULL, 0), blendBuf, sizeof(blendBuf));
+    }
+    std::printf("blend-rebuilt=%d crc=%08lX same=%d\n",
+        blend3 != nullptr ? 1 : 0, blendCrc3, blendCrc3 == blendCrc ? 1 : 0);
+    fallout::_freeColorBlendTable(fallout::_colorTable[redIdx]);
+
+    bool missingLoaded = fallout::colorPaletteLoad("no_such.pal");
+    char* missingErr = fallout::_colorError();
+    std::printf("load-missing=%d err=[%s]\n", missingLoaded ? 1 : 0, missingErr);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -1640,6 +1706,7 @@ int main()
     sectionCache();
     sectionCacheEvict();
     sectionArtLoad();
+    sectionColor();
     sectionSettings();
     return 0;
 }
