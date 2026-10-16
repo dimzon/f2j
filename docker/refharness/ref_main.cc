@@ -50,6 +50,7 @@
 #include "light.h"
 #include "reaction.h"
 #include "select_file_list.h"
+#include "nevs.h"
 #include "autorun.h"
 #include "game_mouse.h"
 #include "stat.h"
@@ -6234,6 +6235,40 @@ void sectionFindCid()
         dog1->cid, foundDog, foundFrom1, notFound);
 }
 
+void sectionNevsEvents()
+{
+    std::puts("[nevsevents]");
+
+    // No window system needed. Null programs only exercise the registry
+    // bookkeeping (firing needs the interpreter).
+    fallout::_nevs_initonce();
+    int add1 = fallout::_nevs_addevent((char*)"ev1", nullptr, 3, fallout::NEVS_TYPE_EVENT);
+    int addAgain = fallout::_nevs_addevent((char*)"ev1", nullptr, 5, fallout::NEVS_TYPE_HANDLER);
+    // NOTE: signalling a FOUND event logs its raw pointer (ASLR noise),
+    // so only missing names are signalled here (same rc either way).
+    int sigMiss = fallout::_nevs_signal((char*)"nope");
+    int clearMiss = fallout::_nevs_clearevent((char*)"nope");
+    int clear1 = fallout::_nevs_clearevent((char*)"ev1");
+    std::printf("add=%d,%d signal=%d clearmiss=%d clear=%d\n",
+        add1, addAgain, sigMiss, clearMiss, clear1);
+
+    // Fill the 40-slot table, overflow, free one, re-add.
+    char name[8];
+    int fillFail = 0;
+    for (int i = 0; i < 40; i++) {
+        snprintf(name, sizeof(name), "ev%02d", i);
+        if (fallout::_nevs_addevent(name, nullptr, 1, fallout::NEVS_TYPE_EVENT) != 0) {
+            fillFail++;
+        }
+    }
+    int overAdd = fallout::_nevs_addevent((char*)"over", nullptr, 1, fallout::NEVS_TYPE_EVENT);
+    int clearSlot = fallout::_nevs_clearevent((char*)"ev07");
+    int reAdd = fallout::_nevs_addevent((char*)"over", nullptr, 1, fallout::NEVS_TYPE_EVENT);
+    std::printf("fillfail=%d over=%d clearslot=%d readd=%d\n",
+        fillFail, overAdd, clearSlot, reAdd);
+    fallout::_nevs_close();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6347,5 +6382,6 @@ int main()
     sectionSkillRoll();
     sectionMiscGetters();
     sectionFindCid();
+    sectionNevsEvents();
     return 0;
 }
