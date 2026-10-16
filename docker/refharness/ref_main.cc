@@ -49,6 +49,9 @@
 #include "queue.h"
 #include "light.h"
 #include "reaction.h"
+#include "select_file_list.h"
+#include "autorun.h"
+#include "game_mouse.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5151,6 +5154,38 @@ void sectionLightReact()
         bad, edge, neutral, good, customLow, customMid, customHigh, resetNeutral);
 }
 
+void sectionGameMouseUtil()
+{
+    std::puts("[gmouseutil]");
+
+    // Pure type facts (engine needs a map; these enumerations don't).
+    std::printf("modes=%d first-skill=%d skills=%d items=%d cursors=%d first-anim=%d scroll-invalid-off=%d\n",
+        (int)fallout::GAME_MOUSE_MODE_COUNT,
+        (int)fallout::FIRST_GAME_MOUSE_MODE_SKILL,
+        (int)fallout::GAME_MOUSE_MODE_SKILL_COUNT,
+        (int)fallout::GAME_MOUSE_ACTION_MENU_ITEM_COUNT,
+        (int)fallout::MOUSE_CURSOR_TYPE_COUNT,
+        (int)fallout::FIRST_GAME_MOUSE_ANIMATED_CURSOR,
+        (int)fallout::MOUSE_CURSOR_SCROLL_OFFSET_INVALID);
+
+    // Sorted VFS file list across the mounted xbases.
+    int msgCount = -1;
+    char** msgList = fallout::_getFileList((char*)"text\\english\\game\\*.msg", &msgCount);
+    std::printf("msgs=%d first=[%s] last=[%s]\n",
+        msgCount,
+        msgCount > 0 ? msgList[0] : "(none)",
+        msgCount > 0 ? msgList[msgCount - 1] : "(none)");
+    fallout::_freeFileList(msgList);
+    int noneCount = -1;
+    char** noneList = fallout::_getFileList((char*)"no\\such\\*.zzz", &noneCount);
+    std::printf("none=%d nonenull=%d\n", noneCount, noneList == nullptr ? 1 : 0);
+
+    // Autorun mutex is a Windows-only no-op elsewhere.
+    bool mutexRc = fallout::autorunMutexCreate();
+    fallout::autorunMutexClose();
+    std::printf("autorun=%d\n", mutexRc ? 1 : 0);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5233,5 +5268,6 @@ int main()
     sectionSquareMath();
     sectionEventQueue();
     sectionLightReact();
+    sectionGameMouseUtil();
     return 0;
 }

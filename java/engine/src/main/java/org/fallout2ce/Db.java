@@ -592,6 +592,30 @@ public final class Db {
         }
     }
 
+    // 0x4AA2A4 getFileList (select_file_list.cc): fileNameListInit above
+    // (already sorted case-insensitively, deduped and basename-stripped),
+    // re-sorted with strcmp byte order. Null on empty, like C's nullptr
+    // (NOTE: C leaks the empty FileList node here; Java frees it —
+    // unobservable, the head is only searched by pointer on free).
+    public static List<String> getFileList(String pattern) {
+        List<String> names = fileNameListInit(pattern);
+        if (names.isEmpty()) {
+            fileNameListFree(names);
+            return null;
+        }
+
+        names.sort(Db::compareFileNames);
+
+        return names;
+    }
+
+    // 0x4AA2DC freeFileList (select_file_list.cc).
+    public static void freeFileList(List<String> fileList) {
+        if (fileList != null) {
+            fileNameListFree(fileList);
+        }
+    }
+
     // TODO: Return type should be long.
     //
     // 0x4C68BC db_filelength.
@@ -613,6 +637,22 @@ public final class Db {
     // 0x4C68E8 db_list_compare.
     static int compareNames(String a, String b) {
         return DBase.compareKeys(a, b);
+    }
+
+    // 0x4AA250 compare (select_file_list.cc): C strcmp byte order
+    // (unsigned char). Java compares UTF-16 code units, which is
+    // bit-identical for ASCII — the whole engine file-name set
+    // (pinned below by CMBATAI2.msg..scrname.msg) is ASCII.
+    static int compareFileNames(String a, String b) {
+        int n = Math.min(a.length(), b.length());
+        for (int i = 0; i < n; i++) {
+            int ca = a.charAt(i);
+            int cb = b.charAt(i);
+            if (ca != cb) {
+                return ca - cb;
+            }
+        }
+        return a.length() - b.length();
     }
 
     /** Test seam: reset statics (mounts live in {@link XFile}). */
