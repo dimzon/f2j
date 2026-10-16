@@ -46,6 +46,45 @@ public final class Settings {
         Restart
     }
 
+    /**
+     * Port of {@code GameDifficulty} in {@code src/game_config.h} (values
+     * travel as int, like C; {@code PreferencesSettings.game_difficulty}
+     * defaults to {@code NORMAL}).
+     */
+    public static final int GAME_DIFFICULTY_EASY = 0;
+    public static final int GAME_DIFFICULTY_NORMAL = 1;
+    public static final int GAME_DIFFICULTY_HARD = 2;
+    public static final int GAME_DIFFICULTY_MIN = GAME_DIFFICULTY_EASY;
+    public static final int GAME_DIFFICULTY_MAX = GAME_DIFFICULTY_HARD;
+
+    public enum GameDifficulty {
+        Easy(GAME_DIFFICULTY_EASY),
+        Normal(GAME_DIFFICULTY_NORMAL),
+        Hard(GAME_DIFFICULTY_HARD);
+
+        private final int id;
+
+        GameDifficulty(int id) {
+            this.id = id;
+        }
+
+        public int id() {
+            return id;
+        }
+    }
+
+    private static final java.util.Map<Integer, GameDifficulty> GAME_DIFFICULTY_BY_ID = new java.util.HashMap<>();
+
+    static {
+        for (GameDifficulty e : GameDifficulty.values()) {
+            GAME_DIFFICULTY_BY_ID.put(e.id, e);
+        }
+    }
+
+    public static GameDifficulty ofGameDifficulty(int id) {
+        return GAME_DIFFICULTY_BY_ID.get(id);
+    }
+
     /** Port of {@code SettingValue} (enums travel as int, like C). */
     public sealed interface SettingValue permits BoolVal, IntVal, RealVal, TextVal {
     }

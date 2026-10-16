@@ -52,6 +52,8 @@
 #include "select_file_list.h"
 #include "autorun.h"
 #include "game_mouse.h"
+#include "stat.h"
+#include "skill.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5186,6 +5188,49 @@ void sectionGameMouseUtil()
     std::printf("autorun=%d\n", mutexRc ? 1 : 0);
 }
 
+void sectionStatSkill()
+{
+    std::puts("[statskill]");
+
+    // No window system needed. Pure tables first (need no init).
+    int cost0 = fallout::skillsGetCost(0);
+    int cost100 = fallout::skillsGetCost(100);
+    int cost101 = fallout::skillsGetCost(101);
+    int cost126 = fallout::skillsGetCost(126);
+    int cost151 = fallout::skillsGetCost(151);
+    int cost176 = fallout::skillsGetCost(176);
+    int cost201 = fallout::skillsGetCost(201);
+    std::printf("cost=%d,%d,%d,%d,%d,%d,%d\n",
+        cost0, cost100, cost101, cost126, cost151, cost176, cost201);
+    int defSneak = fallout::skillGetDefaultValue(fallout::SKILL_SNEAK);
+    int defBad = fallout::skillGetDefaultValue((fallout::Skill)-1);
+    int tagged = fallout::skillIsTagged(fallout::SKILL_SNEAK) ? 1 : 0;
+    int diffNorm = fallout::skillGetGameDifficultyModifier(fallout::SKILL_SNEAK);
+    int diffOther = fallout::skillGetGameDifficultyModifier(fallout::SKILL_SMALL_GUNS);
+
+    // NOTE: statsInit itself is out of reach headless (it segfaults here;
+    // it pulls pc/message stacks that need the full game), so the bounds
+    // vectors exercise the setter/getter tables from their zero state.
+    int pcMax0 = fallout::statGetConfiguredMaximum(fallout::STAT_STRENGTH, false);
+    int npcMax0 = fallout::statGetConfiguredMaximum(fallout::STAT_STRENGTH, true);
+    int badStat = fallout::statGetConfiguredMaximum((fallout::Stat)-1, false);
+    fallout::statSetPcMaximum(fallout::STAT_STRENGTH, 12);
+    fallout::statSetPcMinimum(fallout::STAT_STRENGTH, 1);
+    int pcMaxSet = fallout::statGetConfiguredMaximum(fallout::STAT_STRENGTH, false);
+    int pcMinSet = fallout::statGetConfiguredMinimum(fallout::STAT_STRENGTH, false);
+    std::printf("pcmax0=%d npcmax0=%d bad=%d setmax=%d setmin=%d\n",
+        pcMax0, npcMax0, badStat, pcMaxSet, pcMinSet);
+
+    fallout::GameDifficulty savedDiff = fallout::settings.preferences.game_difficulty;
+    fallout::settings.preferences.game_difficulty = fallout::GAME_DIFFICULTY_HARD;
+    int diffHard = fallout::skillGetGameDifficultyModifier(fallout::SKILL_SNEAK);
+    fallout::settings.preferences.game_difficulty = fallout::GAME_DIFFICULTY_EASY;
+    int diffEasy = fallout::skillGetGameDifficultyModifier(fallout::SKILL_SNEAK);
+    fallout::settings.preferences.game_difficulty = savedDiff;
+    std::printf("defsneak=%d defbad=%d tagged=%d diff=%d,%d hard=%d easy=%d\n",
+        defSneak, defBad, tagged, diffNorm, diffOther, diffHard, diffEasy);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5269,5 +5314,6 @@ int main()
     sectionEventQueue();
     sectionLightReact();
     sectionGameMouseUtil();
+    sectionStatSkill();
     return 0;
 }
