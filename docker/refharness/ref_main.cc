@@ -120,6 +120,7 @@ void progressHandler()
 #include "platform_compat.h"
 #include "text_font.h"
 #include "tile.h"
+#include "party_member.h"
 #include "win32.h"
 #include "random.h"
 #include "string_parsers.h"
@@ -4905,8 +4906,8 @@ void sectionWinFile()
     int saveEscRc = fallout::showSaveFileDialog((char*)"Save", slots, saveEscDest, 3, 200, 100, 0);
     std::printf("save-rc=%d save-dest=[%s] saveempty-rc=%d saveesc-rc=%d saveesc-dest=[%s]\n",
         saveRc, saveDest, saveEmptyRc, saveEscRc, saveEscDest);
-
-    fallout::windowManagerExit();
+    // NOTE: no windowManagerExit here on purpose: later sections reuse the
+    // live window system (re-init is impossible, see [winbtn]).
 }
 
 void sectionProtoDb()
@@ -6621,6 +6622,29 @@ void sectionFrmIds()
         sneakFrm, skillBad, strFrm, statBad, giftedFrm);
 }
 
+void sectionPartyObjects()
+{
+    std::puts("[partyobjects]");
+
+    // Party descriptions come from data\party.txt; objectsInit then builds
+    // the dude/egg on top (isoInit would redo this, so it stays split).
+    int partyRc = fallout::partyMembersInit();
+    static unsigned char objBuf[640 * 480];
+    int objRc = fallout::objectsInit(objBuf, 640, 480, 640);
+    fallout::Object* dude = fallout::gDude;
+    fallout::Object* egg = fallout::gEgg;
+    std::printf("party=%d objects=%d dude=%d:%d egg=%d:%d\n",
+        partyRc, objRc,
+        dude != nullptr ? dude->pid : -999,
+        dude != nullptr ? dude->id : -999,
+        egg != nullptr ? egg->pid : -999,
+        egg != nullptr ? egg->id : -999);
+
+    // Re-adding the dude is a no-op (pid match), not a duplicate.
+    int dupRc = dude != nullptr ? fallout::partyMemberAdd(dude) : -99;
+    std::printf("dup-add=%d\n", dupRc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6747,5 +6771,6 @@ int main()
     sectionProgRetStack();
     sectionStatsSave();
     sectionFrmIds();
+    sectionPartyObjects();
     return 0;
 }

@@ -1,5 +1,6 @@
 package org.fallout2ce;
 
+import java.util.Arrays;
 import java.util.List;
 
 import org.fallout2ce.ObjTypes.CritterManeuver;
@@ -10,6 +11,7 @@ import org.fallout2ce.ObjTypes.InventoryItem;
 import org.fallout2ce.ObjTypes.ObjectFlags;
 import org.fallout2ce.ObjTypes.OutlineType;
 import org.fallout2ce.ObjTypes.Rotation;
+import org.fallout2ce.ProtoTypes.CritterProtoTypeId;
 import org.fallout2ce.ProtoTypes.Proto;
 import org.fallout2ce.ProtoTypes.ProtoFlags;
 import org.fallout2ce.ProtoTypes.ProtoId;
@@ -51,7 +53,10 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code docker/refharness/golden/v69.txt} (produced by
  * {@code sectionObjVis}), and {@code [objplace]} in
  * {@code docker/refharness/golden/v86.txt} (produced by
- * {@code sectionObjPlace}).
+ * {@code sectionObjPlace}), and {@code [partyobjects]} in
+ * {@code docker/refharness/golden/v96.txt} (produced by
+ * {@code sectionPartyObjects}: {@code partyMembersInit} return,
+ * {@code objectsInit} return, dude pid/id, egg pid/id, dude re-add).
  *
  * <p>Game objects reuse {@link ObjTypes.GameObject} (v33, renamed from C
  * {@code Object}); nothing is duplicated here. Flags stay immutable bit
@@ -187,8 +192,46 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * <li>{@code resetForTests} gains no new state: setLocation reuses the
  * listed node (no new globals), findById rides the find cursor,
  * light state resets via {@code Light}, art via {@code Art}.</li>
-  * </ul>
-  */
+ * <li>{@code objectsInit} ({@code obj_init}, 0x488780) ports the whole
+ * headless-observable prefix: seen-array zeroing, update-area bounds +
+ * hex-size math, tile-head clear, the offset/order/render table inits,
+ * {@code lightInit} (existing), {@code textObjectsInit} (minimal, see
+ * {@link TextObjects}), the light + blend table inits, the
+ * {@code centerToUpperLeft} store via {@link TileMath#tileFromScreenXY},
+ * the window state store, and the dude/egg creation
+ * ({@code objectCreateWithFrmIdProtoId} + flags + dude
+ * {@code objectSetLight(4, 0x10000)} + {@link PartyMembers#partyMemberAdd},
+ * whose {@code exit(1)} becomes {@link IllegalStateException}). The egg
+ * gets no light call, like C++. Dude pid is
+ * {@code buildPid(CRITTER, 0)} = 16777216; its id is the fixed
+ * {@code (pid & kMaxProtoId) + 18000} = 18000 (the id counter is
+ * untouched). Error paths mirror C (offset failure → {@code -1};
+ * order/render/light/text failures → order + offset exits → {@code -1}).
+ * {@code objectsReset}/{@code objectsExit} mirror C (remove-all over
+ * both lists, {@code NO_REMOVE} cleared first on exit; exit leaves
+ * {@code objectsInitialized} set, like C — {@code resetForTests} owns
+ * the fresh state).</li>
+ * <li>{@code _obj_offset_table_init} runs the real tile math
+ * ({@code tileFromScreenXY}/{@code tileToScreenXY}/
+ * {@code tileSetCenter(+1, IGNORE)} twice, like C); it needs tile state
+ * from {@link TileMath#tileInit} first, exactly as the harness has it
+ * when the section runs. The order-table sort uses a stable sort where
+ * C uses {@code qsort}, but the keys (distinct tile offsets) form a
+ * total order, so the permutation is identical.</li>
+ * <li>Blend-table colors use the runtime {@code colorTable[rgb555()]}
+ * lookups, like the C macros; headless the table is zero-filled (no
+ * palette load ported yet), so the indices read 0 until the color/game
+ * ports land. Unobserved by vectors either way.</li>
+ * <li>{@code gDude}/{@code gEgg} used to be dormant null-seam
+ * globals in the notes above; this slice ports them for real (see
+ * {@link #getDude}/{@link #getEgg}). {@link Stat}, {@link Skill},
+ * {@link Critter}, {@link Inventory} and {@link Item} keep their own
+ * null holders, so every {@code == gDude} branch there stays dormant
+ * (identity vs null can never fire) even with a live dude — isolation
+ * holds by construction, and the test teardown clears the holders
+ * anyway.</li>
+ * </ul>
+ */
 public final class ObjectSystem {
 
     private ObjectSystem() {
@@ -222,6 +265,94 @@ public final class ObjectSystem {
      * until the proto/game ports land.
      */
     static boolean protosInitialized = false;
+
+    /** Port of {@code gObjectsInitialized} (0x5195F8). */
+    private static boolean objectsInitialized;
+
+    /** Port of {@code gObjectsUpdateAreaHexWidth} (0x5195FC). */
+    private static int updateAreaHexWidth;
+
+    /** Port of {@code gObjectsUpdateAreaHexHeight} (0x519600). */
+    private static int updateAreaHexHeight;
+
+    /** Port of {@code gObjectsUpdateAreaHexSize} (0x519604). */
+    private static int updateAreaHexSize;
+
+    /** Ports of {@code _orderTable[2]} (0x519608). */
+    private static int[] orderTableEven;
+    private static int[] orderTableOdd;
+
+    /** Ports of {@code _offsetTable[2]} (0x519610). */
+    private static int[] offsetTableEven;
+    private static int[] offsetTableOdd;
+
+    /** Port of {@code _offsetDivTable} (0x519618). */
+    private static int[] offsetDivTable;
+
+    /** Port of {@code _offsetModTable} (0x51961C). */
+    private static int[] offsetModTable;
+
+    /** Port of {@code _renderTable} (0x519620, null until init). */
+    private static GameObjectListNode[] renderTable;
+
+    /** Port of {@code gObjectsUpdateAreaPixelBounds} (0x639D90). */
+    private static Geometry.Rect updateAreaPixelBounds = new Geometry.Rect();
+
+    // 0x6391D0 light_blocked: render-only occlusion cache, never read by
+    // this slice (game phase); not modelled.
+
+    /** Port of {@code _light_offsets[2][6][36]} (0x639530), indexed [parity][rotation]. */
+    private static int[][][] lightOffsets = new int[2][ObjTypes.ROTATION_COUNT][36];
+
+    /** Port of {@code gObjectsWindowRect} (0x639BF0). */
+    private static Geometry.Rect windowRect = new Geometry.Rect();
+
+    /** Port of {@code _glassGrayTable} (0x660EA0). */
+    private static int[] glassGrayTable = new int[Color.COLOR_COUNT];
+
+    /** Port of {@code _commonGrayTable} (0x660FA0). */
+    private static int[] commonGrayTable = new int[Color.COLOR_COUNT];
+
+    /** Port of {@code gObjectsWindowBufferSize} (0x6610A0). */
+    private static int windowBufferSize;
+
+    /** Port of {@code gObjectsWindowBuffer} (0x6610A4, borrowed, like C). */
+    private static byte[] windowBuffer;
+
+    /** Port of {@code gObjectsWindowHeight} (0x6610A8). */
+    private static int windowHeight;
+
+    /** Port of {@code gObjectsWindowWidth} (0x6610B4). */
+    private static int windowWidth;
+
+    /** Port of {@code gObjectsWindowPitch} (0x6610B0). */
+    private static int windowPitch;
+
+    /** Port of {@code obj_dude} (0x6610B8). */
+    private static GameObject dude;
+
+    /** Port of {@code obj_egg} (0x6610AC). */
+    private static GameObject egg;
+
+    /** Seen-bit size ({@code _obj_seen}/{@code _obj_seen_check}, 5001 bytes each). */
+    static final int OBJ_SEEN_SIZE = 5001;
+
+    // 0x6610BC obj_seen_check: render-only, never zeroed by objectsInit;
+    // modelled for shape parity, zeroed by resetForTests only.
+    private static byte[] objSeenCheck = new byte[OBJ_SEEN_SIZE];
+
+    /** Port of {@code _obj_seen} (0x662445, zeroed by init/reset). */
+    private static byte[] objSeen = new byte[OBJ_SEEN_SIZE];
+
+    /** Port of {@code _centerToUpperLeft} (0x51962C). */
+    private static int centerToUpperLeft;
+
+    /** Ports of the {@code _obj_blend_table_*} tables (0x519780+). */
+    private static byte[] wallBlendTable;
+    private static byte[] glassBlendTable;
+    private static byte[] steamBlendTable;
+    private static byte[] energyBlendTable;
+    private static byte[] redBlendTable;
 
     // 0x489C9C obj_pid_new.
     public static int objectCreateWithProtoId(GameObject[] objectPtr, ProtoId protoId) {
@@ -1521,6 +1652,368 @@ public final class ObjectSystem {
         return object;
     }
 
+    // 0x488780 obj_init.
+    public static int objectsInit(byte[] buf, int width, int height, int pitch) {
+        Arrays.fill(objSeen, (byte) 0);
+
+        updateAreaPixelBounds.right = width + 320;
+        updateAreaPixelBounds.left = -320;
+        updateAreaPixelBounds.bottom = height + 240;
+        updateAreaPixelBounds.top = -240;
+
+        updateAreaHexWidth = (updateAreaPixelBounds.right + 320 + 1) / 32 + 1;
+        updateAreaHexHeight = (updateAreaPixelBounds.bottom + 240 + 1) / 12 + 1;
+        updateAreaHexSize = updateAreaHexWidth * updateAreaHexHeight;
+
+        tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
+
+        if (offsetTableInit() == -1) {
+            return -1;
+        }
+
+        if (orderTableInit() == -1) {
+            gotoErr();
+            return -1;
+        }
+
+        if (renderTableInit() == -1) {
+            gotoErr2();
+            return -1;
+        }
+
+        if (Light.lightInit() == -1) {
+            gotoErr2();
+            return -1;
+        }
+
+        if (TextObjects.textObjectsInit(buf, width, height) == -1) {
+            gotoErr2();
+            return -1;
+        }
+
+        lightTableInit();
+        blendTableInit();
+
+        centerToUpperLeft = TileMath.tileFromScreenXY(
+                updateAreaPixelBounds.left, updateAreaPixelBounds.top) - TileMath.gCenterTile;
+        windowWidth = width;
+        windowHeight = height;
+        windowBuffer = buf;
+
+        windowRect.left = 0;
+        windowRect.top = 0;
+        windowRect.right = width - 1;
+        windowRect.bottom = height - 1;
+
+        windowBufferSize = height * width;
+        windowPitch = pitch;
+
+        FrmId dudeFrmId = FrmId.ofCritter(Art.artLists.vaultGuyNum,
+                AnimationType.STAND.value(), WeaponAnimation.NONE.value(),
+                Rotation.ROTATION_NE.id());
+        GameObject[] dudeSlot = new GameObject[1];
+        objectCreateWithFrmIdProtoId(dudeSlot,
+                dudeFrmId, ProtoId.ofCritterType(CritterProtoTypeId.Dude));
+        dude = dudeSlot[0];
+
+        dude.flags = dude.flags.or(ObjectFlags.NO_REMOVE).or(ObjectFlags.NO_SAVE)
+                .or(ObjectFlags.HIDDEN).or(ObjectFlags.LIGHT_THRU);
+        objectSetLight(dude, 4, 0x10000);
+
+        if (PartyMembers.partyMemberAdd(dude) == -1) {
+            Debug.print("\n  Error: Can't add Player into party!");
+            throw new IllegalStateException("Can't add Player into party!");
+        }
+
+        FrmId eggFrmId = FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.Egg.id());
+        GameObject[] eggSlot = new GameObject[1];
+        objectCreateWithFrmIdProtoId(eggSlot, eggFrmId, ProtoId.empty());
+        egg = eggSlot[0];
+
+        egg.flags = egg.flags.or(ObjectFlags.NO_REMOVE).or(ObjectFlags.NO_SAVE)
+                .or(ObjectFlags.HIDDEN).or(ObjectFlags.LIGHT_THRU);
+
+        objectsInitialized = true;
+
+        return 0;
+    }
+
+    // C `goto err_2` target: order + offset exits.
+    private static void gotoErr2() {
+        orderTableExit();
+        gotoErr();
+    }
+
+    // C `goto err` target: offset exit.
+    private static void gotoErr() {
+        offsetTableExit();
+    }
+
+    // 0x488A00 obj_reset.
+    public static void objectsReset() {
+        if (objectsInitialized) {
+            TextObjects.textObjectsReset();
+            removeAllObjects();
+            Arrays.fill(objSeen, (byte) 0);
+            Light.lightReset();
+        }
+    }
+
+    // 0x488A30 obj_exit (leaves objectsInitialized set, like C; the
+    // process-teardown flag is only cleared by resetForTests).
+    public static void objectsExit() {
+        if (objectsInitialized) {
+            dude.flags = dude.flags.and(ObjectFlags.NO_REMOVE.not());
+            egg.flags = egg.flags.and(ObjectFlags.NO_REMOVE.not());
+
+            removeAllObjects();
+            TextObjects.textObjectsFree();
+
+            // NOTE: Uninline.
+            blendTableExit();
+
+            Light.lightExit();
+
+            // NOTE: Uninline.
+            renderTableExit();
+
+            // NOTE: Uninline.
+            orderTableExit();
+
+            offsetTableExit();
+        }
+    }
+
+    /** Port of {@code gDude} (0x6610B8). */
+    public static GameObject getDude() {
+        return dude;
+    }
+
+    /** Port of {@code gEgg} (0x6610AC). */
+    public static GameObject getEgg() {
+        return egg;
+    }
+
+    // 0x48CDA0 (approx) _obj_offset_table_init: the two malloc-failure
+    // exits collapse (Java allocation cannot fail); the tile == -1 and
+    // tileSetCenter failures stay.
+    private static int offsetTableInit() {
+        if (offsetTableEven != null || offsetTableOdd != null) {
+            return -1;
+        }
+
+        offsetTableEven = new int[updateAreaHexSize];
+        offsetTableOdd = new int[updateAreaHexSize];
+
+        for (int parity = 0; parity < 2; parity++) {
+            int originTile = TileMath.tileFromScreenXY(
+                    updateAreaPixelBounds.left, updateAreaPixelBounds.top);
+            if (originTile != -1) {
+                int[] offsets = (TileMath.gCenterTile & 1) != 0 ? offsetTableOdd : offsetTableEven;
+
+                int[] originTileX = new int[1];
+                int[] originTileY = new int[1];
+                TileMath.tileToScreenXY(originTile, originTileX, originTileY);
+
+                int parityShift = 16;
+                int tileX = originTileX[0] + 16;
+                int tileY = originTileY[0] + 8;
+                if (tileX > updateAreaPixelBounds.left) {
+                    parityShift = -parityShift;
+                }
+
+                int o = 0;
+                int cursorX = tileX;
+                for (int y = 0; y < updateAreaHexHeight; y++) {
+                    for (int x = 0; x < updateAreaHexWidth; x++) {
+                        int tile = TileMath.tileFromScreenXY(cursorX, tileY);
+                        if (tile == -1) {
+                            offsetTableExit();
+                            return -1;
+                        }
+
+                        cursorX += 32;
+                        offsets[o++] = tile - originTile;
+                    }
+
+                    cursorX = parityShift + tileX;
+                    tileY += 12;
+                    parityShift = -parityShift;
+                }
+            }
+
+            if (TileMath.tileSetCenter(TileMath.gCenterTile + 1,
+                    TileMath.TILE_SET_CENTER_FLAG_IGNORE_SCROLL_RESTRICTIONS) == -1) {
+                offsetTableExit();
+                return -1;
+            }
+        }
+
+        offsetDivTable = new int[updateAreaHexSize];
+        for (int i = 0; i < updateAreaHexSize; i++) {
+            offsetDivTable[i] = i / updateAreaHexWidth;
+        }
+
+        offsetModTable = new int[updateAreaHexSize];
+        for (int i = 0; i < updateAreaHexSize; i++) {
+            offsetModTable[i] = i % updateAreaHexWidth;
+        }
+
+        return 0;
+    }
+
+    // 0x48CDA0 obj_offset_table_exit.
+    private static void offsetTableExit() {
+        offsetModTable = null;
+        offsetDivTable = null;
+        offsetTableOdd = null;
+        offsetTableEven = null;
+    }
+
+    // 0x48CE10 obj_order_table_init. C sorts with qsort; Java sorts
+    // stable, but the keys (distinct tile offsets) are a total order, so
+    // the permutation is identical.
+    private static int orderTableInit() {
+        if (orderTableEven != null || orderTableOdd != null) {
+            return -1;
+        }
+
+        orderTableEven = new int[updateAreaHexSize];
+        orderTableOdd = new int[updateAreaHexSize];
+        for (int index = 0; index < updateAreaHexSize; index++) {
+            orderTableEven[index] = index;
+            orderTableOdd[index] = index;
+        }
+
+        sortOrderTable(orderTableEven, offsetTableEven);
+        sortOrderTable(orderTableOdd, offsetTableOdd);
+
+        return 0;
+    }
+
+    private static void sortOrderTable(int[] order, int[] offsets) {
+        Integer[] boxed = new Integer[order.length];
+        for (int i = 0; i < order.length; i++) {
+            boxed[i] = order[i];
+        }
+        Arrays.sort(boxed, (a, b) -> Integer.compare(offsets[a], offsets[b]));
+        for (int i = 0; i < order.length; i++) {
+            order[i] = boxed[i];
+        }
+    }
+
+    // 0x48CF50 obj_order_table_exit (NOTE: inlined upstream).
+    private static void orderTableExit() {
+        orderTableOdd = null;
+        orderTableEven = null;
+    }
+
+    // 0x48CF8C obj_render_table_init.
+    private static int renderTableInit() {
+        if (renderTable != null) {
+            return -1;
+        }
+
+        renderTable = new GameObjectListNode[updateAreaHexSize];
+
+        return 0;
+    }
+
+    // 0x48D000 obj_render_table_exit (NOTE: inlined upstream).
+    private static void renderTableExit() {
+        renderTable = null;
+    }
+
+    // 0x48D020 obj_light_table_init.
+    private static void lightTableInit() {
+        for (int s = 0; s < 2; s++) {
+            int v4 = TileMath.gCenterTile + s;
+            for (int r = ObjTypes.ROTATION_FIRST; r < ObjTypes.ROTATION_COUNT; r++) {
+                org.fallout2ce.Rotation rotation = org.fallout2ce.Rotation.fromInt(r);
+                int v15 = 8;
+                int p = 0;
+                for (int j = 0; j < 8; j++) {
+                    int tile = TileMath.tileGetTileInDirection(v4,
+                            org.fallout2ce.Rotation.fromInt((r + 1) % ObjTypes.ROTATION_COUNT), j);
+                    for (int m = 0; m < v15; m++) {
+                        lightOffsets[v4 & 1][r][p++] =
+                                TileMath.tileGetTileInDirection(tile, rotation, m + 1) - v4;
+                    }
+                    v15--;
+                }
+            }
+        }
+    }
+
+    // 0x48D1E4 obj_blend_table_init (colors via the runtime
+    // colorTable[rgb555()] lookups, like the C macros).
+    private static void blendTableInit() {
+        for (int index = Color.COLOR_FIRST; index < Color.COLOR_COUNT; index++) {
+            int rgb = Color.color2RGB(index & Color.COLOR_LAST);
+            int r = (rgb & 0x7C00) >> 10;
+            int g = (rgb & 0x3E0) >> 5;
+            int b = rgb & 0x1F;
+            glassGrayTable[index] = ((r + 5 * g + 4 * b) / 10) >> 2;
+            commonGrayTable[index] = ((b + 3 * r + 6 * g) / 10) >> 2;
+        }
+
+        glassGrayTable[0] = Color.COLOR_FIRST;
+        commonGrayTable[0] = Color.COLOR_FIRST;
+
+        wallBlendTable = Color.getColorBlendTable(
+                Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xC5D6FF)]));
+        glassBlendTable = Color.getColorBlendTable(
+                Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0x4AFFFF)]));
+        steamBlendTable = Color.getColorBlendTable(
+                Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xFFFFFF)]));
+        energyBlendTable = Color.getColorBlendTable(
+                Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xEFFF08)]));
+        redBlendTable = Color.getColorBlendTable(
+                Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xFF0000)]));
+    }
+
+    // 0x48D2E8 obj_blend_table_exit (NOTE: inlined upstream).
+    private static void blendTableExit() {
+        Color.freeColorBlendTable(Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xC5D6FF)]));
+        Color.freeColorBlendTable(Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0x4AFFFF)]));
+        Color.freeColorBlendTable(Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xFFFFFF)]));
+        Color.freeColorBlendTable(Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xEFFF08)]));
+        Color.freeColorBlendTable(Byte.toUnsignedInt(Color.colorTable[Color.rgb555(0xFF0000)]));
+        wallBlendTable = null;
+        glassBlendTable = null;
+        steamBlendTable = null;
+        energyBlendTable = null;
+        redBlendTable = null;
+    }
+
+    // 0x... _obj_remove_all (src/object.cc): tile heads then floating
+    // head; NO_REMOVE entries stay (prev advances, like C). The
+    // _scr_remove_all script tail and the roof-cache stores are game
+    // phase (script/render engines, unported).
+    private static void removeAllObjects() {
+        for (int tile = 0; tile < MapDefs.HEX_GRID_SIZE; tile++) {
+            GameObjectListNode node = tileHeads[tile];
+            GameObjectListNode prev = null;
+            while (node != null) {
+                GameObjectListNode next = node.next;
+                if (removeNode(node, prev) == -1) {
+                    prev = node;
+                }
+                node = next;
+            }
+        }
+
+        GameObjectListNode node = head;
+        GameObjectListNode prev = null;
+        while (node != null) {
+            GameObjectListNode next = node.next;
+            if (removeNode(node, prev) == -1) {
+                prev = node;
+            }
+            node = next;
+        }
+    }
+
     /** Test seam: clear the lists + find cursor state + counter (fresh-process mirror). */
     static void resetForTests() {
         head = null;
@@ -1530,5 +2023,37 @@ public final class ObjectSystem {
         findElevation = 0;
         objectIdCounter = 4;
         protosInitialized = false;
+
+        objectsInitialized = false;
+        updateAreaHexWidth = 0;
+        updateAreaHexHeight = 0;
+        updateAreaHexSize = 0;
+        updateAreaPixelBounds = new Geometry.Rect();
+        orderTableEven = null;
+        orderTableOdd = null;
+        offsetTableEven = null;
+        offsetTableOdd = null;
+        offsetDivTable = null;
+        offsetModTable = null;
+        renderTable = null;
+        lightOffsets = new int[2][ObjTypes.ROTATION_COUNT][36];
+        windowRect = new Geometry.Rect();
+        glassGrayTable = new int[Color.COLOR_COUNT];
+        commonGrayTable = new int[Color.COLOR_COUNT];
+        windowBufferSize = 0;
+        windowBuffer = null;
+        windowHeight = 0;
+        windowWidth = 0;
+        windowPitch = 0;
+        dude = null;
+        egg = null;
+        objSeenCheck = new byte[OBJ_SEEN_SIZE];
+        objSeen = new byte[OBJ_SEEN_SIZE];
+        centerToUpperLeft = 0;
+        wallBlendTable = null;
+        glassBlendTable = null;
+        steamBlendTable = null;
+        energyBlendTable = null;
+        redBlendTable = null;
     }
 }
