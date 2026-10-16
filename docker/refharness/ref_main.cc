@@ -4887,6 +4887,56 @@ void sectionWinFile()
     fallout::windowManagerExit();
 }
 
+void sectionProtoDb()
+{
+    std::puts("[protodb]");
+
+    // No window system needed: proto reads go straight through the VFS.
+    // (Deliberately no protoInit: it mkdirs patch dirs and pulls the
+    // whole message/stat/perk stack, so names stay unavailable here.)
+
+    char path[256] = {};
+    fallout::proto_make_path(path, fallout::ProtoId(40));
+    std::printf("path40=[%s]\n", path);
+
+    // Stimpak lazily loads its .pro on first access, then hits the cache.
+    fallout::Proto* stim1 = nullptr;
+    fallout::Proto* stim2 = nullptr;
+    int stimRc1 = fallout::protoGetProto(fallout::ProtoId(40), &stim1);
+    int stimRc2 = fallout::protoGetProto(fallout::ProtoId(40), &stim2);
+    std::printf("stim-rc=%d,%d same=%d pid=%d msgid=%d fid=%d type=%d material=%d size=%d weight=%d cost=%d light=%d,%d flags=%d\n",
+        stimRc1, stimRc2, (stim1 != nullptr && stim1 == stim2) ? 1 : 0,
+        stim1 != nullptr ? stim1->item.pid : -999,
+        stim1 != nullptr ? stim1->item.messageId : -999,
+        stim1 != nullptr ? stim1->item.fid : -999,
+        stim1 != nullptr ? (int)stim1->item.type : -999,
+        stim1 != nullptr ? (int)stim1->item.material : -999,
+        stim1 != nullptr ? stim1->item.size : -999,
+        stim1 != nullptr ? stim1->item.weight : -999,
+        stim1 != nullptr ? stim1->item.cost : -999,
+        stim1 != nullptr ? stim1->item.lightDistance : -999,
+        stim1 != nullptr ? stim1->item.lightIntensity : -999,
+        stim1 != nullptr ? (int)stim1->item.flags : -999);
+
+    // Integer data members mirror the struct fields above.
+    fallout::ProtoDataMemberValue memberValue {};
+    int pidType = fallout::protoGetDataMember(fallout::ProtoId(40), fallout::ITEM_DATA_MEMBER_PID, &memberValue);
+    int pidVal = memberValue.integerValue;
+    int weightType = fallout::protoGetDataMember(fallout::ProtoId(40), fallout::ITEM_DATA_MEMBER_WEIGHT, &memberValue);
+    int weightVal = memberValue.integerValue;
+    int costType = fallout::protoGetDataMember(fallout::ProtoId(40), fallout::ITEM_DATA_MEMBER_COST, &memberValue);
+    int costVal = memberValue.integerValue;
+    int badType = fallout::protoGetDataMember(fallout::ProtoId(40), 9999, &memberValue);
+    std::printf("member-pid=%d:%d member-weight=%d:%d member-cost=%d:%d member-bad=%d\n",
+        pidType, pidVal, weightType, weightVal, costType, costVal, badType);
+
+    // Invalid ids never touch the disk.
+    fallout::Proto* badProto = nullptr;
+    int emptyRc = fallout::protoGetProto(fallout::ProtoId(), &badProto);
+    int hugeRc = fallout::protoGetProto(fallout::ProtoId(16777215), &badProto);
+    std::printf("empty-rc=%d huge-rc=%d badptr=%d\n", emptyRc, hugeRc, badProto == nullptr ? 1 : 0);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -4964,5 +5014,6 @@ int main()
     sectionWinDbg();
     sectionWinDbox();
     sectionWinFile();
+    sectionProtoDb();
     return 0;
 }
