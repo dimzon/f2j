@@ -6573,6 +6573,39 @@ void sectionProgRetStack()
         procCount, retPtrNull, retPop1, retPop2);
 }
 
+void sectionStatsSave()
+{
+    std::puts("[statssave]");
+
+    // No window system needed. PC values roundtrip through a scratch file;
+    // AP bonuses start at their compiled defaults.
+    int apBonus0 = fallout::statGetUnspentApBonus();
+    int apPerk0 = fallout::statGetUnspentApPerkBonus();
+    fallout::statSetUnspentApBonus(6);
+    fallout::statSetUnspentApPerkBonus(7);
+    int apBonus = fallout::statGetUnspentApBonus();
+    int apPerk = fallout::statGetUnspentApPerkBonus();
+    std::printf("ap=%d,%d set=%d,%d\n", apBonus0, apPerk0, apBonus, apPerk);
+
+    fallout::pcSetStat(fallout::PC_STAT_LEVEL, 5);
+    fallout::pcSetStat(fallout::PC_STAT_REPUTATION, 7);
+    fallout::File* saveStream = fallout::fileOpen((char*)"/tmp/stt.bin", (char*)"wb");
+    int saveRc = saveStream != nullptr ? fallout::statsSave(saveStream) : -99;
+    if (saveStream != nullptr) {
+        fallout::fileClose(saveStream);
+    }
+    fallout::pcSetStat(fallout::PC_STAT_LEVEL, 1);
+    fallout::pcSetStat(fallout::PC_STAT_REPUTATION, 0);
+    fallout::File* loadStream = fallout::fileOpen((char*)"/tmp/stt.bin", (char*)"rb");
+    int loadRc = loadStream != nullptr ? fallout::statsLoad(loadStream) : -99;
+    if (loadStream != nullptr) {
+        fallout::fileClose(loadStream);
+    }
+    int levelBack = fallout::pcGetStat(fallout::PC_STAT_LEVEL);
+    int repBack = fallout::pcGetStat(fallout::PC_STAT_REPUTATION);
+    std::printf("save=%d load=%d back=%d,%d\n", saveRc, loadRc, levelBack, repBack);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6697,5 +6730,6 @@ int main()
     sectionScriptProg();
     sectionProgramStack();
     sectionProgRetStack();
+    sectionStatsSave();
     return 0;
 }

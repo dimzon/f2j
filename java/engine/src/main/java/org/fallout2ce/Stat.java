@@ -19,7 +19,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code [pcstat]} in {@code docker/refharness/golden/v78.txt}, produced by
  * {@code sectionPcStat} in {@code docker/refharness/ref_main.cc};
  * {@code [xproll]} in {@code docker/refharness/golden/v79.txt}, produced by
- * {@code sectionXpRoll} in {@code docker/refharness/ref_main.cc}.
+ * {@code sectionXpRoll} in {@code docker/refharness/ref_main.cc};
+ * {@code [statssave]} in {@code docker/refharness/golden/v94.txt}, produced
+ * by {@code sectionStatsSave} in {@code docker/refharness/ref_main.cc}.
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
@@ -882,6 +884,23 @@ public final class Stat {
             return 0;
         }
         return pcSetExperience(value);
+    }
+
+    /**
+     * Port of {@code statsSave} (src/stat.cc 0x4AEF20): the
+     * {@code PC_STAT_COUNT} (5) pc values in {@code PcStat} id order as
+     * big-endian int32s via {@link Db#fileWriteInt32List}.
+     */
+    public static int statsSave(XFile.Handle stream) {
+        return Db.fileWriteInt32List(stream, PC_STAT_VALUES, 0, StatDefs.PC_STAT_COUNT);
+    }
+
+    /**
+     * Port of {@code statsLoad} (src/stat.cc 0x4AEEF4): reads back
+     * {@link #statsSave} via {@link Db#fileReadInt32List}.
+     */
+    public static int statsLoad(XFile.Handle stream) {
+        return Db.fileReadInt32List(stream, PC_STAT_VALUES, 0, StatDefs.PC_STAT_COUNT);
     }
 
     // Seam for `pcAddExperienceWithOptions(int, bool)` (src/stat.cc,
