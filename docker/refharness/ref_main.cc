@@ -6376,6 +6376,51 @@ void sectionObjPlace()
         frameRc, frameBad, frameNull, enOutline, disOutline);
 }
 
+void sectionItemNames()
+{
+    std::puts("[itemnames]");
+
+    // No window system needed. Proto message file read straight from VFS.
+    fallout::MessageList msgList;
+    int listInit = fallout::messageListInit(&msgList) ? 1 : 0;
+    char path[64] = {};
+    snprintf(path, sizeof(path), "%spro_item.msg", fallout::asc_5186C8);
+    int listLoad = fallout::messageListLoad(&msgList, path) ? 1 : 0;
+
+    char stimName[64] = {};
+    fallout::MessageListItem nameItem;
+    nameItem.num = 4000;
+    bool gotStim = false;
+    if (fallout::messageListGetItem(&msgList, &nameItem)) {
+        snprintf(stimName, sizeof(stimName), "%s", nameItem.text);
+        gotStim = true;
+    }
+    fallout::Proto* moneyProto = nullptr;
+    fallout::protoGetProto(fallout::ProtoId(41), &moneyProto);
+    char cashName[64] = {};
+    bool gotCash = false;
+    if (moneyProto != nullptr) {
+        fallout::MessageListItem cashItem;
+        cashItem.num = moneyProto->item.messageId;
+        if (fallout::messageListGetItem(&msgList, &cashItem)) {
+            snprintf(cashName, sizeof(cashName), "%s", cashItem.text);
+            gotCash = true;
+        }
+    }
+    fallout::MessageListItem missItem;
+    missItem.num = 999999;
+    bool gotMiss = fallout::messageListGetItem(&msgList, &missItem);
+    std::printf("init=%d load=%d stim=%d:[%s] cash=%d:[%s] miss=%d\n",
+        listInit, listLoad, gotStim ? 1 : 0, stimName, gotCash ? 1 : 0, cashName,
+        gotMiss ? 1 : 0);
+    fallout::messageListFree(&msgList);
+
+    bool repoInit = fallout::messageListRepositoryInit();
+    int extraId = fallout::messageListRepositoryAddExtra(path);
+    std::printf("repoinit=%d extra=%d\n", repoInit ? 1 : 0, extraId);
+    fallout::messageListRepositoryExit();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6493,5 +6538,6 @@ int main()
     sectionSfallVars();
     sectionSfallIni();
     sectionObjPlace();
+    sectionItemNames();
     return 0;
 }
