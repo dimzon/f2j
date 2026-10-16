@@ -4376,6 +4376,80 @@ void sectionWinMenu()
     fallout::_win_check_all_buttons();
     int tmWin2Gone = fallout::windowGetWindow(tmWin2) == nullptr ? 1 : 0;
     std::printf("click2-gone=%d\n", tmWin2Gone);
+}
+
+void sectionWinFrm()
+{
+    std::puts("[winfrm]");
+
+    // Reuses the live system (re-init is impossible, see [winbtn]/[winmenu]).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+    fallout::mouseSetFrame(nullptr, 0, 0, 0, 0, 0, 0);
+    fallout::mouseManagerShowMouse();
+
+    int win = fallout::windowCreate(10, 100, 200, 100, (fallout::ColorWithFlags)5, 0);
+    fallout::windowShow(win);
+
+    // Empty FRM id locks nothing.
+    int badFrm = fallout::buttonCreateWithFrm(win, 5, 5, 111, 112, 113, 114,
+        fallout::InterfaceFrmId {}, fallout::InterfaceFrmId {}, fallout::InterfaceFrmId {}, 0);
+    std::printf("badfrm=%d\n", badFrm);
+
+    fallout::InterfaceFrmId upId(fallout::InterfaceFrameId::LittleRedButtonUp);
+    fallout::InterfaceFrmId downId(fallout::InterfaceFrameId::LittleRedButtonDown);
+    int frmBtn = fallout::buttonCreateWithFrm(win, 5, 5, 111, 112, 113, 114,
+        upId, downId, fallout::InterfaceFrmId {}, 0);
+    // Freshly created buttons sit at the list head.
+    fallout::Window* frmWinPre = fallout::windowGetWindow(win);
+    fallout::Button* frmButton = frmWinPre != nullptr ? frmWinPre->buttonListHead : nullptr;
+    int frmW = frmButton != nullptr ? frmButton->rect.right - frmButton->rect.left + 1 : -1;
+    int frmH = frmButton != nullptr ? frmButton->rect.bottom - frmButton->rect.top + 1 : -1;
+    std::printf("frmbtn=%d frm-w=%d frm-h=%d frm-crc=%08lX\n", frmBtn, frmW, frmH, winBufCrc(win));
+
+    // Click it: hover / exit / down / up codes come from the FRM button.
+    fallout::Window* frmWin = fallout::windowGetWindow(win);
+    int cx = frmWin->rect.left + 5 + frmW / 2;
+    int cy = frmWin->rect.top + 5 + frmH / 2;
+    fallout::_mouse_set_position(cx, cy);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int frmHover = fallout::_win_check_all_buttons();
+    fallout::_mouse_set_position(150, 180);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int frmExit = fallout::_win_check_all_buttons();
+    fallout::_mouse_set_position(cx, cy);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    int frmDown = fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    int frmUp = fallout::_win_check_all_buttons();
+    std::printf("frm-hover=%d frm-exit=%d frm-down=%d frm-up=%d\n", frmHover, frmExit, frmDown, frmUp);
+
+    // Disabled FRM images: unknown button is rejected, real one repaints.
+    int disBad = fallout::buttonSetDisabledFrm(-1, upId, downId, fallout::InterfaceFrmId {});
+    int disRc = fallout::buttonSetDisabledFrm(frmBtn, downId, upId, fallout::InterfaceFrmId {});
+    fallout::buttonDisable(frmBtn);
+    uLong disCrc = winBufCrc(win);
+    fallout::buttonEnable(frmBtn);
+    uLong enCrc = winBufCrc(win);
+    std::printf("dis-bad=%d dis-rc=%d dis-crc=%08lX en-crc=%08lX\n", disBad, disRc, disCrc, enCrc);
+
+    // Raw image re-register: graphic button accepts, text button is rejected.
+    int textBtn = fallout::_win_register_text_button(win, 5, 60, 121, 122, 123, 124, (char*)"OK", 0);
+    fallout::FrmImage imgLock;
+    int imgLockRc = imgLock.lock(upId) ? 1 : 0;
+    int imgRc = fallout::_win_register_button_image(frmBtn, imgLock.getData(), nullptr, nullptr, true);
+    uLong imgCrc = winBufCrc(win);
+    int imgBad = fallout::_win_register_button_image(textBtn, imgLock.getData(), nullptr, nullptr, true);
+    std::printf("img-lock=%d img-rc=%d img-crc=%08lX img-bad=%d\n", imgLockRc, imgRc, imgCrc, imgBad);
+
+    fallout::buttonDestroy(frmBtn);
+    int destroyedLookup = fallout::buttonGetWindowId(frmBtn);
+    std::printf("destroyed-lookup=%d\n", destroyedLookup);
 
     fallout::windowManagerExit();
 }
@@ -4450,5 +4524,6 @@ int main()
     sectionMouseWin();
     sectionWinBtn();
     sectionWinMenu();
+    sectionWinFrm();
     return 0;
 }

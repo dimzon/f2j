@@ -1675,6 +1675,94 @@ public final class WindowManager {
         return button.id;
     }
 
+    /** Port of {@code buttonCreateWithFrm} (window_manager.cc). */
+    public static int buttonCreateWithFrm(int win, int x, int y,
+            int mouseEnterEventCode, int mouseExitEventCode, int mouseDownEventCode, int mouseUpEventCode,
+            FrmId normalId, FrmId pressedId, FrmId hoverId, int flags) {
+        Art.FrmImage normalFrm = new Art.FrmImage();
+        if (!normalFrm.lock(normalId)) {
+            normalFrm.close();
+            return -1;
+        }
+
+        int width = normalFrm.getWidth();
+        int height = normalFrm.getHeight();
+
+        Art.FrmImage pressedFrm = new Art.FrmImage();
+        pressedFrm.lock(pressedId);
+        Art.FrmImage hoverFrm = new Art.FrmImage();
+        hoverFrm.lock(hoverId);
+
+        int btnId = buttonCreate(win, x, y, width, height,
+            mouseEnterEventCode, mouseExitEventCode,
+            mouseDownEventCode, mouseUpEventCode,
+            normalFrm.getData(),
+            pressedFrm.getData(),
+            hoverFrm.getData(),
+            flags);
+        if (btnId == -1) {
+            normalFrm.close();
+            pressedFrm.close();
+            hoverFrm.close();
+            return -1;
+        }
+
+        Button button = buttonGetButton(btnId, null);
+        button.frmImages.add(normalFrm);
+        if (pressedFrm.isLocked()) {
+            button.frmImages.add(pressedFrm);
+        } else {
+            pressedFrm.close();
+        }
+        if (hoverFrm.isLocked()) {
+            button.frmImages.add(hoverFrm);
+        } else {
+            hoverFrm.close();
+        }
+        return btnId;
+    }
+
+    /** Port of {@code buttonSetDisabledFrm} (window_manager.cc). */
+    public static int buttonSetDisabledFrm(int btn,
+            FrmId normalId, FrmId pressedId, FrmId hoverId) {
+        Art.FrmImage normalFrm = new Art.FrmImage();
+        if (!normalFrm.lock(normalId)) {
+            normalFrm.close();
+            return -1;
+        }
+
+        Art.FrmImage pressedFrm = new Art.FrmImage();
+        pressedFrm.lock(pressedId);
+        Art.FrmImage hoverFrm = new Art.FrmImage();
+        hoverFrm.lock(hoverId);
+
+        if (winRegisterButtonDisable(btn, normalFrm.getData(), pressedFrm.getData(),
+                hoverFrm.getData()) == -1) {
+            normalFrm.close();
+            pressedFrm.close();
+            hoverFrm.close();
+            return -1;
+        }
+
+        Button button = buttonGetButton(btn, null);
+        if (normalFrm.isLocked()) {
+            button.frmImages.add(normalFrm);
+        } else {
+            normalFrm.close();
+        }
+        if (pressedFrm.isLocked()) {
+            button.frmImages.add(pressedFrm);
+        } else {
+            pressedFrm.close();
+        }
+        if (hoverFrm.isLocked()) {
+            button.frmImages.add(hoverFrm);
+        } else {
+            hoverFrm.close();
+        }
+        return 0;
+    }
+
     /** Port of {@code _win_register_text_button} (0x4D8308). */
     public static int winRegisterTextButton(int win, int x, int y,
             int mouseEnterEventCode, int mouseExitEventCode, int mouseDownEventCode, int mouseUpEventCode,

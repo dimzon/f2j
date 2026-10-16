@@ -72,19 +72,21 @@ class GeometryTest {
     }
 
     @Test
-    void rectClipListSubtractsInPrependOrder() {
-        // C prepends each fragment at the unlink position, so the final
-        // order is the reverse of creation: right, left, bottom, top.
+    void rectClipListSubtractsInCreationOrder() {
+        // C appends each fragment at the unlink position (the double pointer
+        // advances past every created fragment), so the final order follows
+        // creation: top, bottom, left, right. Verified against the engine:
+        // refresh repaint order is observable via FRM-button aliasing.
         Geometry.RectListNode node = Geometry.rectMalloc();
         Geometry.copyTo(node.rect, rect(0, 0, 10, 10));
         node.next = null;
 
         List<Geometry.Rect> got = drain(Geometry.rectClipList(node, rect(3, 3, 5, 5)));
         assertEquals(List.of(
-                rect(6, 3, 10, 5),
-                rect(0, 3, 2, 5),
+                rect(0, 0, 10, 2),
                 rect(0, 6, 10, 10),
-                rect(0, 0, 10, 2)), got);
+                rect(0, 3, 2, 5),
+                rect(6, 3, 10, 5)), got);
     }
 
     @Test

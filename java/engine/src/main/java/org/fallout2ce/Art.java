@@ -1,6 +1,7 @@
 package org.fallout2ce;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -1213,12 +1214,38 @@ public final class Art {
         gArtCache.entries.clear();
         gArtCache.size = 0;
         gArtCache.hits = 0;
+        FrmImage.sharedFrames.clear();
     }
 
     // --- FrmImage (RAII frame lock; AutoCloseable in Java) ---
 
     public static final class FrmImage implements AutoCloseable {
+        /**
+         * Shared fid-frame views. C's art cache shares decoded memory per
+         * fid while locked, so two locks of the same frame alias the same
+         * bytes; {@code buttonDraw}'s image slots compare by reference, and
+         * the aliasing is observable (enable/disable repaint oscillation).
+         * Entries live exactly while locked (refcount), like C's locked
+         * cache entries.
+         */
+        private static final class SharedFrame {
+            byte[] pixels;
+            int width;
+            int height;
+            int xOffset;
+            int yOffset;
+            int refs;
+        }
+
+        private static final HashMap<Long, SharedFrame> sharedFrames = new HashMap<>();
+
+        private static long sharedKey(int fid, int frame, int rotation) {
+            return ((long) fid << 32) | ((frame & 0xFFFFL) << 16) | (rotation & 0xFFFFL);
+        }
+
         private ArtLock fidLock;
+        private SharedFrame sharedFrame;
+        private long sharedKey;
         private String namedPath;
         private ArtData namedArt;
         private byte[] data;
@@ -1236,7 +1263,28 @@ public final class Art {
         }
 
         public boolean lock(FrmId frmId, int frame, int rotation) {
+            if (isLocked()) {
+                return false;
+            }
             if (frmId.fid() >= 0) {
+                long key = sharedKey(frmId.fid(), frame, rotation);
+                SharedFrame existing = sharedFrames.get(key);
+                if (existing != null) {
+                    ArtLock artLock = Art.artLock(frmId);
+                    if (artLock == null) {
+                        return false;
+                    }
+                    existing.refs++;
+                    fidLock = artLock;
+                    sharedFrame = existing;
+                    sharedKey = key;
+                    data = existing.pixels;
+                    width = existing.width;
+                    height = existing.height;
+                    xOffset = existing.xOffset;
+                    yOffset = existing.yOffset;
+                    return true;
+                }
                 ArtLock artLock = Art.artLock(frmId);
                 if (artLock == null) {
                     return false;
@@ -1245,7 +1293,17 @@ public final class Art {
                     artLock.close();
                     return false;
                 }
+                SharedFrame created = new SharedFrame();
+                created.pixels = data;
+                created.width = width;
+                created.height = height;
+                created.xOffset = xOffset;
+                created.yOffset = yOffset;
+                created.refs = 1;
+                sharedFrames.put(key, created);
                 fidLock = artLock;
+                sharedFrame = created;
+                sharedKey = key;
                 return true;
             }
             String filePath = frmId.filePath();
@@ -1298,6 +1356,13 @@ public final class Art {
             if (fidLock != null) {
                 fidLock.close();
                 fidLock = null;
+            }
+            if (sharedFrame != null) {
+                sharedFrame.refs--;
+                if (sharedFrame.refs == 0) {
+                    sharedFrames.remove(sharedKey, sharedFrame);
+                }
+                sharedFrame = null;
             }
             if (namedPath != null) {
                 Art.artUnlockNamed(namedPath);

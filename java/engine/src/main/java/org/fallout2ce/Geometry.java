@@ -113,10 +113,9 @@ public final class Geometry {
                 node.next = null;
                 freeList.push(node);
 
-                // Tail-inserted fragments; `tail` tracks the C `rectListNodePtr`.
-                // NOTE: each fragment is PREPENDED at the unlink position
-                // (frag->next = *ptr; *ptr = frag), so the final order is
-                // the reverse of creation: right, left, bottom, top.
+                // Fragments are appended in creation order (top, bottom,
+                // left, right), mirroring the C double-pointer which advances
+                // past each fragment as it is created.
                 RectListNode fragHead = null;
                 RectListNode fragTail = null;
 
@@ -124,11 +123,13 @@ public final class Geometry {
                     RectListNode frag = rectMalloc();
                     copyTo(frag.rect, nodeRect);
                     frag.rect.bottom = clipRect.top - 1;
-                    frag.next = fragHead;
-                    fragHead = frag;
-                    if (fragTail == null) {
-                        fragTail = frag;
+                    frag.next = null;
+                    if (fragHead == null) {
+                        fragHead = frag;
+                    } else {
+                        fragTail.next = frag;
                     }
+                    fragTail = frag;
                     nodeRect.top = clipRect.top;
                 }
 
@@ -136,11 +137,13 @@ public final class Geometry {
                     RectListNode frag = rectMalloc();
                     copyTo(frag.rect, nodeRect);
                     frag.rect.top = clipRect.bottom + 1;
-                    frag.next = fragHead;
-                    fragHead = frag;
-                    if (fragTail == null) {
-                        fragTail = frag;
+                    frag.next = null;
+                    if (fragHead == null) {
+                        fragHead = frag;
+                    } else {
+                        fragTail.next = frag;
                     }
+                    fragTail = frag;
                     nodeRect.bottom = clipRect.bottom;
                 }
 
@@ -148,22 +151,26 @@ public final class Geometry {
                     RectListNode frag = rectMalloc();
                     copyTo(frag.rect, nodeRect);
                     frag.rect.right = clipRect.left - 1;
-                    frag.next = fragHead;
-                    fragHead = frag;
-                    if (fragTail == null) {
-                        fragTail = frag;
+                    frag.next = null;
+                    if (fragHead == null) {
+                        fragHead = frag;
+                    } else {
+                        fragTail.next = frag;
                     }
+                    fragTail = frag;
                 }
 
                 if (nodeRect.right > clipRect.right) {
                     RectListNode frag = rectMalloc();
                     copyTo(frag.rect, nodeRect);
                     frag.rect.left = clipRect.right + 1;
-                    frag.next = fragHead;
-                    fragHead = frag;
-                    if (fragTail == null) {
-                        fragTail = frag;
+                    frag.next = null;
+                    if (fragHead == null) {
+                        fragHead = frag;
+                    } else {
+                        fragTail.next = frag;
                     }
+                    fragTail = frag;
                 }
 
                 if (fragHead != null) {
