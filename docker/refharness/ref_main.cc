@@ -5731,6 +5731,29 @@ void sectionExplosives()
         bookFound ? 1 : 0, dogBody, stimBody, dogKill, stimKill);
 }
 
+void sectionVitals()
+{
+    std::puts("[vitals]");
+
+    // No window system needed. Fresh objects read zero vitals; HP adjusts
+    // clamp against max HP, which is zero headless (see [critterstats]).
+    // Poison/radiation adjusts are dude-only.
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    int hp0 = fallout::critterGetHitPoints(dog);
+    int poison0 = fallout::critterGetPoison(dog);
+    int rad0 = fallout::critterGetRadiation(dog);
+    int stimHp = fallout::critterGetHitPoints(stim);
+    int adjRc = fallout::critterAdjustHitPoints(dog, 5);
+    int hp1 = fallout::critterGetHitPoints(dog);
+    int poisonRc = fallout::critterAdjustPoison(dog, 5);
+    int radRc = fallout::critterAdjustRadiation(dog, 5);
+    std::printf("hp=%d poison=%d rad=%d stimhp=%d adj=%d hp1=%d poisonrc=%d radrc=%d\n",
+        hp0, poison0, rad0, stimHp, adjRc, hp1, poisonRc, radRc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5827,5 +5850,6 @@ int main()
     sectionItemDrop();
     sectionAmmoCont();
     sectionExplosives();
+    sectionVitals();
     return 0;
 }
