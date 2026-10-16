@@ -47,6 +47,8 @@
 #include "pcx.h"
 #include "pointer_registry.h"
 #include "queue.h"
+#include "light.h"
+#include "reaction.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5110,6 +5112,45 @@ void sectionEventQueue()
         testQueueClearCalls, emptyAfterClear, exitRc);
 }
 
+void sectionLightReact()
+{
+    std::puts("[lightreact]");
+
+    // No window system needed; tile arrays are compile-time sized.
+    // (Ambient set needs gDude perks and screen refresh — skipped.)
+    int initRc = fallout::lightInit();
+    int ambient = fallout::lightGetAmbientIntensity();
+    int baseTile = fallout::lightGetTileIntensity(0, 20100);
+    fallout::lightSetTileIntensity(0, 20100, 70000);
+    int clampedTile = fallout::lightGetTileIntensity(0, 20100);
+    int trueTile = fallout::lightGetTrueTileIntensity(0, 20100);
+    fallout::lightIncreaseTileIntensity(0, 20100, 100);
+    int afterInc = fallout::lightGetTrueTileIntensity(0, 20100);
+    fallout::lightDecreaseTileIntensity(0, 20100, 200);
+    int afterDec = fallout::lightGetTrueTileIntensity(0, 20100);
+    int badElev = fallout::lightGetTileIntensity(9, 20100);
+    int badTile = fallout::lightGetTileIntensity(0, -1);
+    fallout::lightSetTileIntensity(9, 20100, 5);
+    fallout::lightResetTileIntensity();
+    int afterReset = fallout::lightGetTileIntensity(0, 20100);
+    std::printf("init=%d ambient=%d base=%d clamped=%d true=%d inc=%d dec=%d badelev=%d badtile=%d reset=%d\n",
+        initRc, ambient, baseTile, clampedTile, trueTile, afterInc, afterDec, badElev, badTile, afterReset);
+
+    // Reaction levels off thresholds; custom thresholds re-map them.
+    int bad = (int)fallout::reactionTranslateValue(-50);
+    int edge = (int)fallout::reactionTranslateValue(-10);
+    int neutral = (int)fallout::reactionTranslateValue(0);
+    int good = (int)fallout::reactionTranslateValue(11);
+    fallout::reactionSetThresholds(0, 100);
+    int customLow = (int)fallout::reactionTranslateValue(0);
+    int customMid = (int)fallout::reactionTranslateValue(50);
+    int customHigh = (int)fallout::reactionTranslateValue(101);
+    fallout::reactionResetThresholds();
+    int resetNeutral = (int)fallout::reactionTranslateValue(0);
+    std::printf("bad=%d edge=%d neutral=%d good=%d custom=%d,%d,%d reset=%d\n",
+        bad, edge, neutral, good, customLow, customMid, customHigh, resetNeutral);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5191,5 +5232,6 @@ int main()
     sectionTileMath();
     sectionSquareMath();
     sectionEventQueue();
+    sectionLightReact();
     return 0;
 }
