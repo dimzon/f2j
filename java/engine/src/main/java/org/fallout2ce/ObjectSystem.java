@@ -30,7 +30,11 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code objectDataReset} (gates only, from {@code src/proto.cc}), plus the
  * destroy path: {@code objectDestroy} ({@code obj_erase_object}) over
  * {@code _obj_remove} / {@code _obj_inven_free} / {@code objectGetListNode}
- * (floating-head slice) and {@code objectGetOwner}.
+ * (floating-head slice) and {@code objectGetOwner}, plus the visibility
+ * slice: {@code objectShow} / {@code objectHide} ({@code obj_turn_on} /
+ * {@code obj_turn_off}) and {@code objectDisconnect}
+ * ({@code obj_disconnect}) with {@code objectHasOutline}
+ * ({@code src/object.h}).
  *
  * <p>Vectors: {@code [objcreate]} in
  * {@code docker/refharness/golden/v57.txt}, produced by
@@ -41,7 +45,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * backing {@code [itemdrop]} in
  * {@code docker/refharness/golden/v63.txt} (produced by
  * {@code sectionItemDrop}: {@code itemDropAll} drops land on a tile via
- * {@code objectConnect}).
+ * {@code objectConnect}), and {@code [objvis]} in
+ * {@code docker/refharness/golden/v69.txt} (produced by
+ * {@code sectionObjVis}).
  *
  * <p>Game objects reuse {@link ObjTypes.GameObject} (v33, renamed from C
  * {@code Object}); nothing is duplicated here. Flags stay immutable bit
@@ -111,8 +117,33 @@ import org.fallout2ce.ProtoTypes.ProtoId;
   * and {@code aiRemoveBurstDisabled}, but never {@code queueRemoveEvents}.
   * The sid/AI tails need the script/AI engines (game phase); harness sids
   * are {@code -1}, so they are dormant.</li>
-  * <li>{@code _gmouse_remove_item_outline} needs the game-mouse highlight
-  * state ({@code gGameMouseHighlightedItem}, game phase, null headless) +
+  * <li>{@code objectShow} / {@code objectHide} / {@code objectDisconnect}
+ * take no rect: the slice always passes null (the light calls keep their
+ * null-rect shape: the adjust result is ignored, like C++; the
+ * non-null-rect paths ({@code objectGetRect} into the caller rect, plus
+ * the {@code gDude}/{@code gEgg} rect unions) need the render engine
+ * (game phase). {@code gDude} / {@code gEgg} are unported game-phase
+ * globals (null headless), so the {@code obj == gDude} branches can never
+ * fire here; dormant by construction.</li>
+ * <li>{@code objectDisconnect} frees the list NODE, not the object (the GC
+ * owns the object; only the unlink observes), then sets
+ * {@code obj.tile = -1}, exactly like C. Double-list: {@code objectConnect}
+ * already allocates a second tile node without unlinking the floating
+ * node (C++ {@code _obj_connect} never unlinks there — verified, no fix
+ * needed), so the first disconnect unlinks the TILE node and the second
+ * finds the FLOATING node (tile already {@code -1} scans the floating
+ * head) and also returns 0; a third misses ({@code -1}). The head follows
+ * the node's pre-disconnect tile via {@code unlinkNode}, exactly like
+ * C.</li>
+ * <li>{@code objectHasOutline} mirrors the C inline
+ * ({@code (outline & OUTLINE_TYPE_MAX) != OUTLINE_TYPE_NONE}); the hide
+ * path sets {@code OUTLINE_DISABLED} only when it holds, the show path
+ * always clears {@code OUTLINE_DISABLED}, exactly like C++.</li>
+ * <li>{@code resetForTests} gains no new state: flags/outline/tile live on
+ * the {@link GameObject} instances; the list heads + find cursor +
+ * counter reset already covers this slice.</li>
+ * <li>{@code _gmouse_remove_item_outline} needs the game-mouse highlight
+ * state ({@code gGameMouseHighlightedItem}, game phase, null headless) +
   * tile refresh; headless it is a no-op seam.</li>
  * <li>{@code objectGetListNode}/{@code _obj_remove} unlink: the head
  * follows the node's tile ({@code gObjectListHead} for tile
@@ -554,6 +585,98 @@ public final class ObjectSystem {
         if (removeNode(temp, temp) != 0) {
             return -1;
         }
+
+        return 0;
+    }
+
+    // src/object.h objectHasOutline: (outline & OUTLINE_TYPE_MAX) !=
+    // OUTLINE_TYPE_NONE. Null-safe (C checks obj != nullptr first).
+    public static boolean objectHasOutline(GameObject obj) {
+        if (obj == null) {
+            return false;
+        }
+
+        return (obj.outline.bits() & OutlineType.MAX.bits()) != OutlineType.NONE.bits();
+    }
+
+    // 0x48ADF0 obj_turn_on (rect overload deferred: the slice always passes
+    // null, so the rect fill is dropped and the adjust-light result is
+    // ignored, like C++).
+    public static int objectShow(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (obj.flags.and(ObjectFlags.HIDDEN).equals(ObjectFlags.NONE)) {
+            return -1;
+        }
+
+        obj.flags = obj.flags.and(ObjectFlags.HIDDEN.not());
+        obj.outline = obj.outline.and(~ObjTypes.OUTLINE_DISABLED);
+
+        // _obj_adjust_light(obj, 0, null): with a null rect C++ ignores the
+        // -1, so the guards-only slice runs bare.
+        adjustLight(obj, false);
+
+        // obj == gDude tail (src/object.cc): gDude/gEgg are unported
+        // game-phase globals (null headless), so the branch can never fire
+        // here; dormant by construction (see class notes).
+
+        return 0;
+    }
+
+    // 0x48AE68 obj_turn_off (rect overload deferred, like objectShow).
+    public static int objectHide(GameObject object) {
+        if (object == null) {
+            return -1;
+        }
+
+        if (!object.flags.and(ObjectFlags.HIDDEN).equals(ObjectFlags.NONE)) {
+            return -1;
+        }
+
+        // _obj_adjust_light(object, 1, null): null-rect shape, result
+        // ignored, like C++.
+        adjustLight(object, true);
+
+        object.flags = object.flags.or(ObjectFlags.HIDDEN);
+
+        if (objectHasOutline(object)) {
+            object.outline = object.outline.or(ObjTypes.OUTLINE_DISABLED);
+        }
+
+        // obj == gDude tail: dormant by construction (see objectShow).
+
+        return 0;
+    }
+
+    // 0x489F34 obj_disconnect (rect overload deferred, like objectDestroy:
+    // the slice always passes null, so the rect fill is dropped and the
+    // adjust-light result is ignored, like C++). Frees the list NODE, not
+    // the object (GC owns it; only the unlink observes), then sets
+    // tile = -1. See the class-notes double-list quirk: the first call
+    // unlinks the TILE node, the second finds the leftover FLOATING node
+    // (tile already -1 scans the floating head) and also returns 0.
+    public static int objectDisconnect(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        GameObjectListNode[] prevSlot = new GameObjectListNode[1];
+        GameObjectListNode node = findListNode(obj, prevSlot);
+        if (node == null) {
+            return -1;
+        }
+
+        // _obj_adjust_light(obj, 1, null): null-rect shape, result ignored,
+        // like C++.
+        adjustLight(obj, true);
+
+        // Head follows the node's pre-disconnect tile (tile is still set),
+        // exactly like C; tile = -1 lands after the unlink.
+        unlinkNode(node, prevSlot[0]);
+
+        obj.tile = -1;
 
         return 0;
     }

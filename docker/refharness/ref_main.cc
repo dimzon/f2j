@@ -5838,6 +5838,47 @@ void sectionObjAttrs()
         ownerAfterMove == dog2 ? 1 : 0);
 }
 
+void sectionObjVis()
+{
+    std::puts("[objvis]");
+
+    // No window system needed. Null rects skip all screen refresh math.
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    int hideRc = fallout::objectHide(dog, nullptr);
+    int hiddenFlag = (dog->flags & fallout::OBJECT_HIDDEN) != 0 ? 1 : 0;
+    int hideAgain = fallout::objectHide(dog, nullptr);
+    int showRc = fallout::objectShow(dog, nullptr);
+    int showAgain = fallout::objectShow(dog, nullptr);
+    int hideNull = fallout::objectHide(nullptr, nullptr);
+    int showNull = fallout::objectShow(nullptr, nullptr);
+    std::printf("hide=%d flag=%d hideagain=%d show=%d showagain=%d null=%d,%d\n",
+        hideRc, hiddenFlag, hideAgain, showRc, showAgain, hideNull, showNull);
+
+    // Disconnect unplaces: tile head loses the node, tile resets to -1.
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::itemAdd(dog, stim, 1);
+    fallout::itemDropAll(dog, 20100);
+    int chainBefore = 0;
+    for (fallout::Object* obj = fallout::objectFindFirst();
+            obj != nullptr;
+            obj = fallout::objectFindNext()) {
+        chainBefore++;
+    }
+    int discRc = fallout::_obj_disconnect(stim, nullptr);
+    int stimTile = stim->tile;
+    int chainAfter = 0;
+    for (fallout::Object* obj = fallout::objectFindFirst();
+            obj != nullptr;
+            obj = fallout::objectFindNext()) {
+        chainAfter++;
+    }
+    int discAgain = fallout::_obj_disconnect(stim, nullptr);
+    std::printf("chain=%d disc=%d tile=%d chain-after=%d again=%d\n",
+        chainBefore, discRc, stimTile, chainAfter, discAgain);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5937,5 +5978,6 @@ int main()
     sectionVitals();
     sectionObjFind();
     sectionObjAttrs();
+    sectionObjVis();
     return 0;
 }
