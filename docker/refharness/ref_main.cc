@@ -58,6 +58,8 @@
 #include "scripts.h"
 #include "trait.h"
 #include "object.h"
+#include "item.h"
+#include "inventory.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5454,6 +5456,43 @@ void sectionCritterStats()
         sneakVal, gunsVal, stimSkill, badSkill);
 }
 
+void sectionInventory()
+{
+    std::puts("[inventory]");
+
+    // No window system needed. Items live in the critter's inventory list
+    // (names need message lists, so only numeric accessors are probed).
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* cash = nullptr;
+    fallout::objectCreateWithProtoId(&cash, fallout::ProtoId(41));
+    int stimW = fallout::itemGetWeight(stim);
+    int stimCost = fallout::itemGetCost(stim);
+    int stimType = (int)fallout::itemGetType(stim);
+    int cashType = (int)fallout::itemGetType(cash);
+    int invW0 = fallout::objectGetInventoryWeight(dog);
+    int addStim = fallout::itemAdd(dog, stim, 1);
+    int addCash = fallout::itemAdd(dog, cash, 3);
+    int invW1 = fallout::objectGetInventoryWeight(dog);
+    int qtyCash = fallout::itemGetQuantity(dog, cash);
+    fallout::Object* slot0 = fallout::inventoryItemByIndex(dog, 0);
+    fallout::Object* slot9 = fallout::inventoryItemByIndex(dog, 9);
+    int findIdx = -1;
+    fallout::Object* found = fallout::inventoryFindByType(dog, (fallout::ItemType)cashType, &findIdx);
+    std::printf("w=%d cost=%d types=%d,%d invw0=%d add=%d,%d invw1=%d qty=%d slot0=%d slot9null=%d find=%d@%d\n",
+        stimW, stimCost, stimType, cashType, invW0, addStim, addCash, invW1, qtyCash,
+        slot0 != nullptr ? slot0->pid : -999, slot9 == nullptr ? 1 : 0,
+        found != nullptr ? found->pid : -999, findIdx);
+
+    int remStim = fallout::itemRemove(dog, stim, 1);
+    fallout::Object* slot0After = fallout::inventoryItemByIndex(dog, 0);
+    int qtyAfter = fallout::itemGetQuantity(dog, stim);
+    std::printf("rem=%d slot0after=%d qtyafter=%d\n",
+        remStim, slot0After != nullptr ? slot0After->pid : -999, qtyAfter);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5543,5 +5582,6 @@ int main()
     sectionTraitSelect();
     sectionObjCreate();
     sectionCritterStats();
+    sectionInventory();
     return 0;
 }

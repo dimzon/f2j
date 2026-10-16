@@ -1,11 +1,30 @@
 package org.fallout2ce;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import org.fallout2ce.ObjTypes.GameObject;
+import org.fallout2ce.ObjTypes.InventoryItem;
+import org.fallout2ce.ObjTypes.ObjectFlags;
+import org.fallout2ce.ProtoTypes.ItemType;
+
 /**
- * Inventory id tables, mirroring the pure parts of {@code src/inventory.h}.
- * The inventory UI ({@code inventory.cc}) comes with the game phase.
+ * Inventory id tables, mirroring the pure parts of {@code src/inventory.h},
+ * plus the inventory lookup slice of {@code src/inventory.cc}:
+ * {@code inventoryItemByIndex}, {@code inventoryFindByType} and the
+ * equipped-item scans ({@code critterGetItem1}/{@code critterGetItem2}/
+ * {@code critterGetArmor}) backing the {@link Item} weight/cost extras.
+ *
+ * <p>Vectors: {@code [inventory]} in
+ * {@code docker/refharness/golden/v59.txt}, produced by
+ * {@code sectionInventory} in {@code docker/refharness/ref_main.cc}.
+ *
+ * <p>NOTE: the {@code _inven_dude} hand-override globals
+ * ({@code gInventoryLeftHandItem}/{@code gInventoryRightHandItem}/
+ * {@code gInventoryArmor}) are inventory-UI state (game phase); the scans
+ * below read the inventory flags directly, which matches C++ whenever the
+ * UI overrides are null (always in the harness).
  */
 public final class Inventory {
 
@@ -52,5 +71,76 @@ public final class Inventory {
         public ObjTypes.GameObject rightHand;
         public ObjTypes.GameObject armor;
         public int weight;
+    }
+
+    // 0x472740 inven_item_by_index: out of bounds -> null.
+    public static GameObject inventoryItemByIndex(GameObject obj, int index) {
+        List<InventoryItem> items = obj.data.inventory.items;
+
+        if (index < 0 || index >= items.size()) {
+            return null;
+        }
+
+        return items.get(index).item;
+    }
+
+    // 0x472698 inven_find_by_type: finds the next item of the given type
+    // (id -1 matches any). The index starts at -1 (*indexPtr += 1 first);
+    // a null pointer uses a throwaway dummy, like C++. Returns the item or
+    // null. Out-param uses the single-element-array convention (see
+    // ProtoDb#protoGetProto).
+    public static GameObject inventoryFindByType(GameObject obj, ItemType itemType, int[] indexPtr) {
+        int[] slot = indexPtr != null ? indexPtr : new int[] { -1 };
+
+        slot[0] += 1;
+
+        List<InventoryItem> items = obj.data.inventory.items;
+
+        if (slot[0] >= items.size()) {
+            return null;
+        }
+
+        while (itemType.id() != -1 && Item.itemGetType(items.get(slot[0]).item) != itemType) {
+            slot[0] += 1;
+
+            if (slot[0] >= items.size()) {
+                return null;
+            }
+        }
+
+        return items.get(slot[0]).item;
+    }
+
+    // 0x471BBC critter_get_item1 (left hand flag scan).
+    public static GameObject critterGetItem1(GameObject critter) {
+        for (InventoryItem entry : critter.data.inventory.items) {
+            if ((entry.item.flags.bits() & ObjectFlags.IN_LEFT_HAND.bits()) != 0) {
+                return entry.item;
+            }
+        }
+
+        return null;
+    }
+
+    // critter_get_item2 (right hand flag scan).
+    public static GameObject critterGetItem2(GameObject critter) {
+        for (InventoryItem entry : critter.data.inventory.items) {
+            if ((entry.item.flags.bits() & ObjectFlags.IN_RIGHT_HAND.bits()) != 0) {
+                return entry.item;
+            }
+        }
+
+        return null;
+    }
+
+    // 0x471C08 critter_get_armor (worn flag scan).
+    public static GameObject critterGetArmor(GameObject critter) {
+        for (InventoryItem entry : critter.data.inventory.items) {
+            if ((entry.item.flags.bits() & ObjectFlags.WORN.bits()) != 0) {
+                return entry.item;
+            }
+        }
+
+        return null;
     }
 }
