@@ -17,7 +17,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code docker/refharness/golden/v58.txt}, produced by
  * {@code sectionCritterStats} in {@code docker/refharness/ref_main.cc};
  * {@code [pcstat]} in {@code docker/refharness/golden/v78.txt}, produced by
- * {@code sectionPcStat} in {@code docker/refharness/ref_main.cc}.
+ * {@code sectionPcStat} in {@code docker/refharness/ref_main.cc};
+ * {@code [xproll]} in {@code docker/refharness/golden/v79.txt}, produced by
+ * {@code sectionXpRoll} in {@code docker/refharness/ref_main.cc}.
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
@@ -105,9 +107,12 @@ public final class Stat {
     // start zero, not at defaults).
     private static final int[] PC_STAT_VALUES = new int[StatDefs.PC_STAT_COUNT];
 
-    // Port of `xpTableThresholds` (src/stat.cc): 0 headless (no content
-    // config parsed), so pcGetMaxLevel() returns PC_LEVEL_MAX (99).
-    // The xpTable[] itself comes with the game phase.
+    // Port of `xpTable[]` / `xpTableThresholds` (src/stat.cc): zero
+    // headless (no content config parsed, so `pcExperienceTableInit` never
+    // fills the table), hence `pcGetMaxLevel()` returns PC_LEVEL_MAX (99)
+    // and `pcGetExperienceForLevel()` always takes the formula branch. The
+    // table fill comes with the game phase.
+    private static final int[] XP_TABLE = new int[StatDefs.PC_LEVEL_MAX];
     private static int xpTableThresholds = 0;
 
     /** Port of {@code statGetConfiguredMaximum}: out-of-range stat yields 0. */
@@ -480,6 +485,32 @@ public final class Stat {
     }
 
     /**
+     * Port of {@code statRoll} (0x4AFA78): roll d10
+     * ({@code PRIMARY_STAT_MIN..PRIMARY_STAT_MAX}, inclusive) against
+     * {@code critterGetStat + modifier}. {@code howMuch} takes
+     * {@code value - chance} unless null (same {@code int[]} out-param
+     * convention as {@link GameRandom#randomRoll}); {@code chance <= value}
+     * yields {@code SUCCESS}, else {@code FAILURE}. Reuses
+     * {@link GameRandom.Roll} (declaration order matches C {@code enum
+     * Roll}: {@code CRITICAL_FAILURE=0, FAILURE=1, SUCCESS=2,
+     * CRITICAL_SUCCESS=3}).
+     */
+    public static GameRandom.Roll statRoll(GameObject critter, int stat, int modifier, int[] howMuch) {
+        int value = critterGetStat(critter, stat) + modifier;
+        int chance = GameRandom.randomBetween(StatDefs.PRIMARY_STAT_MIN, StatDefs.PRIMARY_STAT_MAX);
+
+        if (howMuch != null) {
+            howMuch[0] = value - chance;
+        }
+
+        if (chance <= value) {
+            return GameRandom.Roll.SUCCESS;
+        }
+
+        return GameRandom.Roll.FAILURE;
+    }
+
+    /**
      * Port of {@code critterGetBaseStatWithTraitModifier} (0x4AF3E0): base
      * plus the dude-only trait modifier (dormant headless, still wired).
      */
@@ -786,6 +817,32 @@ public final class Stat {
             return StatDefs.PC_LEVEL_MAX;
         }
         return xpTableThresholds + 1;
+    }
+
+    /**
+     * Port of {@code pcGetExperienceForLevel} (0x4AF9A8): level {@code < 1}
+     * or {@code > pcGetMaxLevel()} yields -1; the content-table branch
+     * ({@code xpTableThresholds != 0}) is dormant headless; otherwise the
+     * fallback formula with truncating {@code halfLevel = level / 2}: odd
+     * levels {@code 1000 * halfLevel * level}, even levels
+     * {@code 1000 * halfLevel * (level - 1)}. Java {@code int} arithmetic
+     * wraps exactly like C {@code int} (no overflow in range: level 99
+     * yields 4851000).
+     */
+    public static int pcGetExperienceForLevel(int level) {
+        if (level < 1 || level > pcGetMaxLevel()) {
+            return -1;
+        }
+
+        if (xpTableThresholds != 0) {
+            return XP_TABLE[level - 1];
+        }
+
+        int halfLevel = level / 2;
+        if ((level & 1) != 0) {
+            return 1000 * halfLevel * level;
+        }
+        return 1000 * halfLevel * (level - 1);
     }
 
     /**

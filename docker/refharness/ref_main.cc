@@ -6144,6 +6144,31 @@ void sectionPcStat()
         sp0, badGet, setLevel, levelVal, setLevelHigh, setRepLow, setRep, repVal, setBad);
 }
 
+void sectionXpRoll()
+{
+    std::puts("[xproll]");
+
+    // No window system needed. Fallback xp formula (no xp table headless).
+    int xp1 = fallout::pcGetExperienceForLevel(1);
+    int xp2 = fallout::pcGetExperienceForLevel(2);
+    int xp5 = fallout::pcGetExperienceForLevel(5);
+    int xp21 = fallout::pcGetExperienceForLevel(21);
+    int xp99 = fallout::pcGetExperienceForLevel(99);
+    int xp0 = fallout::pcGetExperienceForLevel(0);
+    int xp100 = fallout::pcGetExperienceForLevel(100);
+    std::printf("xp=%d,%d,%d,%d,%d,%d,%d\n", xp1, xp2, xp5, xp21, xp99, xp0, xp100);
+
+    // Stat rolls off clamped stats + game random (seeded in [random]).
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    int howMuch1 = -999;
+    int roll1 = fallout::statRoll(dog, fallout::STAT_STRENGTH, 0, &howMuch1);
+    int howMuch2 = -999;
+    int roll2 = fallout::statRoll(dog, fallout::STAT_STRENGTH, 10, &howMuch2);
+    int rollNull = fallout::statRoll(dog, fallout::STAT_STRENGTH, 0, nullptr);
+    std::printf("roll=%d:%d rollmod=%d:%d rollnull=%d\n", roll1, howMuch1, roll2, howMuch2, rollNull);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6253,5 +6278,6 @@ int main()
     sectionMapVars();
     sectionSkillTag();
     sectionPcStat();
+    sectionXpRoll();
     return 0;
 }
