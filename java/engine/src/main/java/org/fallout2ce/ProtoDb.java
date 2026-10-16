@@ -12,8 +12,10 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * ({@code _proto_find_free_subnode}/{@code _proto_remove_some_list}),
  * {@code protoGetProto} (Dude shortcut, list scan, eviction guard,
  * {@code protoLoadProtoId}), {@code protoGetDataMember} with its
- * stale-value quirk, and {@code proto_new} (counter {@code _proto_new_id} +
- * per-type {@code proto_*_init} defaults).
+ * stale-value quirk, {@code proto_new} (counter {@code _proto_new_id} +
+ * per-type {@code proto_*_init} defaults), {@code proto_copy_proto}
+ * (memcpy-sized duplication with the dst pid stamped over the copy) and
+ * {@code proto_is_subtype} (the type-tag comparison).
  *
  * <p>VFS reads reuse {@link Db#fileOpen} / {@code fileRead*} (big-endian,
  * like C {@code fileReadInt32} / {@code _db_freadInt} which are aliases).
@@ -1168,6 +1170,285 @@ public final class ProtoDb {
             return -1;
         }
         return 0;
+    }
+
+    // 0x49FE74 proto_copy_proto: the types must match and both sides
+    // must load; the copy is a memcpy sized by _proto_sizes[type] (the
+    // header plus the active variant), then the dst pid is stamped over
+    // the copied header (the union overlay carries the variant pid with
+    // it, like C).
+    public static int protoCopyProto(ProtoId srcProtoId, ProtoId dstProtoId) {
+        if (srcProtoId.objectType() != dstProtoId.objectType()) {
+            return -1;
+        }
+
+        Proto[] srcSlot = new Proto[1];
+        if (protoGetProto(srcProtoId, srcSlot) == -1) {
+            return -1;
+        }
+
+        Proto[] dstSlot = new Proto[1];
+        if (protoGetProto(dstProtoId, dstSlot) == -1) {
+            return -1;
+        }
+
+        copyProto(dstSlot[0], srcSlot[0], srcProtoId.objectType().id());
+        dstSlot[0].pid = dstProtoId.pid();
+        setProtoVariantPid(dstSlot[0], srcProtoId.objectType().id(), dstProtoId.pid());
+
+        return 0;
+    }
+
+    // 0x49FEDC proto_is_subtype: -1 matches everything; items compare
+    // item.type, scenery compares scenery.type, anything else is false.
+    public static boolean protoIsSubtype(Proto proto, int subtype) {
+        if (subtype == -1) {
+            return true;
+        }
+
+        switch (ProtoId.ofProto(proto).objectType()) {
+        case OBJ_TYPE_ITEM:
+            return proto.item.type != null && proto.item.type.id() == subtype;
+        case OBJ_TYPE_SCENERY:
+            return proto.scenery.type != null && proto.scenery.type.id() == subtype;
+        default:
+            return false;
+        }
+    }
+
+    // memcpy scope of proto_copy_proto (_proto_sizes[type]): the header
+    // plus the whole active variant. Java keeps the C union variants as
+    // separate fields, so every sub-field of the active variant is
+    // copied (including the overlaid header copies inside the variant);
+    // the pid stamp lands on top afterwards, like C.
+    private static void copyProto(Proto dst, Proto src, int type) {
+        dst.pid = src.pid;
+        dst.messageId = src.messageId;
+        dst.fid = src.fid;
+        dst.lightDistance = src.lightDistance;
+        dst.lightIntensity = src.lightIntensity;
+        dst.flags = src.flags;
+        dst.extendedFlags = src.extendedFlags;
+        dst.sid = src.sid;
+
+        switch (type) {
+        case 0: // OBJ_TYPE_ITEM
+            copyItemProto(dst.item, src.item);
+            break;
+        case 1: // OBJ_TYPE_CRITTER
+            copyCritterProto(dst.critter, src.critter);
+            break;
+        case 2: // OBJ_TYPE_SCENERY
+            copySceneryProto(dst.scenery, src.scenery);
+            break;
+        case 3: // OBJ_TYPE_WALL
+            copyWallProto(dst.wall, src.wall);
+            break;
+        case 4: // OBJ_TYPE_TILE
+            copyTileProto(dst.tile, src.tile);
+            break;
+        case 5: // OBJ_TYPE_MISC
+            copyMiscProto(dst.misc, src.misc);
+            break;
+        default:
+            break;
+        }
+    }
+
+    // Pid half of the proto_copy_proto stamp: the C union overlay means
+    // the header pid write also lands on the variant pid; Java writes
+    // both explicitly.
+    private static void setProtoVariantPid(Proto dst, int type, int pid) {
+        switch (type) {
+        case 0: // OBJ_TYPE_ITEM
+            dst.item.pid = pid;
+            break;
+        case 1: // OBJ_TYPE_CRITTER
+            dst.critter.pid = pid;
+            break;
+        case 2: // OBJ_TYPE_SCENERY
+            dst.scenery.pid = pid;
+            break;
+        case 3: // OBJ_TYPE_WALL
+            dst.wall.pid = pid;
+            break;
+        case 4: // OBJ_TYPE_TILE
+            dst.tile.pid = pid;
+            break;
+        case 5: // OBJ_TYPE_MISC
+            dst.misc.pid = pid;
+            break;
+        default:
+            break;
+        }
+    }
+
+    // ItemProto half of the memcpy: all scalar fields plus every data
+    // variant (the C union overlays them on the same bytes, so copying
+    // all is exactly the byte copy; the caller only ever reads the one
+    // matching type).
+    private static void copyItemProto(ProtoTypes.ItemProto dst, ProtoTypes.ItemProto src) {
+        dst.pid = src.pid;
+        dst.messageId = src.messageId;
+        dst.fid = src.fid;
+        dst.lightDistance = src.lightDistance;
+        dst.lightIntensity = src.lightIntensity;
+        dst.flags = src.flags;
+        dst.extendedFlags = src.extendedFlags;
+        dst.sid = src.sid;
+        dst.type = src.type;
+        dst.material = src.material;
+        dst.size = src.size;
+        dst.weight = src.weight;
+        dst.cost = src.cost;
+        dst.inventoryFid = src.inventoryFid;
+        dst.soundId = src.soundId;
+
+        System.arraycopy(src.data.unknown, 0, dst.data.unknown, 0, src.data.unknown.length);
+
+        dst.data.armor.armorClass = src.data.armor.armorClass;
+        System.arraycopy(src.data.armor.damageResistance, 0, dst.data.armor.damageResistance, 0,
+                src.data.armor.damageResistance.length);
+        System.arraycopy(src.data.armor.damageThreshold, 0, dst.data.armor.damageThreshold, 0,
+                src.data.armor.damageThreshold.length);
+        dst.data.armor.perk = src.data.armor.perk;
+        dst.data.armor.maleFid = src.data.armor.maleFid;
+        dst.data.armor.femaleFid = src.data.armor.femaleFid;
+
+        dst.data.container.maxSize = src.data.container.maxSize;
+        dst.data.container.openFlags = src.data.container.openFlags;
+
+        System.arraycopy(src.data.drug.stat, 0, dst.data.drug.stat, 0, src.data.drug.stat.length);
+        System.arraycopy(src.data.drug.amount, 0, dst.data.drug.amount, 0,
+                src.data.drug.amount.length);
+        dst.data.drug.duration1 = src.data.drug.duration1;
+        System.arraycopy(src.data.drug.amount1, 0, dst.data.drug.amount1, 0,
+                src.data.drug.amount1.length);
+        dst.data.drug.duration2 = src.data.drug.duration2;
+        System.arraycopy(src.data.drug.amount2, 0, dst.data.drug.amount2, 0,
+                src.data.drug.amount2.length);
+        dst.data.drug.addictionChance = src.data.drug.addictionChance;
+        dst.data.drug.withdrawalEffect = src.data.drug.withdrawalEffect;
+        dst.data.drug.withdrawalOnset = src.data.drug.withdrawalOnset;
+
+        dst.data.weapon.animationCode = src.data.weapon.animationCode;
+        dst.data.weapon.minDamage = src.data.weapon.minDamage;
+        dst.data.weapon.maxDamage = src.data.weapon.maxDamage;
+        dst.data.weapon.damageType = src.data.weapon.damageType;
+        dst.data.weapon.maxRange1 = src.data.weapon.maxRange1;
+        dst.data.weapon.maxRange2 = src.data.weapon.maxRange2;
+        dst.data.weapon.projectilePid = src.data.weapon.projectilePid;
+        dst.data.weapon.minStrength = src.data.weapon.minStrength;
+        dst.data.weapon.actionPointCost1 = src.data.weapon.actionPointCost1;
+        dst.data.weapon.actionPointCost2 = src.data.weapon.actionPointCost2;
+        dst.data.weapon.criticalFailureType = src.data.weapon.criticalFailureType;
+        dst.data.weapon.perk = src.data.weapon.perk;
+        dst.data.weapon.rounds = src.data.weapon.rounds;
+        dst.data.weapon.caliber = src.data.weapon.caliber;
+        dst.data.weapon.ammoTypePid = src.data.weapon.ammoTypePid;
+        dst.data.weapon.ammoCapacity = src.data.weapon.ammoCapacity;
+        dst.data.weapon.soundCode = src.data.weapon.soundCode;
+
+        dst.data.ammo.caliber = src.data.ammo.caliber;
+        dst.data.ammo.quantity = src.data.ammo.quantity;
+        dst.data.ammo.armorClassModifier = src.data.ammo.armorClassModifier;
+        dst.data.ammo.damageResistanceModifier = src.data.ammo.damageResistanceModifier;
+        dst.data.ammo.damageMultiplier = src.data.ammo.damageMultiplier;
+        dst.data.ammo.damageDivisor = src.data.ammo.damageDivisor;
+
+        dst.data.misc.powerTypePid = src.data.misc.powerTypePid;
+        dst.data.misc.powerType = src.data.misc.powerType;
+        dst.data.misc.charges = src.data.misc.charges;
+
+        dst.data.key.keyCode = src.data.key.keyCode;
+    }
+
+    // CritterProto half of the memcpy.
+    private static void copyCritterProto(ProtoTypes.CritterProto dst, ProtoTypes.CritterProto src) {
+        dst.pid = src.pid;
+        dst.messageId = src.messageId;
+        dst.fid = src.fid;
+        dst.lightDistance = src.lightDistance;
+        dst.lightIntensity = src.lightIntensity;
+        dst.flags = src.flags;
+        dst.extendedFlags = src.extendedFlags;
+        dst.sid = src.sid;
+        dst.headFid = src.headFid;
+        dst.aiPacket = src.aiPacket;
+        dst.team = src.team;
+
+        dst.data.flags = src.data.flags;
+        System.arraycopy(src.data.baseStats, 0, dst.data.baseStats, 0,
+                src.data.baseStats.length);
+        System.arraycopy(src.data.bonusStats, 0, dst.data.bonusStats, 0,
+                src.data.bonusStats.length);
+        System.arraycopy(src.data.skills, 0, dst.data.skills, 0, src.data.skills.length);
+        dst.data.bodyType = src.data.bodyType;
+        dst.data.experience = src.data.experience;
+        dst.data.killType = src.data.killType;
+        dst.data.damageType = src.data.damageType;
+    }
+
+    // SceneryProto half of the memcpy (all data variants: same-bytes
+    // overlay, like the item union above).
+    private static void copySceneryProto(ProtoTypes.SceneryProto dst, ProtoTypes.SceneryProto src) {
+        dst.pid = src.pid;
+        dst.messageId = src.messageId;
+        dst.fid = src.fid;
+        dst.lightDistance = src.lightDistance;
+        dst.lightIntensity = src.lightIntensity;
+        dst.flags = src.flags;
+        dst.extendedFlags = src.extendedFlags;
+        dst.sid = src.sid;
+        dst.type = src.type;
+        dst.material = src.material;
+        dst.field30 = src.field30;
+        dst.soundId = src.soundId;
+
+        dst.data.door.openFlags = src.data.door.openFlags;
+        dst.data.door.keyCode = src.data.door.keyCode;
+        dst.data.stairs.destinationBuiltTile = src.data.stairs.destinationBuiltTile;
+        dst.data.stairs.destinationMap = src.data.stairs.destinationMap;
+        dst.data.elevator.type = src.data.elevator.type;
+        dst.data.elevator.level = src.data.elevator.level;
+        dst.data.ladder.destinationBuiltTile = src.data.ladder.destinationBuiltTile;
+        dst.data.generic.genericFlags = src.data.generic.genericFlags;
+    }
+
+    // WallProto half of the memcpy.
+    private static void copyWallProto(ProtoTypes.WallProto dst, ProtoTypes.WallProto src) {
+        dst.pid = src.pid;
+        dst.messageId = src.messageId;
+        dst.fid = src.fid;
+        dst.lightDistance = src.lightDistance;
+        dst.lightIntensity = src.lightIntensity;
+        dst.flags = src.flags;
+        dst.extendedFlags = src.extendedFlags;
+        dst.sid = src.sid;
+        dst.material = src.material;
+    }
+
+    // TileProto half of the memcpy (no light fields, like C).
+    private static void copyTileProto(ProtoTypes.TileProto dst, ProtoTypes.TileProto src) {
+        dst.pid = src.pid;
+        dst.messageId = src.messageId;
+        dst.fid = src.fid;
+        dst.flags = src.flags;
+        dst.extendedFlags = src.extendedFlags;
+        dst.sid = src.sid;
+        dst.material = src.material;
+    }
+
+    // MiscProto half of the memcpy (no sid, like C).
+    private static void copyMiscProto(ProtoTypes.MiscProto dst, ProtoTypes.MiscProto src) {
+        dst.pid = src.pid;
+        dst.messageId = src.messageId;
+        dst.fid = src.fid;
+        dst.lightDistance = src.lightDistance;
+        dst.lightIntensity = src.lightIntensity;
+        dst.flags = src.flags;
+        dst.extendedFlags = src.extendedFlags;
+        dst.sid = src.sid;
     }
 
     // 0x4A2040 proto_remove_some_list: evict the head extent.

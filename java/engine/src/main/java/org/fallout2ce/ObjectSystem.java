@@ -23,7 +23,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code _obj_connect}/{@code _obj_connect_to_tile}, with the
  * elevation/flat ordering walk), {@code objectSetFrmId}
  * ({@code obj_change_fid}, rect overload deferred), {@code scriptsNewObjectId} ({@code new_obj_id} from
- * {@code src/scripts.cc}), {@code objectSetLight} /
+ * {@code src/scripts.cc}), {@code objCopy} ({@code _obj_copy}:
+ * memcpy-scope field copy, fresh id, sid/rotation setup, recursive
+ * inventory re-home), {@code objectSetLight} /
  * {@code _obj_turn_off_light} / {@code _obj_turn_on_light},
  * {@code _obj_toggle_flat}, {@code objectSetScriptFromProto} (gate only,
  * from {@code src/proto_instance.cc}), {@code _proto_update_init} /
@@ -287,6 +289,132 @@ public final class ObjectSystem {
         objectSetScriptFromProto(node.obj);
 
         return 0;
+    }
+
+    // 0x... _obj_copy (src/object.cc): null src -> -1, else allocate +
+    // data-reset, memcpy the whole Object over the fresh one, publish via
+    // the out-param, insert, mint a fresh id, re-run the sid setup when
+    // the copied sid is live, re-apply the src rotation, clear QUEUED,
+    // then re-home the inventory through recursive copies + itemAdd.
+    // Failure paths return -1 with the node left listed: C only destroys
+    // the node wrapper there (the listed object leaks, marked TODO), and
+    // the GC owns the Java object, so no unlink runs either.
+    public static int objCopy(GameObject[] objectPtr, GameObject src) {
+        if (src == null) {
+            return -1;
+        }
+
+        GameObjectListNode node = new GameObjectListNode();
+        node.obj = objectAllocate();
+        node.next = null;
+
+        objectDataReset(node.obj);
+
+        copyGameObject(node.obj, src);
+
+        if (objectPtr != null) {
+            objectPtr[0] = node.obj;
+        }
+
+        insertNode(node);
+
+        node.obj.id = scriptsNewObjectId();
+
+        if (node.obj.sid != -1) {
+            node.obj.sid = -1;
+            objectSetScriptFromProto(node.obj);
+        }
+
+        if (objectSetRotation(node.obj, src.rotation) == -1) {
+            return -1;
+        }
+
+        node.obj.flags = node.obj.flags.and(ObjectFlags.QUEUED.not());
+
+        node.obj.data.inventory.items.clear();
+
+        List<InventoryItem> srcItems = src.data.inventory.items;
+        for (int index = 0; index < srcItems.size(); index++) {
+            InventoryItem srcEntry = srcItems.get(index);
+
+            GameObject[] newItem = new GameObject[1];
+            if (objCopy(newItem, srcEntry.item) == -1) {
+                return -1;
+            }
+
+            // NOTE: C checks `== 1` here, which itemAdd never returns
+            // (it returns 0/-1; the realloc failure is -1 and slips
+            // through there). Java checks failure directly; unreachable
+            // in practice (list adds don't fail), vectors never arm it.
+            if (Item.itemAdd(node.obj, newItem[0], srcEntry.quantity) != 0) {
+                return -1;
+            }
+        }
+
+        return 0;
+    }
+
+    // memcpy(node->obj, src, sizeof(Object)): field-for-field copy of the
+    // whole struct (Java has no padding, so the field list is the exact
+    // equivalent). The inventory stack list is deliberately NOT carried
+    // over: C memcpys the items pointer but zeroes length/capacity, then
+    // refills via recursive copies + itemAdd. The dst keeps its fresh
+    // empty list from objectAllocate/objectDataReset, which the caller
+    // refills the same way.
+    private static void copyGameObject(GameObject dst, GameObject src) {
+        dst.id = src.id;
+        dst.tile = src.tile;
+        dst.x = src.x;
+        dst.y = src.y;
+        dst.sx = src.sx;
+        dst.sy = src.sy;
+        dst.frame = src.frame;
+        dst.rotation = src.rotation;
+        dst.fid = src.fid;
+        dst.flags = src.flags;
+        dst.elevation = src.elevation;
+        dst.pid = src.pid;
+        dst.cid = src.cid;
+        dst.lightDistance = src.lightDistance;
+        dst.lightIntensity = src.lightIntensity;
+        dst.outline = src.outline;
+        dst.sid = src.sid;
+        dst.owner = src.owner;
+        dst.scriptIndex = src.scriptIndex;
+
+        dst.data.flags = src.data.flags;
+
+        dst.data.critter.reaction = src.data.critter.reaction;
+        dst.data.critter.combat.maneuver = src.data.critter.combat.maneuver;
+        dst.data.critter.combat.ap = src.data.critter.combat.ap;
+        dst.data.critter.combat.results = src.data.critter.combat.results;
+        dst.data.critter.combat.damageLastTurn = src.data.critter.combat.damageLastTurn;
+        dst.data.critter.combat.aiPacket = src.data.critter.combat.aiPacket;
+        dst.data.critter.combat.team = src.data.critter.combat.team;
+        dst.data.critter.combat.whoHitMe = src.data.critter.combat.whoHitMe;
+        dst.data.critter.combat.whoHitMeCid = src.data.critter.combat.whoHitMeCid;
+        dst.data.critter.hp = src.data.critter.hp;
+        dst.data.critter.radiation = src.data.critter.radiation;
+        dst.data.critter.poison = src.data.critter.poison;
+
+        dst.data.item.weapon.ammoQuantity = src.data.item.weapon.ammoQuantity;
+        dst.data.item.weapon.ammoTypePid = src.data.item.weapon.ammoTypePid;
+        dst.data.item.ammo.quantity = src.data.item.ammo.quantity;
+        dst.data.item.misc.charges = src.data.item.misc.charges;
+        dst.data.item.key.keyCode = src.data.item.key.keyCode;
+
+        dst.data.scenery.door.openFlags = src.data.scenery.door.openFlags;
+        dst.data.scenery.stairs.destinationBuiltTile = src.data.scenery.stairs.destinationBuiltTile;
+        dst.data.scenery.stairs.destinationMap = src.data.scenery.stairs.destinationMap;
+        dst.data.scenery.elevator.type = src.data.scenery.elevator.type;
+        dst.data.scenery.elevator.level = src.data.scenery.elevator.level;
+        dst.data.scenery.ladder.destinationBuiltTile = src.data.scenery.ladder.destinationBuiltTile;
+        dst.data.scenery.ladder.destinationMap = src.data.scenery.ladder.destinationMap;
+
+        dst.data.misc.map = src.data.misc.map;
+        dst.data.misc.tile = src.data.misc.tile;
+        dst.data.misc.elevation = src.data.misc.elevation;
+        dst.data.misc.rotation = src.data.misc.rotation;
     }
 
     // 0x4A386C new_obj_id (src/scripts.cc).

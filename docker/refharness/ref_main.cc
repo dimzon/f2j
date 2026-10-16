@@ -6024,6 +6024,53 @@ void sectionProtoNew()
     std::printf("bad-rc=%d\n", badRc);
 }
 
+void sectionProtoCopy()
+{
+    std::puts("[protocopy]");
+
+    // No window system needed. The v74 leftover bumped the item counter,
+    // so the fresh pid here follows it deterministically.
+    fallout::ProtoId freshId;
+    int freshRc = fallout::proto_new(freshId, fallout::OBJ_TYPE_ITEM);
+    int copyRc = -99;
+    int copyWeight = -999;
+    int copyPid = -999;
+    if (freshRc == 0) {
+        copyRc = fallout::proto_copy_proto(fallout::ProtoId(40), freshId);
+        fallout::Proto* copied = nullptr;
+        if (fallout::protoGetProto(freshId, &copied) == 0 && copied != nullptr) {
+            copyWeight = copied->item.weight;
+            copyPid = copied->pid;
+        }
+    }
+    int crossRc = fallout::proto_copy_proto(fallout::ProtoId(40), fallout::ProtoId(16777558));
+    int missRc = fallout::proto_copy_proto(fallout::ProtoId(999), freshId);
+    std::printf("fresh=%d:%d copy=%d weight=%d pid=%d cross=%d miss=%d\n",
+        freshRc, freshId.pid(), copyRc, copyWeight, copyPid, crossRc, missRc);
+
+    // Subtype is a direct type-tag comparison (-1 matches everything).
+    fallout::Proto* stimProto = nullptr;
+    fallout::protoGetProto(fallout::ProtoId(40), &stimProto);
+    int sub2 = stimProto != nullptr && fallout::proto_is_subtype(stimProto, 2) ? 1 : 0;
+    int sub3 = stimProto != nullptr && fallout::proto_is_subtype(stimProto, 3) ? 1 : 0;
+    int subAny = stimProto != nullptr && fallout::proto_is_subtype(stimProto, -1) ? 1 : 0;
+    std::printf("sub=%d,%d,%d\n", sub2, sub3, subAny);
+
+    // Object duplication keeps the data, mints a fresh id.
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* twin = nullptr;
+    int copyObjRc = fallout::_obj_copy(&twin, stim);
+    fallout::Object* carrier = nullptr;
+    fallout::objectCreateWithProtoId(&carrier, fallout::ProtoId(16777558));
+    fallout::itemAdd(carrier, stim, 1);
+    int objCost = fallout::objectGetCost(carrier);
+    int objCostBare = fallout::objectGetCost(stim);
+    std::printf("objcopy=%d twinpid=%d twinid=%d sametwin=%d objcost=%d barecost=%d\n",
+        copyObjRc, twin != nullptr ? twin->pid : -999, twin != nullptr ? twin->id : -999,
+        (twin != nullptr && twin != stim) ? 1 : 0, objCost, objCostBare);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6129,5 +6176,6 @@ int main()
     sectionGmouseEn();
     sectionArtHide();
     sectionProtoNew();
+    sectionProtoCopy();
     return 0;
 }
