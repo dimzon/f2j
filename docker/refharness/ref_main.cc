@@ -51,6 +51,7 @@
 #include "reaction.h"
 #include "select_file_list.h"
 #include "nevs.h"
+#include "sfall_global_vars.h"
 #include "autorun.h"
 #include "game_mouse.h"
 #include "stat.h"
@@ -6269,6 +6270,47 @@ void sectionNevsEvents()
     fallout::_nevs_close();
 }
 
+void sectionSfallVars()
+{
+    std::puts("[sfallvars]");
+
+    // No window system needed. Pure key/value store + file serde.
+    bool initOk = fallout::sfall_gl_vars_init();
+    bool storeInt = fallout::sfall_gl_vars_store(7, 42);
+    int intVal = -999;
+    bool fetchInt = fallout::sfall_gl_vars_fetch(7, intVal);
+    int missVal = -999;
+    bool fetchMiss = fallout::sfall_gl_vars_fetch(8, missVal);
+    bool storeStr = fallout::sfall_gl_vars_store("mykey123", 99);
+    int strVal = -999;
+    bool fetchStr = fallout::sfall_gl_vars_fetch("mykey123", strVal);
+    std::printf("init=%d store=%d fetch=%d:%d miss=%d str=%d:%d\n",
+        initOk ? 1 : 0, storeInt ? 1 : 0, fetchInt ? 1 : 0, intVal,
+        fetchMiss ? 1 : 0, storeStr ? 1 : 0, strVal);
+
+    fallout::File* saveStream = fallout::fileOpen((char*)"/tmp/sgv.bin", (char*)"wb");
+    bool saveOk = saveStream != nullptr ? fallout::sfall_gl_vars_save(saveStream) : false;
+    if (saveStream != nullptr) {
+        fallout::fileClose(saveStream);
+    }
+    fallout::sfall_gl_vars_reset();
+    int clearedVal = -999;
+    bool fetchCleared = fallout::sfall_gl_vars_fetch(7, clearedVal);
+    fallout::File* loadStream = fallout::fileOpen((char*)"/tmp/sgv.bin", (char*)"rb");
+    bool loadOk = loadStream != nullptr ? fallout::sfall_gl_vars_load(loadStream) : false;
+    if (loadStream != nullptr) {
+        fallout::fileClose(loadStream);
+    }
+    int backVal = -999;
+    bool fetchBack = fallout::sfall_gl_vars_fetch(7, backVal);
+    int backStr = -999;
+    fallout::sfall_gl_vars_fetch("mykey123", backStr);
+    std::printf("save=%d cleared=%d load=%d back=%d:%d backstr=%d\n",
+        saveOk ? 1 : 0, fetchCleared ? 1 : 0, loadOk ? 1 : 0,
+        fetchBack ? 1 : 0, backVal, backStr);
+    fallout::sfall_gl_vars_exit();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6383,5 +6425,6 @@ int main()
     sectionMiscGetters();
     sectionFindCid();
     sectionNevsEvents();
+    sectionSfallVars();
     return 0;
 }
