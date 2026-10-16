@@ -25,15 +25,23 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code weaponGetAnimationForHitMode}, {@code weaponGetAnimationCode},
  * {@code weaponGetDamageType}, the {@code armorGet*} getters and
  * {@code adjustCritterStatsOnArmorChange} (ported here from
- * {@code src/inventory.cc}, next to its only callers).
+ * {@code src/inventory.cc}, next to its only callers), plus the
+ * weapon-ballistics slice: {@code weaponGetDamageMinMax},
+ * {@code weaponGetRange}, {@code weaponGetActionPointCost} (with the
+ * primary/secondary cost readers), {@code weaponIsGrenade} and
+ * {@code weaponGetDamageRadius} (with the grenade/rocket explosion-radius
+ * readers).
  *
  * <p>See {@link StatDefs} for the {@code operator++} iteration note.
  *
  * <p>Vectors: {@code [inventory]} in
  * {@code docker/refharness/golden/v59.txt} (produced by
- * {@code sectionInventory} in {@code docker/refharness/ref_main.cc}) and
+ * {@code sectionInventory} in {@code docker/refharness/ref_main.cc}),
  * {@code [equip]} in {@code docker/refharness/golden/v60.txt} (produced by
- * {@code sectionEquip}; see {@link Inventory#inventoryEquipFunc}).
+ * {@code sectionEquip}; see {@link Inventory#inventoryEquipFunc}) and
+ * {@code [ballistics]} in {@code docker/refharness/golden/v61.txt}
+ * (produced by {@code sectionBallistics}; bare-hands PUNCH probes plus the
+ * scorcher damage/radius and jacket armor probes).
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
@@ -778,9 +786,267 @@ public final class Item {
         return code == null ? ArtDefs.WeaponAnimation.None.id() : code.id();
     }
 
+    // 0x4783EC weapon_get_damage_min_max: null weapon -> -1, else the
+    // proto min/max damage. A null out-param is skipped, like the C++
+    // nullptr checks (out-params use the single-element-array convention,
+    // see ProtoDb#protoGetProto).
+    public static int weaponGetDamageMinMax(GameObject weapon, int[] minDamage, int[] maxDamage) {
+        if (weapon == null) {
+            return -1;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+        if (minDamage != null && minDamage.length > 0) {
+            minDamage[0] = slot[0].item.data.weapon.minDamage;
+        }
+
+        if (maxDamage != null && maxDamage.length > 0) {
+            maxDamage[0] = slot[0].item.data.weapon.maxDamage;
+        }
+
+        return 0;
+    }
+
+    // critter_get_weapon_for_hit_mode (src/item.cc): left-hand modes read
+    // item1, right-hand modes item2, every unarmed mode (basic PUNCH/KICK
+    // plus advanced) -> null.
+    private static GameObject critterGetWeaponForHitMode(GameObject critter, int hitMode) {
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_SECONDARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_RELOAD.id()) {
+            return Inventory.critterGetItem1(critter);
+        }
+
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_RELOAD.id()) {
+            return Inventory.critterGetItem2(critter);
+        }
+
+        return null;
+    }
+
+    // 0x478AAC weapon_get_range: armed non-throw modes read the proto
+    // maxRange1/2 nibble; THROW modes clamp to 3x effective Strength (the
+    // dude/party Heave-Ho sfall bonus is dormant headless: gDude is null
+    // and no critter is a party member, so perkGetRank never runs);
+    // unarmed modes (PUNCH/KICK plus advanced 8-19, or a null weapon) fall
+    // to the LONG_LIMBS tail (2 vs 1).
+    public static int weaponGetRange(GameObject critter, int hitMode) {
+        GameObject weapon = critterGetWeaponForHitMode(critter, hitMode);
+
+        if (weapon != null
+                && hitMode != CombatDefs.HitMode.HIT_MODE_PUNCH.id()
+                && hitMode != CombatDefs.HitMode.HIT_MODE_KICK.id()
+                && (hitMode < CombatDefs.FIRST_ADVANCED_PUNCH_HIT_MODE
+                        || hitMode > CombatDefs.LAST_ADVANCED_KICK_HIT_MODE)) {
+            Proto[] slot = new Proto[1];
+            ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+            int range;
+            if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
+                    || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) {
+                range = slot[0].item.data.weapon.maxRange1;
+            } else {
+                range = slot[0].item.data.weapon.maxRange2;
+            }
+
+            if (weaponGetAttackTypeForHitMode(weapon, hitMode)
+                    == AttackType.ATTACK_TYPE_THROW.id()) {
+                int effectiveStrength =
+                        Stat.critterGetStat(critter, StatDefs.Stat.STAT_STRENGTH.id());
+                if (isDude(critter) || objectIsPartyMember(critter)) {
+                    // SFALL: Heave Ho! bonus, capped at PRIMARY_STAT_MAX.
+                    if (effectiveStrength < StatDefs.PRIMARY_STAT_MAX) {
+                        effectiveStrength += 2
+                                * perkGetRank(critter, PerkDefs.Perk.PERK_HEAVE_HO);
+                        if (effectiveStrength > StatDefs.PRIMARY_STAT_MAX) {
+                            effectiveStrength = StatDefs.PRIMARY_STAT_MAX;
+                        }
+                    }
+                }
+
+                int maxRange = 3 * effectiveStrength;
+                if (range >= maxRange) {
+                    range = maxRange;
+                }
+            }
+
+            return range;
+        }
+
+        if (critterFlagCheck(ProtoId.ofGameObject(critter), ObjTypes.CritterFlags.LONG_LIMBS)) {
+            return 2;
+        }
+
+        return 1;
+    }
+
+    // 0x478B24 weapon_get_action_point_cost: reload modes cost 2 (1 with
+    // the fast-reload perk, 0 for the Solar Scorcher); unarmed modes read
+    // the unarmed table below; other armed modes read the proto
+    // primary/secondary cost with the dormant dude-only Fast Shot tail; a
+    // null weapon off the reload path costs 3. The dude-only Bonus HtH /
+    // Bonus Rate of Fire tails are dormant headless (gDude is null), then
+    // the aim +1 and the <1 clamp, then the CalcApCost hook (no hooks
+    // headless: identity).
+    public static int weaponGetActionPointCost(GameObject critter, int hitMode, boolean aiming) {
+        int actionPoints;
+
+        GameObject weapon = critterGetWeaponForHitMode(critter, hitMode);
+
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_RELOAD.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_RELOAD.id()) {
+            if (weapon != null) {
+                Proto[] slot = new Proto[1];
+                ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+                if (slot[0].item.data.weapon.perk == PerkDefs.Perk.PERK_WEAPON_FAST_RELOAD) {
+                    actionPoints = 1;
+                } else if (ProtoId.ofGameObject(weapon)
+                        .matchesItemType(ItemProtoTypeId.SolarScorcher)) {
+                    actionPoints = 0;
+                } else {
+                    actionPoints = 2;
+                }
+            } else {
+                actionPoints = 2;
+            }
+
+            return scriptHooksCalcApCost(critter, hitMode, aiming, actionPoints, weapon);
+        }
+
+        // CE: the unarmed branch differs from vanilla Sfall; the harness
+        // never runs combatInit, so the table below stays zeroed.
+        if (isUnarmedHitMode(hitMode)) {
+            actionPoints = unarmedGetActionPointCost(hitMode);
+        } else {
+            if (weapon != null) {
+                if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
+                        || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) {
+                    actionPoints = weaponGetPrimaryActionPointCost(weapon);
+                } else {
+                    actionPoints = weaponGetSecondaryActionPointCost(weapon);
+                }
+
+                if (isDude(critter)) {
+                    if (TraitDefs.traitIsSelectedAndActive(
+                            TraitDefs.Trait.TRAIT_FAST_SHOT.id())) {
+                        if (weaponGetRange(critter, hitMode) > 2) {
+                            actionPoints--;
+                        }
+                    }
+                }
+            } else {
+                actionPoints = 3;
+            }
+        }
+
+        if (isDude(critter)) {
+            int attackType = weaponGetAttackTypeForHitMode(weapon, hitMode);
+
+            if (perkHasRank(G_DUDE, PerkDefs.Perk.PERK_BONUS_HTH_ATTACKS)) {
+                if (attackType == AttackType.ATTACK_TYPE_MELEE.id()
+                        || attackType == AttackType.ATTACK_TYPE_UNARMED.id()) {
+                    actionPoints -= 1;
+                }
+            }
+
+            if (perkHasRank(G_DUDE, PerkDefs.Perk.PERK_BONUS_RATE_OF_FIRE)) {
+                if (attackType == AttackType.ATTACK_TYPE_RANGED.id()) {
+                    actionPoints -= 1;
+                }
+            }
+        }
+
+        if (aiming) {
+            actionPoints += 1;
+        }
+
+        if (actionPoints < 1) {
+            actionPoints = 1;
+        }
+
+        return scriptHooksCalcApCost(critter, hitMode, aiming, actionPoints, weapon);
+    }
+
+    // 0x47906C weapon_get_primary_action_point_cost (null -> -1).
+    public static int weaponGetPrimaryActionPointCost(GameObject weapon) {
+        if (weapon == null) {
+            return -1;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+        return slot[0].item.data.weapon.actionPointCost1;
+    }
+
+    // 0x479084 weapon_get_secondary_action_point_cost (null -> -1).
+    public static int weaponGetSecondaryActionPointCost(GameObject weapon) {
+        if (weapon == null) {
+            return -1;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+        return slot[0].item.data.weapon.actionPointCost2;
+    }
+
+    // weapon_is_grenade (src/item.cc): explosion/plasma/EMP damage.
+    public static boolean weaponIsGrenade(GameObject weapon) {
+        ProtoTypes.DamageType damageType = weaponGetDamageType(null, weapon);
+        return damageType == ProtoTypes.DamageType.DAMAGE_TYPE_EXPLOSION
+                || damageType == ProtoTypes.DamageType.DAMAGE_TYPE_PLASMA
+                || damageType == ProtoTypes.DamageType.DAMAGE_TYPE_EMP;
+    }
+
+    // 0x47910C weapon_get_damage_radius: RANGED single-fire explosions read
+    // the rocket radius, THROW grenades the grenade radius, else 0.
+    public static int weaponGetDamageRadius(GameObject weapon, int hitMode) {
+        int attackType = weaponGetAttackTypeForHitMode(weapon, hitMode);
+        int anim = weaponGetAnimationForHitMode(weapon, hitMode);
+        ProtoTypes.DamageType damageType = weaponGetDamageType(null, weapon);
+
+        int radius = 0;
+        if (attackType == AttackType.ATTACK_TYPE_RANGED.id()) {
+            if (anim == AnimationType.FIRE_SINGLE.value()
+                    && damageType == ProtoTypes.DamageType.DAMAGE_TYPE_EXPLOSION) {
+                radius = weaponGetRocketExplosionRadius(weapon);
+            }
+        } else if (attackType == AttackType.ATTACK_TYPE_THROW.id()) {
+            if (weaponIsGrenade(weapon)) {
+                radius = weaponGetGrenadeExplosionRadius(weapon);
+            }
+        }
+
+        return radius;
+    }
+
+    // 0x479180 weapon_get_grenade_explosion_radius: the sfall override wins
+    // unless reset to -1; otherwise the post-explosionsReset default (2).
+    public static int weaponGetGrenadeExplosionRadius(GameObject weapon) {
+        if (gExplosionRadius != -1) {
+            return gExplosionRadius;
+        }
+
+        return 2;
+    }
+
+    // 0x479188 weapon_get_rocket_explosion_radius (same shape, default 3).
+    public static int weaponGetRocketExplosionRadius(GameObject weapon) {
+        if (gExplosionRadius != -1) {
+            return gExplosionRadius;
+        }
+
+        return 3;
+    }
+
     // 0x4792F8 armor_get_armor_class (null -> 0).
-    public static int armorGetArmorClass(GameObject armor) {
-        if (armor == null) {
+    public static int armorGetArmorClass(GameObject armor) {        if (armor == null) {
             return 0;
         }
 
@@ -915,6 +1181,81 @@ public final class Item {
     }
 
     private static void perkRemoveEffect(GameObject critter, PerkDefs.Perk perk) {
+    }
+
+    // gExplosionRadius (src/item.cc): the sfall explosion-radius override;
+    // -1 (post-explosionSettingsReset, the game state) means "no override".
+    // The harness never touches it (explosionsReset is game phase), so no
+    // resetForTests entry is needed.
+    private static int gExplosionRadius = -1;
+
+    // is_unarmed_hit_mode (src/combat.h): PUNCH/KICK plus the advanced
+    // unarmed range.
+    private static boolean isUnarmedHitMode(int hitMode) {
+        return hitMode == CombatDefs.HitMode.HIT_MODE_PUNCH.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_KICK.id()
+                || (hitMode >= CombatDefs.FIRST_ADVANCED_UNARMED_HIT_MODE
+                        && hitMode <= CombatDefs.LAST_ADVANCED_UNARMED_HIT_MODE);
+    }
+
+    // gUnarmedHitDescriptions action-point-cost column (src/combat.cc): BSS
+    // mirror, like Combat#hitLocationPenalty. unarmedInit (vanilla +
+    // custom) fills the table but runs only from combatInit, which touches
+    // gDude and never runs headless; the vectors therefore observe the
+    // zeroed table (bare PUNCH costs 0, clamped to 1 by the caller). Never
+    // mutated headless, so no resetForTests entry is needed.
+    private static final int[] UNARMED_ACTION_POINT_COST =
+            new int[CombatDefs.HIT_MODE_COUNT];
+
+    // unarmed_get_action_point_cost (src/combat.cc): raw table read.
+    private static int unarmedGetActionPointCost(int hitMode) {
+        return UNARMED_ACTION_POINT_COST[hitMode];
+    }
+
+    // critter_flag_check (src/critter.cc 0x42E6AC): proto critter flag read
+    // (invalid/non-critter/proto miss -> false).
+    private static boolean critterFlagCheck(ProtoId protoId, ObjTypes.CritterFlags flag) {
+        if (!protoId.valid()) {
+            return false;
+        }
+
+        if (protoId.objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(protoId, slot) == -1) {
+            return false;
+        }
+
+        return (slot[0].critter.data.flags.bits() & flag.bits()) != 0;
+    }
+
+    // Port of gDude (src/object.cc, unported): null headless, so every
+    // critter == gDude check reads false for non-null critters (a null
+    // critter is never "the dude"; see Stat#isDude).
+    private static final GameObject G_DUDE = null;
+
+    private static boolean isDude(GameObject critter) {
+        return critter != null && critter == G_DUDE;
+    }
+
+    // Seams for the perk engine (unported): only reachable from the dormant
+    // dude/party branches (see Skill#perkGetRank).
+    private static int perkGetRank(GameObject critter, PerkDefs.Perk perk) {
+        return 0;
+    }
+
+    private static boolean perkHasRank(GameObject critter, PerkDefs.Perk perk) {
+        return false;
+    }
+
+    // scriptHooks_CalcApCost (src/sfall_script_hooks.cc): with no hooks
+    // registered the call has no return values and C returns the input.
+    // The script engine is game phase; headless this is the identity.
+    private static int scriptHooksCalcApCost(
+            GameObject critter, int hitMode, boolean aiming, int actionPoints, GameObject weapon) {
+        return actionPoints;
     }
 
     private static boolean isCritter(GameObject obj) {

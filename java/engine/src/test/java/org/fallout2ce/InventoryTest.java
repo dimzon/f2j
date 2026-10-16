@@ -189,4 +189,65 @@ class InventoryTest {
         assertEquals(-1, equipGun);
         assertEquals(-1, handItem != null ? handItem.pid : -1);
     }
+
+    @Test
+    void ballisticsVectors() {
+        // [ballistics] from docker/refharness/golden/v61.txt, produced by
+        // sectionBallistics in docker/refharness/ref_main.cc. Dog + scorcher
+        // (pid 390) + jacket (pid 3); the jacket is added then equipped, the
+        // gun is never added/equipped (so critterGetArmor(gun) is null and
+        // the PUNCH range/AP probes run the bare-hands path: null weapon ->
+        // LONG_LIMBS tail for range, zeroed unarmed table clamped to 1
+        // for AP, since the harness never runs combatInit).
+        GameObject[] dogSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dogSlot, ProtoId.ofPid(16777558)));
+        assertNotNull(dogSlot[0]);
+        GameObject dog = dogSlot[0];
+
+        GameObject[] gunSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(gunSlot, ProtoId.ofPid(390)));
+        assertNotNull(gunSlot[0]);
+        GameObject gun = gunSlot[0];
+
+        GameObject[] jacketSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(jacketSlot, ProtoId.ofPid(3)));
+        assertNotNull(jacketSlot[0]);
+        GameObject jacket = jacketSlot[0];
+
+        assertEquals(0, Item.itemAdd(dog, jacket, 1));
+        assertEquals(0, Inventory.inventoryEquipFunc(dog, jacket, Hand.HAND_RIGHT, false));
+
+        // dmg-rc=0 min=20 max=60 dmg-null=-1 radius=0 range=1 ap=1
+        int[] minDmg = new int[] { -999 };
+        int[] maxDmg = new int[] { -999 };
+        int dmgRc = Item.weaponGetDamageMinMax(gun, minDmg, maxDmg);
+        int dmgNull = Item.weaponGetDamageMinMax(null, null, null);
+        int radius = Item.weaponGetDamageRadius(
+                gun, CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
+        int range = Item.weaponGetRange(dog, CombatDefs.HitMode.HIT_MODE_PUNCH.id());
+        int ap = Item.weaponGetActionPointCost(
+                dog, CombatDefs.HitMode.HIT_MODE_PUNCH.id(), false);
+        assertEquals(0, dmgRc);
+        assertEquals(20, minDmg[0]);
+        assertEquals(60, maxDmg[0]);
+        assertEquals(-1, dmgNull);
+        assertEquals(0, radius);
+        assertEquals(1, range);
+        assertEquals(1, ap);
+
+        // armor-ac=25 armor-dt=12 armor-dr=40 worn=3 bare-null=1
+        int armorAc = Item.armorGetArmorClass(jacket);
+        int armorDt = Item.armorGetDamageThreshold(
+                jacket, ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL.id());
+        int armorDr = Item.armorGetDamageResistance(
+                jacket, ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL.id());
+        GameObject worn = Inventory.critterGetArmor(dog);
+        GameObject bare = Inventory.critterGetArmor(gun);
+        assertEquals(25, armorAc);
+        assertEquals(12, armorDt);
+        assertEquals(40, armorDr);
+        assertNotNull(worn);
+        assertEquals(3, worn.pid);
+        assertNull(bare);
+    }
 }

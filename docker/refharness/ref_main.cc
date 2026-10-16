@@ -5535,6 +5535,40 @@ void sectionEquip()
         equipGun, handItem != nullptr ? handItem->pid : -1);
 }
 
+void sectionBallistics()
+{
+    std::puts("[ballistics]");
+
+    // No window system needed. Scorcher proto reads + dog's worn jacket.
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* gun = nullptr;
+    fallout::objectCreateWithProtoId(&gun, fallout::ProtoId(390));
+    fallout::Object* jacket = nullptr;
+    fallout::objectCreateWithProtoId(&jacket, fallout::ProtoId(3));
+    fallout::itemAdd(dog, jacket, 1);
+    fallout::inventoryEquipFunc(dog, jacket, fallout::HAND_RIGHT, false);
+
+    int minDmg = -999;
+    int maxDmg = -999;
+    int dmgRc = fallout::weaponGetDamageMinMax(gun, &minDmg, &maxDmg);
+    int dmgNull = fallout::weaponGetDamageMinMax(nullptr, nullptr, nullptr);
+    int radius = fallout::weaponGetDamageRadius(gun, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY);
+    int rangeBare = fallout::weaponGetRange(dog, fallout::HIT_MODE_PUNCH);
+    int apBare = fallout::weaponGetActionPointCost(dog, fallout::HIT_MODE_PUNCH, false);
+    std::printf("dmg-rc=%d min=%d max=%d dmg-null=%d radius=%d range=%d ap=%d\n",
+        dmgRc, minDmg, maxDmg, dmgNull, radius, rangeBare, apBare);
+
+    int armorAc = fallout::armorGetArmorClass(jacket);
+    int armorDt = fallout::armorGetDamageThreshold(jacket, (fallout::DamageType)0);
+    int armorDr = fallout::armorGetDamageResistance(jacket, (fallout::DamageType)0);
+    fallout::Object* worn = fallout::critterGetArmor(dog);
+    fallout::Object* bare = fallout::critterGetArmor(gun);
+    std::printf("armor-ac=%d armor-dt=%d armor-dr=%d worn=%d bare-null=%d\n",
+        armorAc, armorDt, armorDr,
+        worn != nullptr ? worn->pid : -999, bare == nullptr ? 1 : 0);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5626,5 +5660,6 @@ int main()
     sectionCritterStats();
     sectionInventory();
     sectionEquip();
+    sectionBallistics();
     return 0;
 }
