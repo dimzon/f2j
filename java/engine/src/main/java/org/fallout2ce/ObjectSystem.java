@@ -599,6 +599,74 @@ public final class ObjectSystem {
         return (obj.outline.bits() & OutlineType.MAX.bits()) != OutlineType.NONE.bits();
     }
 
+    // 0x48C2E4 obj_set_outline (null-rect shape only: the slice always
+    // passes null, so the objectGetRect tail is dropped, like the
+    // objectDestroy/objectShow seam). Null -> -1, already outlined -> -1,
+    // NO_HIGHLIGHT -> -1, else store; HIDDEN adds OUTLINE_DISABLED.
+    public static int objectSetOutline(GameObject obj, OutlineType outlineType) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (objectHasOutline(obj)) {
+            return -1;
+        }
+
+        if (!obj.flags.and(ObjectFlags.NO_HIGHLIGHT).equals(ObjectFlags.NONE)) {
+            return -1;
+        }
+
+        obj.outline = outlineType;
+
+        if (!obj.flags.and(ObjectFlags.HIDDEN).equals(ObjectFlags.NONE)) {
+            obj.outline = obj.outline.or(ObjTypes.OUTLINE_DISABLED);
+        }
+
+        return 0;
+    }
+
+    // 0x48C2F0 obj_remove_outline (null-rect shape only, like
+    // objectSetOutline). Null -> -1, else clear to NONE.
+    public static int objectClearOutline(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        obj.outline = OutlineType.NONE;
+
+        return 0;
+    }
+
+    // 0x48A1FC obj_offset (null-rect shape only: the slice always passes
+    // null, so the rect fill/union tails are dropped, like objectDestroy).
+    // Null -> -1, list-node miss -> -1, else unlink, x/sx += x, y/sy += y,
+    // re-insert. The gDude/gEgg branch is dormant headless (unported
+    // game-phase globals, null here), so every object takes the plain
+    // path, exactly like C++ for non-dude objects.
+    public static int objOffset(GameObject obj, int x, int y) {
+        if (obj == null) {
+            return -1;
+        }
+
+        GameObjectListNode[] prevSlot = new GameObjectListNode[1];
+        GameObjectListNode node = findListNode(obj, prevSlot);
+        if (node == null) {
+            return -1;
+        }
+
+        unlinkNode(node, prevSlot[0]);
+
+        obj.x += x;
+        obj.sx += x;
+
+        obj.y += y;
+        obj.sy += y;
+
+        insertNode(node);
+
+        return 0;
+    }
+
     // 0x48ADF0 obj_turn_on (rect overload deferred: the slice always passes
     // null, so the rect fill is dropped and the adjust-light result is
     // ignored, like C++).

@@ -5879,6 +5879,41 @@ void sectionObjVis()
         chainBefore, discRc, stimTile, chainAfter, discAgain);
 }
 
+void sectionObjOutline()
+{
+    std::puts("[objoutline]");
+
+    // No window system needed. Null rects skip all screen refresh math.
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    int setRc = fallout::objectSetOutline(dog, fallout::OUTLINE_TYPE_ITEM, nullptr);
+    int outlineAfter = dog->outline;
+    int setAgain = fallout::objectSetOutline(dog, fallout::OUTLINE_TYPE_ITEM, nullptr);
+    int hasOutline = fallout::objectHasOutline(dog) ? 1 : 0;
+    int clearRc = fallout::objectClearOutline(dog, nullptr);
+    int outlineCleared = dog->outline;
+    int clearNull = fallout::objectClearOutline(nullptr, nullptr);
+    std::printf("set=%d outline=%d again=%d has=%d clear=%d cleared=%d clearnull=%d\n",
+        setRc, outlineAfter, setAgain, hasOutline, clearRc, outlineCleared, clearNull);
+
+    int x0 = dog->x;
+    int y0 = dog->y;
+    int offRc = fallout::_obj_offset(dog, 10, -5, nullptr);
+    int offNull = fallout::_obj_offset(nullptr, 10, -5, nullptr);
+    std::printf("xy0=%d,%d off=%d xy1=%d,%d offnull=%d\n",
+        x0, y0, offRc, dog->x, dog->y, offNull);
+
+    // Misc charges ride on the item object (money default zero here).
+    fallout::Object* cash = nullptr;
+    fallout::objectCreateWithProtoId(&cash, fallout::ProtoId(41));
+    int charges0 = fallout::miscItemGetCharges(cash);
+    int maxCharges = fallout::miscItemGetMaxCharges(cash);
+    int usesCharges = fallout::miscItemUsesCharges(cash) ? 1 : 0;
+    fallout::miscItemSetCharges(cash, 7);
+    int charges7 = fallout::miscItemGetCharges(cash);
+    std::printf("charges=%d max=%d uses=%d set7=%d\n", charges0, maxCharges, usesCharges, charges7);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5979,5 +6014,6 @@ int main()
     sectionObjFind();
     sectionObjAttrs();
     sectionObjVis();
+    sectionObjOutline();
     return 0;
 }

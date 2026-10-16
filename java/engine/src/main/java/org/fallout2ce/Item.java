@@ -728,6 +728,62 @@ public final class Item {
         return totalSize;
     }
 
+    // 0x4793D0 misc_item_get_max_charges: null -> 0, else the proto
+    // misc.charges (C++ skips the proto-miss check; vectors always load).
+    public static int miscItemGetMaxCharges(GameObject miscItem) {
+        if (miscItem == null) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(miscItem), slot);
+
+        return slot[0].item.data.misc.charges;
+    }
+
+    // 0x4793F0 misc_item_get_charges: null -> 0, else the object charges.
+    public static int miscItemGetCharges(GameObject miscItem) {
+        if (miscItem == null) {
+            return 0;
+        }
+
+        return miscItem.data.item.misc.charges;
+    }
+
+    // 0x4793F8 misc_item_set_charges: null -> -1; clamp to [0, maxCharges]
+    // (money proto maxCharges=0 clamps 7 -> 0); store on the object, not
+    // the proto.
+    public static int miscItemSetCharges(GameObject miscItem, int charges) {
+        if (miscItem == null) {
+            return -1;
+        }
+
+        int maxCharges = miscItemGetMaxCharges(miscItem);
+
+        if (charges < 0) {
+            charges = 0;
+        } else if (charges > maxCharges) {
+            charges = maxCharges;
+        }
+
+        miscItem.data.item.misc.charges = charges;
+
+        return 0;
+    }
+
+    // 0x47947C misc_item_uses_charges: null -> false, else proto charges
+    // != 0.
+    public static boolean miscItemUsesCharges(GameObject miscItem) {
+        if (miscItem == null) {
+            return false;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(miscItem), slot);
+
+        return slot[0].item.data.misc.charges != 0;
+    }
+
     // 0x479454 misc_item_get_power_type_pid: null -> empty (C++ skips the
     // proto-miss check; vectors always load).
     public static ProtoId miscItemGetPowerTypeProtoId(GameObject miscItem) {
