@@ -1,6 +1,7 @@
 package org.fallout2ce;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -16,6 +17,10 @@ import org.junit.jupiter.api.Test;
  * {@code docker/refharness/golden/v91.txt}, produced by
  * {@code sectionScriptProg} in {@code docker/refharness/ref_main.cc}:
  * {@code loaded=1 start=1 miss=-1 pop=7,42}.
+ *
+ * <p>Plus {@code [programstack]} from
+ * {@code docker/refharness/golden/v92.txt} ({@code sectionProgramStack}):
+ * {@code float=40961:2.500000 str=[hi] ptrnull=1 int=9}.
  *
  * <p>Flow mirrors the harness exactly: load {@code scripts\ABEL.int}
  * through the VFS ({@code F2J_GAMEDATA} + {@code master.dat}, like the
@@ -78,5 +83,41 @@ class ScriptProgTest {
                         + " start=" + startIdx
                         + " miss=" + missIdx
                         + " pop=" + pop1 + "," + pop2);
+    }
+
+    @Test
+    void stackVectors() {
+        Program prog = Program.programCreateByPath("scripts\\ABEL.int");
+        assertTrue(prog != null, "ABEL.int must load through the VFS");
+
+        Program.programStackPushFloat(prog, 2.5f);
+        Program.ProgramValue floatVal = Program.programStackPopValue(prog);
+
+        Program.programStackPushString(prog, "hi");
+        String str = Program.programStackPopString(prog);
+
+        Program.programStackPushPointer(prog, null);
+        Object ptrVal = Program.programStackPopPointer(prog);
+
+        Program.ProgramValue intVal = new Program.ProgramValue();
+        intVal.opcode = Program.VALUE_TYPE_INT;
+        intVal.integerValue = 9;
+        Program.programStackPushValue(prog, intVal);
+        int poppedInt = Program.programStackPopInteger(prog);
+
+        Program.programFree(prog);
+
+        // Pin the opcode id (40961 = 0xA001 = VALUE_TYPE_FLOAT) and the
+        // float value itself; the golden line's 2.500000 is C %f formatting.
+        assertEquals(40961, floatVal.opcode);
+        assertEquals(Program.VALUE_TYPE_FLOAT, floatVal.opcode);
+        assertEquals(2.5f, floatVal.floatValue);
+        assertNull(ptrVal);
+        assertEquals("float=40961:2.500000 str=[hi] ptrnull=1 int=9",
+                "float=" + floatVal.opcode + ":"
+                        + String.format(java.util.Locale.ROOT, "%f", (double) floatVal.floatValue)
+                        + " str=[" + str + "]"
+                        + " ptrnull=" + (ptrVal == null ? 1 : 0)
+                        + " int=" + poppedInt);
     }
 }

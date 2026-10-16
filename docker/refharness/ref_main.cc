@@ -6524,6 +6524,31 @@ void sectionScriptProg()
         prog != nullptr ? 1 : 0, startIdx, missIdx, pop1, pop2);
 }
 
+void sectionProgramStack()
+{
+    std::puts("[programstack]");
+
+    // No window system needed. LIFO discipline + type-tagged values;
+    // underflow/mismatch paths are fatal by design (unpinned here).
+    fallout::Program* prog = fallout::programCreateByPath((char*)"scripts\\ABEL.int");
+    fallout::programStackPushFloat(prog, 2.5f);
+    fallout::ProgramValue floatVal = fallout::programStackPopValue(prog);
+    fallout::programStackPushString(prog, (char*)"hi");
+    char strBuf[16] = {};
+    snprintf(strBuf, sizeof(strBuf), "%s", fallout::programStackPopString(prog));
+    fallout::programStackPushPointer(prog, nullptr);
+    void* ptrVal = fallout::programStackPopPointer(prog);
+    fallout::ProgramValue intVal;
+    intVal.opcode = VALUE_TYPE_INT;
+    intVal.integerValue = 9;
+    fallout::programStackPushValue(prog, intVal);
+    int poppedInt = fallout::programStackPopInteger(prog);
+    std::printf("float=%d:%f str=[%s] ptrnull=%d int=%d\n",
+        (int)floatVal.opcode, (double)floatVal.floatValue, strBuf,
+        ptrVal == nullptr ? 1 : 0, poppedInt);
+    fallout::programFree(prog);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6646,5 +6671,6 @@ int main()
     sectionMoreNames();
     sectionMoreDesc();
     sectionScriptProg();
+    sectionProgramStack();
     return 0;
 }
