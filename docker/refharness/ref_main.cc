@@ -6169,6 +6169,27 @@ void sectionXpRoll()
     std::printf("roll=%d:%d rollmod=%d:%d rollnull=%d\n", roll1, howMuch1, roll2, howMuch2, rollNull);
 }
 
+void sectionSkillRoll()
+{
+    std::puts("[skillroll]");
+
+    // No window system needed. Dog is not the dude, game day is 0, so no
+    // party/crit paths fire; chances come off the seeded stream ([random]).
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    int how1 = -999;
+    int roll1 = fallout::skillRoll(dog, fallout::SKILL_SNEAK, 0, &how1);
+    int how2 = -999;
+    int roll2 = fallout::skillRoll(dog, fallout::SKILL_SNEAK, 95, &how2);
+    int rollBad = fallout::skillRoll(dog, (fallout::Skill)-1, 0, nullptr);
+    int howStim = -999;
+    int rollStim = fallout::skillRoll(stim, fallout::SKILL_SNEAK, 0, &howStim);
+    std::printf("roll=%d:%d rollmod=%d:%d rollbad=%d rollstim=%d:%d\n",
+        roll1, how1, roll2, how2, rollBad, rollStim, howStim);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6279,5 +6300,6 @@ int main()
     sectionSkillTag();
     sectionPcStat();
     sectionXpRoll();
+    sectionSkillRoll();
     return 0;
 }

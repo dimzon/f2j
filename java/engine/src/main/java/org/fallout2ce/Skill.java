@@ -396,6 +396,36 @@ public final class Skill {
     }
 
     /**
+     * Port of {@code skillRoll} (src/skill.cc 0x4AAAA4): invalid skill yields
+     * {@code FAILURE} without touching RNG; otherwise
+     * {@code randomRoll(skillGetValue + modifier, critChance, howMuch)},
+     * where {@code critChance = critterGetStat(CRITICAL_CHANCE)} (clamped 0
+     * headless) and {@code howMuch} follows the same {@code int[]} out-param
+     * convention as {@link GameRandom#randomRoll} ({@code null} allowed).
+     *
+     * <p>Dude branches (dormant headless: {@code G_DUDE} is null so
+     * {@link #isDude} reads false with a null guard): the
+     * {@code partyMemberGetBestInSkill} substitution (non-steal skills) and
+     * the steal sneak {@code +30} bonus never fire. The party helpers live
+     * in the unported party engine, so there is intentionally no call site
+     * here — just the documented dormancy, like {@link #skillGetValue}.
+     * The crit upgrade inside {@code randomRoll} takes the day-0 plain
+     * path on both sides (harness day 0, Java default clock 0), so each leg
+     * consumes exactly one d100.
+     */
+    public static GameRandom.Roll skillRoll(GameObject critter, int skill, int modifier, int[] howMuch) {
+        if (!SkillDefs.skillIsValid(skill)) {
+            return GameRandom.Roll.FAILURE;
+        }
+
+        int skillValue = skillGetValue(critter, skill);
+
+        int criticalChance =
+            Stat.critterGetStat(critter, StatDefs.Stat.STAT_CRITICAL_CHANCE.id());
+        return GameRandom.randomRoll(skillValue + modifier, criticalChance, howMuch);
+    }
+
+    /**
      * Port of {@code skillSetMaximum}: out-of-range values restore the
      * vanilla ceiling (300), like sfall.
      */
