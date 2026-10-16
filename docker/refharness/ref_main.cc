@@ -59,6 +59,7 @@
 #include "scripts.h"
 #include "trait.h"
 #include "object.h"
+#include "map.h"
 #include "item.h"
 #include "inventory.h"
 #include "sfall_config.h"
@@ -6071,6 +6072,34 @@ void sectionProtoCopy()
         (twin != nullptr && twin != stim) ? 1 : 0, objCost, objCostBare);
 }
 
+void sectionMapVars()
+{
+    std::puts("[mapvars]");
+
+    // No window system needed. Global length stays zero (map-owned);
+    // locals grow on demand. Rebuild resets tile light then re-applies.
+    fallout::ProgramValue out;
+    out.opcode = VALUE_TYPE_INT;
+    out.integerValue = -999;
+    int globRc = fallout::mapGetGlobalVar(0, out);
+    int allocRc = fallout::mapAllocLocalVars(3);
+    fallout::ProgramValue setVal(42);
+    int setRc = fallout::mapSetLocalVar(1, setVal);
+    fallout::ProgramValue gotVal;
+    gotVal.opcode = VALUE_TYPE_INT;
+    gotVal.integerValue = -999;
+    int getRc = fallout::mapGetLocalVar(1, gotVal);
+    int badRc = fallout::mapGetLocalVar(99, gotVal);
+    std::printf("glob=%d alloc=%d set=%d get=%d:%d bad=%d\n",
+        globRc, allocRc, setRc, getRc, gotVal.integerValue, badRc);
+
+    fallout::lightSetTileIntensity(0, 20100, 70000);
+    int preRebuild = fallout::lightGetTileIntensity(0, 20100);
+    fallout::_obj_rebuild_all_light();
+    int postRebuild = fallout::lightGetTileIntensity(0, 20100);
+    std::printf("pre=%d post=%d\n", preRebuild, postRebuild);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6177,5 +6206,6 @@ int main()
     sectionArtHide();
     sectionProtoNew();
     sectionProtoCopy();
+    sectionMapVars();
     return 0;
 }

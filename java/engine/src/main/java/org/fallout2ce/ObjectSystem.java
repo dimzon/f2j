@@ -1238,6 +1238,23 @@ public final class ObjectSystem {
         return Art.artIsObjectTypeHidden(FrmId.ofFid(obj.fid).objectType().value()) != 0;
     }
 
+    // 0x48AC54 _obj_rebuild_all_light: resets tile intensity, then
+    // re-applies each tile-placed object via _obj_adjust_light(obj, 0,
+    // null). The guards-only adjustLight slice applies nothing for
+    // light-0 objects (they bail at the intensity guard), so headless
+    // this is just the reset; the tileHeads walk itself is faithful.
+    public static void objRebuildAllLight() {
+        Light.lightResetTileIntensity();
+
+        for (int tile = 0; tile < MapDefs.HEX_GRID_SIZE; tile++) {
+            GameObjectListNode node = tileHeads[tile];
+            while (node != null) {
+                adjustLight(node.obj, false);
+                node = node.next;
+            }
+        }
+    }
+
     // Guards-only slice of 0x48D8E8-adjacent _obj_adjust_light: the tile
     // falloff application needs _light_offsets/objectGetRect (map/render
     // ports). increase=false adds light, true removes it.
