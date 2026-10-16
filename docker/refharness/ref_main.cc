@@ -6339,6 +6339,43 @@ void sectionSfallIni()
         setOk ? 1 : 0, critAfter, critCleared);
 }
 
+void sectionObjPlace()
+{
+    std::puts("[objplace]");
+
+    // No window system needed. Null rects skip all screen refresh math.
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    int locBadTile = fallout::objectSetLocation(dog, -1, 0, nullptr);
+    int locBadElev = fallout::objectSetLocation(dog, 20100, 9, nullptr);
+    int locNull = fallout::objectSetLocation(nullptr, 20100, 0, nullptr);
+    int locRc = fallout::objectSetLocation(dog, 20100, 0, nullptr);
+    int findPlaced = -999;
+    fallout::Object* placedObj = fallout::objectFindById(dog->id);
+    if (placedObj != nullptr) {
+        findPlaced = placedObj->pid;
+    }
+    fallout::Object* findMiss = fallout::objectFindById(999999);
+    std::printf("locbad=%d,%d null=%d loc=%d tile=%d elev=%d find=%d missnull=%d\n",
+        locBadTile, locBadElev, locNull, locRc, dog->tile, dog->elevation,
+        findPlaced, findMiss == nullptr ? 1 : 0);
+
+    fallout::lightSetTileIntensity(0, 20100, 70000);
+    int brightLight = fallout::objectGetLightIntensity(dog);
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    int floatLight = fallout::objectGetLightIntensity(stim);
+    std::printf("bright=%d float=%d\n", brightLight, floatLight);
+
+    int frameRc = fallout::objectSetFrame(dog, 0, nullptr);
+    int frameBad = fallout::objectSetFrame(dog, 999, nullptr);
+    int frameNull = fallout::objectSetFrame(nullptr, 0, nullptr);
+    int enOutline = fallout::objectEnableOutline(dog, nullptr);
+    int disOutline = fallout::objectDisableOutline(dog, nullptr);
+    std::printf("frame=%d bad=%d null=%d en=%d dis=%d\n",
+        frameRc, frameBad, frameNull, enOutline, disOutline);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6455,5 +6492,6 @@ int main()
     sectionNevsEvents();
     sectionSfallVars();
     sectionSfallIni();
+    sectionObjPlace();
     return 0;
 }

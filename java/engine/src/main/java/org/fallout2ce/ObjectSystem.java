@@ -49,7 +49,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code sectionItemDrop}: {@code itemDropAll} drops land on a tile via
  * {@code objectConnect}), and {@code [objvis]} in
  * {@code docker/refharness/golden/v69.txt} (produced by
- * {@code sectionObjVis}).
+ * {@code sectionObjVis}), and {@code [objplace]} in
+ * {@code docker/refharness/golden/v86.txt} (produced by
+ * {@code sectionObjPlace}).
  *
  * <p>Game objects reuse {@link ObjTypes.GameObject} (v33, renamed from C
  * {@code Object}); nothing is duplicated here. Flags stay immutable bit
@@ -156,6 +158,35 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code objectFindFirst}/{@code objectFindNext} (now the tile-head
  * slice, like C++) keep seeing dropped objects only via the tile
  * heads; the floating nodes stay invisible to find.</li>
+ * <li>{@code objectSetLocation} ({@code obj_move_to_tile}) takes no
+ * rect: the slice always passes null (adjust-light results ignored,
+ * no rect fill/union, like C++). It unlinks the existing node and
+ * reuses the {@code _obj_connect_to_tile} body inline (field set +
+ * {@code insertNode} + add-light); the {@code objectConnect}
+ * second-node quirk does NOT apply (C reuses the unlinked node
+ * there). The {@code isInCombat} outline tail, the {@code gDude}
+ * exit-grid/roof/egg/elevation tails and the non-null-rect unions
+ * need combat/map/render (game phase); dormant headless.</li>
+ * <li>{@code objectFindById} ({@code objFindObjPtrFromID}) scans via
+ * {@code objectFindFirst}/{@code objectFindNext}, exactly like C.</li>
+ * <li>{@code objectGetLightIntensity} ({@code obj_get_visible_light})
+ * reads the RAW tile value ({@code lightGetTrueTileIntensity}, not
+ * the clamped getter) vs ambient with the C clamp pin
+ * ({@code >= ambient} keeps, capped at {@code LIGHT_INTENSITY_MAX},
+ * else ambient). The {@code gDude} self-light subtract is dormant
+ * (unported game-phase global, null headless).</li>
+ * <li>{@code objectSetFrame} ({@code obj_set_frame}) locks art for the
+ * fid and gates {@code frame >= frameCount} only (no lower-bound
+ * gate, like C++); fid untouched. Next/prev wrap like C++
+ * ({@code >= count -> 0}, {@code < 0 -> count - 1}). A null art
+ * lock (or null decoded art) returns -1, like the C null-art miss.
+ * Rect overloads deferred (null-rect shape only).</li>
+ * <li>{@code objectEnableOutline} clears {@code OUTLINE_DISABLED} and
+ * {@code objectDisableOutline} sets it iff outlined (null returns
+ * -1), exactly like C++; rect overloads deferred.</li>
+ * <li>{@code resetForTests} gains no new state: setLocation reuses the
+ * listed node (no new globals), findById rides the find cursor,
+ * light state resets via {@code Light}, art via {@code Art}.</li>
   * </ul>
   */
 public final class ObjectSystem {
@@ -548,6 +579,20 @@ public final class ObjectSystem {
         return null;
     }
 
+    // 0x48B2E8 objFindObjPtrFromID: tile-head scan via
+    // objectFindFirst/objectFindNext, exactly like C.
+    public static GameObject objectFindById(int id) {
+        GameObject obj = objectFindFirst();
+        while (obj != null) {
+            if (obj.id == id) {
+                return obj;
+            }
+            obj = objectFindNext();
+        }
+
+        return null;
+    }
+
     // 0x48AD50 obj_set_light (rect overload deferred: the slice always
     // passes null; rect rendering comes with the map/render ports).
     public static int objectSetLight(GameObject obj, int lightDistance, int lightIntensity) {
@@ -611,6 +656,27 @@ public final class ObjectSystem {
         return 0;
     }
 
+    // 0x48AD04 obj_get_visible_light: RAW tile intensity
+    // (lightGetTrueTileIntensity, not the clamped getter) vs ambient,
+    // with the C clamp pin ({@code >= ambient} keeps, capped at
+    // LIGHT_INTENSITY_MAX, else ambient). The gDude self-light subtract
+    // is dormant (unported game-phase global, null headless). Like C++,
+    // a null object is not guarded (it dereferences).
+    public static int objectGetLightIntensity(GameObject obj) {
+        int ambientIntensity = Light.lightGetAmbientIntensity();
+        int tileIntensity = Light.lightGetTrueTileIntensity(obj.elevation, obj.tile);
+
+        if (tileIntensity >= ambientIntensity) {
+            if (tileIntensity > Light.LIGHT_INTENSITY_MAX) {
+                tileIntensity = Light.LIGHT_INTENSITY_MAX;
+            }
+        } else {
+            tileIntensity = ambientIntensity;
+        }
+
+        return tileIntensity;
+    }
+
     // 0x48AF2C obj_toggle_flat (rect overload deferred like objectSetLight;
     // the slice always passes null, so both C++ paths collapse into the
     // unlink + xor + insert below).
@@ -657,6 +723,54 @@ public final class ObjectSystem {
         return connectToTile(node, tile, elevation);
     }
 
+    // 0x48A568 obj_move_to_tile (rect overload deferred: the slice always
+    // passes null, so the rect fill/union tails are dropped and the
+    // adjust-light results are ignored, like C++). Null -> -1, bad
+    // tile/elev -> -1, list-node miss -> -1, else unlink + the
+    // _obj_connect_to_tile body on the SAME node (field set, insert,
+    // add-light). The isInCombat outline tail, the gDude
+    // exit-grid/roof/egg/elevation tails and the non-null-rect unions
+    // need combat/map/render (game phase); dormant headless.
+    public static int objectSetLocation(GameObject obj, int tile, int elevation) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (!MapDefs.hexGridTileIsValid(tile)) {
+            return -1;
+        }
+
+        if (!MapDefs.elevationIsValid(elevation)) {
+            return -1;
+        }
+
+        GameObjectListNode[] prevSlot = new GameObjectListNode[1];
+        GameObjectListNode node = findListNode(obj, prevSlot);
+        if (node == null) {
+            return -1;
+        }
+
+        // _obj_adjust_light(obj, 1, null): null-rect shape, result ignored.
+        adjustLight(obj, true);
+
+        unlinkNode(node, prevSlot[0]);
+
+        // _obj_connect_to_tile body (same node, not a second node like
+        // objectConnect; see class notes).
+        node.obj.tile = tile;
+        node.obj.elevation = elevation;
+        node.obj.x = 0;
+        node.obj.y = 0;
+        node.obj.owner = null;
+
+        insertNode(node);
+
+        // _obj_adjust_light(obj, 0, null): null-rect shape, result ignored.
+        adjustLight(node.obj, false);
+
+        return 0;
+    }
+
     // Sets object fid (0x48AA3C obj_change_fid, rect overload deferred:
     // the dirty-rect union needs objectGetRect/render engine, game
     // phase; the slice passes a rect only from the itemDropAll equipped
@@ -674,6 +788,88 @@ public final class ObjectSystem {
         }
 
         obj.fid = frmId.fid();
+
+        return 0;
+    }
+
+    // Sets object frame (0x48AA84 obj_set_frame, null-rect shape only:
+    // the slice always passes null, so the objectGetRect/rectUnion tail
+    // is dropped, like the other setters). Null -> -1, art-lock miss ->
+    // -1, frame >= frameCount -> -1 (no lower-bound gate, like C++);
+    // else store. Fid untouched.
+    public static int objectSetFrame(GameObject obj, int frame) {
+        if (obj == null) {
+            return -1;
+        }
+
+        int framesPerDirection;
+        try (Art.ArtLock lock = Art.artLock(FrmId.ofFid(obj.fid))) {
+            if (lock == null || lock.art() == null) {
+                return -1;
+            }
+
+            framesPerDirection = Art.artGetFrameCount(lock.art());
+        }
+
+        if (frame >= framesPerDirection) {
+            return -1;
+        }
+
+        obj.frame = frame;
+
+        return 0;
+    }
+
+    // 0x48AAF0 obj_inc_frame (null-rect shape only, like objectSetFrame).
+    // Null -> -1, art-lock miss -> -1, else frame + 1 wrapping
+    // (count -> 0).
+    public static int objectSetNextFrame(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        int framesPerDirection;
+        try (Art.ArtLock lock = Art.artLock(FrmId.ofFid(obj.fid))) {
+            if (lock == null || lock.art() == null) {
+                return -1;
+            }
+
+            framesPerDirection = Art.artGetFrameCount(lock.art());
+        }
+
+        int nextFrame = obj.frame + 1;
+        if (nextFrame >= framesPerDirection) {
+            nextFrame = 0;
+        }
+
+        obj.frame = nextFrame;
+
+        return 0;
+    }
+
+    // 0x48AB60 obj_dec_frame (null-rect shape only, like objectSetFrame).
+    // Null -> -1, art-lock miss -> -1, else frame - 1 wrapping
+    // (< 0 -> count - 1).
+    public static int objectSetPrevFrame(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        int framesPerDirection;
+        try (Art.ArtLock lock = Art.artLock(FrmId.ofFid(obj.fid))) {
+            if (lock == null || lock.art() == null) {
+                return -1;
+            }
+
+            framesPerDirection = Art.artGetFrameCount(lock.art());
+        }
+
+        int prevFrame = obj.frame - 1;
+        if (prevFrame < 0) {
+            prevFrame = framesPerDirection - 1;
+        }
+
+        obj.frame = prevFrame;
 
         return 0;
     }
@@ -761,6 +957,34 @@ public final class ObjectSystem {
         }
 
         obj.outline = OutlineType.NONE;
+
+        return 0;
+    }
+
+    // 0x48AEE4 obj_turn_on_outline (null-rect shape only: the slice
+    // always passes null, so the objectGetRect tail is dropped, like
+    // objectSetOutline). Null -> -1, else clear OUTLINE_DISABLED.
+    public static int objectEnableOutline(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        obj.outline = obj.outline.and(~ObjTypes.OUTLINE_DISABLED);
+
+        return 0;
+    }
+
+    // 0x48AF00 obj_turn_off_outline (null-rect shape only, like
+    // objectEnableOutline). Null -> -1, else set OUTLINE_DISABLED iff
+    // outlined.
+    public static int objectDisableOutline(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (objectHasOutline(obj)) {
+            obj.outline = obj.outline.or(ObjTypes.OUTLINE_DISABLED);
+        }
 
         return 0;
     }
