@@ -574,6 +574,68 @@ public final class ObjectSystem {
         return owner;
     }
 
+    // objectSetRotation (src/object.cc, 0x48ABD4): null object -> -1,
+    // invalid rotation -> -1, else store and return 0. The C++ dirty-rect
+    // overload (objectGetRect + rectUnion into the caller rect) needs the
+    // render engine (objectGetRect, game phase); the vectors always pass
+    // null, so this slice is the plain field set.
+    public static int objectSetRotation(GameObject obj, int rotation) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (!ObjTypes.rotationIsValid(rotation)) {
+            return -1;
+        }
+
+        obj.rotation = ObjTypes.ofRotation(rotation);
+        return 0;
+    }
+
+    // Rotation-enum overload (delegates to the int form, like the C++
+    // Rotation parameter).
+    public static int objectSetRotation(GameObject obj, Rotation rotation) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (rotation == null) {
+            return -1;
+        }
+
+        return objectSetRotation(obj, rotation.id());
+    }
+
+    // 0x48AC20 obj_inc_rotation: +1, wrapping COUNT -> NE. C++ dereferences
+    // obj before the set call; Java guards null -> -1 (the set path still
+    // returns -1 for null, like C++ objectSetRotation).
+    public static int objectRotateClockwise(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        int rotation = obj.rotation.id() + 1;
+        if (rotation >= ObjTypes.ROTATION_COUNT) {
+            rotation = ObjTypes.ROTATION_FIRST;
+        }
+
+        return objectSetRotation(obj, rotation);
+    }
+
+    // 0x48AC38 obj_dec_rotation: -1, wrapping <0 -> NW (null guard as above).
+    public static int objectRotateCounterClockwise(GameObject obj) {
+        if (obj == null) {
+            return -1;
+        }
+
+        int rotation = obj.rotation.id() - 1;
+        if (rotation < 0) {
+            rotation = ObjTypes.ROTATION_LAST;
+        }
+
+        return objectSetRotation(obj, rotation);
+    }
+
     // 0x49A9B4 objectSetScriptFromProto (src/proto_instance.cc): pure
     // prefix only; the scriptAdd tail needs the script engine (see class
     // notes). Operates on obj.sid directly (C takes &obj->sid).

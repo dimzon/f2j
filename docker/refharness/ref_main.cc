@@ -5801,6 +5801,43 @@ void sectionObjFind()
         destroyDog, countAfterDog, destroyStim, firstAfter);
 }
 
+void sectionObjAttrs()
+{
+    std::puts("[objattrs]");
+
+    // No window system needed. Null rects skip all screen refresh math.
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    int rot0 = dog->rotation;
+    int cwRc1 = fallout::objectRotateClockwise(dog, nullptr);
+    int cwRc2 = fallout::objectRotateClockwise(dog, nullptr);
+    int rot2 = dog->rotation;
+    int ccwRc = fallout::objectRotateCounterClockwise(dog, nullptr);
+    int rot1 = dog->rotation;
+    int setRc = fallout::objectSetRotation(dog, fallout::ROTATION_NW, nullptr);
+    int rotNw = dog->rotation;
+    int setBad = fallout::objectSetRotation(dog, (fallout::Rotation)6, nullptr);
+    int rotAfterBad = dog->rotation;
+    int setNull = fallout::objectSetRotation(nullptr, fallout::ROTATION_NE, nullptr);
+    std::printf("rot0=%d cw=%d,%d rot2=%d ccw=%d rot1=%d set=%d nw=%d bad=%d still=%d null=%d\n",
+        rot0, cwRc1, cwRc2, rot2, ccwRc, rot1, setRc, rotNw, setBad, rotAfterBad, setNull);
+
+    // Ownership follows inventory moves (add alone does not adopt).
+    fallout::Object* dog2 = nullptr;
+    fallout::objectCreateWithProtoId(&dog2, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* ownerFree = fallout::objectGetOwner(stim);
+    fallout::itemAdd(dog, stim, 1);
+    fallout::Object* ownerAfterAdd = fallout::objectGetOwner(stim);
+    fallout::itemMoveForce(dog, dog2, stim, 1);
+    fallout::Object* ownerAfterMove = fallout::objectGetOwner(stim);
+    std::printf("owner-free=%d owner-add=%d owner-move=%d\n",
+        ownerFree == nullptr ? 1 : 0,
+        ownerAfterAdd == nullptr ? 1 : 0,
+        ownerAfterMove == dog2 ? 1 : 0);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5899,5 +5936,6 @@ int main()
     sectionExplosives();
     sectionVitals();
     sectionObjFind();
+    sectionObjAttrs();
     return 0;
 }
