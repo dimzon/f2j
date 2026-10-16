@@ -87,6 +87,37 @@ public final class TraitDefs {
     // needs no script state — it is valid && selected && !disabled.
     private static final boolean[] TRAIT_HARDCODE_DISABLED = new boolean[TRAIT_COUNT];
 
+    /**
+     * Compile-time {@code frmId} column of {@code traitDescriptions} (and
+     * {@code defaultTraitFrmIds}) in {@code src/trait.cc} (index = trait
+     * id), as raw skilldex frame ids. Transcribed verbatim:
+     * FastMetabolism(55) Bruiser(56) SmallFrame(57) OneHander(58)
+     * Finesse(59) Kamikaze(60) HeavyHanded(61) FastShot(62) BloodyMess(63)
+     * Jinxed(64) GoodNatured(65) ChemReliant&rarr;DrugAddict(66)
+     * ChemResistant&rarr;DrugResistant(67) SexAppeal&rarr;Empathy(94)
+     * Skilled(69) Gifted(70). The static initializer (not BSS zero, not
+     * sfall) is the {@code Gifted=70} source the {@code [frmids]} harness
+     * observes headless ({@code traitsInit} never runs there either).
+     */
+    private static final int[] TRAIT_FRM_IDS = {
+        ArtDefs.SkillDexFrameId.FastMetabolism.id(), // TRAIT_FAST_METABOLISM
+        ArtDefs.SkillDexFrameId.Bruiser.id(), // TRAIT_BRUISER
+        ArtDefs.SkillDexFrameId.SmallFrame.id(), // TRAIT_SMALL_FRAME
+        ArtDefs.SkillDexFrameId.OneHander.id(), // TRAIT_ONE_HANDER
+        ArtDefs.SkillDexFrameId.Finesse.id(), // TRAIT_FINESSE
+        ArtDefs.SkillDexFrameId.Kamikaze.id(), // TRAIT_KAMIKAZE
+        ArtDefs.SkillDexFrameId.HeavyHanded.id(), // TRAIT_HEAVY_HANDED
+        ArtDefs.SkillDexFrameId.FastShot.id(), // TRAIT_FAST_SHOT
+        ArtDefs.SkillDexFrameId.BloodyMess.id(), // TRAIT_BLOODY_MESS
+        ArtDefs.SkillDexFrameId.Jinxed.id(), // TRAIT_JINXED
+        ArtDefs.SkillDexFrameId.GoodNatured.id(), // TRAIT_GOOD_NATURED
+        ArtDefs.SkillDexFrameId.DrugAddict.id(), // TRAIT_CHEM_RELIANT
+        ArtDefs.SkillDexFrameId.DrugResistant.id(), // TRAIT_CHEM_RESISTANT
+        ArtDefs.SkillDexFrameId.Empathy.id(), // TRAIT_SEX_APPEAL
+        ArtDefs.SkillDexFrameId.Skilled.id(), // TRAIT_SKILLED
+        ArtDefs.SkillDexFrameId.Gifted.id(), // TRAIT_GIFTED
+    };
+
     // Port of `traitsReset` (0x4B3AF8 trait_reset): stores TRAIT_INVALID in
     // both slots. NOTE: there is no "zero" reset in C; reset means INVALID.
     public static void traitsReset() {
@@ -116,6 +147,17 @@ public final class TraitDefs {
     // hardcode not disabled. No script/game state involved.
     public static boolean traitIsSelectedAndActive(int trait) {
         return traitIsValid(trait) && traitIsSelected(trait) && !TRAIT_HARDCODE_DISABLED[trait];
+    }
+
+    /**
+     * Port of `traitGetFrmId` (0x4B3BA8 trait_pic, `src/trait.cc`): valid
+     * trait yields the compile-time `frmId` frame id, invalid trait yields
+     * `SkillDexFrameId::Invalid` (`-1`).
+     */
+    public static int traitGetFrmId(int trait) {
+        return traitIsValid(trait)
+            ? TRAIT_FRM_IDS[trait]
+            : ArtDefs.SkillDexFrameId.Invalid.id();
     }
 
     // Port of `traitGetStatModifier` (0x4B3C7C trait_adjust_stat).

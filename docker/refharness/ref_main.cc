@@ -6606,6 +6606,21 @@ void sectionStatsSave()
     std::printf("save=%d load=%d back=%d,%d\n", saveRc, loadRc, levelBack, repBack);
 }
 
+void sectionFrmIds()
+{
+    std::puts("[frmids]");
+
+    // No window system needed. Skill/stat/trait frame ids are compiled
+    // into the description tables (Gifted rides its static initializer).
+    int sneakFrm = fallout::skillGetFrmId(fallout::SKILL_SNEAK).frameId();
+    int skillBad = fallout::skillGetFrmId((fallout::Skill)-1).frameId();
+    int strFrm = fallout::statGetFrmId(fallout::STAT_STRENGTH).frameId();
+    int statBad = fallout::statGetFrmId((fallout::Stat)-1).frameId();
+    int giftedFrm = fallout::traitGetFrmId((fallout::Trait)15).frameId();
+    std::printf("sneak=%d skillbad=%d str=%d statbad=%d gifted=%d\n",
+        sneakFrm, skillBad, strFrm, statBad, giftedFrm);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6731,5 +6746,6 @@ int main()
     sectionProgramStack();
     sectionProgRetStack();
     sectionStatsSave();
+    sectionFrmIds();
     return 0;
 }

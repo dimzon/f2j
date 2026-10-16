@@ -109,6 +109,60 @@ public final class Stat {
     // start zero, not at defaults).
     private static final int[] PC_STAT_VALUES = new int[StatDefs.PC_STAT_COUNT];
 
+    /**
+     * Compile-time {@code frmId} column of {@code gStatDescriptions} in
+     * {@code src/stat.cc} (index = stat id), as raw skilldex frame ids.
+     * Transcribed verbatim: STR(0) PER(1) END(2) CHA(3) INT(4) AGI(5)
+     * LUCK(6) MAX_HP HitPoints(10) MAX_AP BonusMove(75) AC ArmorClass(18)
+     * UNARMED Unarmed(31) MELEE MeleeWeapons(32) CARRY CarryWeight(20)
+     * SEQ Sequence(24) HEAL HealingRate(25) CRIT CriticalChance(26)
+     * BETTER Empathy(94) DT/DT_* Strength(0) DR DamageResistance(22)
+     * DR_* Strength(0) RAD RadResistance(83) POISON PoisonResistance(23)
+     * AGE Strength(0) GENDER Strength(0) CUR_HP HitPoints(10) CUR_POISON
+     * Poisoned(11) CUR_RAD Radiated(12). {@code STR=0} pins the
+     * {@code [frmids]} vector.
+     */
+    private static final int[] STAT_FRM_IDS = {
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_STRENGTH
+        ArtDefs.SkillDexFrameId.Perception.id(), // STAT_PERCEPTION
+        ArtDefs.SkillDexFrameId.Endurance.id(), // STAT_ENDURANCE
+        ArtDefs.SkillDexFrameId.Charisma.id(), // STAT_CHARISMA
+        ArtDefs.SkillDexFrameId.Intelligence.id(), // STAT_INTELLIGENCE
+        ArtDefs.SkillDexFrameId.Agility.id(), // STAT_AGILITY
+        ArtDefs.SkillDexFrameId.Luck.id(), // STAT_LUCK
+        ArtDefs.SkillDexFrameId.HitPoints.id(), // STAT_MAXIMUM_HIT_POINTS
+        ArtDefs.SkillDexFrameId.BonusMove.id(), // STAT_MAXIMUM_ACTION_POINTS
+        ArtDefs.SkillDexFrameId.ArmorClass.id(), // STAT_ARMOR_CLASS
+        ArtDefs.SkillDexFrameId.Unarmed.id(), // STAT_UNARMED_DAMAGE
+        ArtDefs.SkillDexFrameId.MeleeWeapons.id(), // STAT_MELEE_DAMAGE
+        ArtDefs.SkillDexFrameId.CarryWeight.id(), // STAT_CARRY_WEIGHT
+        ArtDefs.SkillDexFrameId.Sequence.id(), // STAT_SEQUENCE
+        ArtDefs.SkillDexFrameId.HealingRate.id(), // STAT_HEALING_RATE
+        ArtDefs.SkillDexFrameId.CriticalChance.id(), // STAT_CRITICAL_CHANCE
+        ArtDefs.SkillDexFrameId.Empathy.id(), // STAT_BETTER_CRITICALS
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_THRESHOLD
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_THRESHOLD_LASER
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_THRESHOLD_FIRE
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_THRESHOLD_PLASMA
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_THRESHOLD_ELECTRICAL
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_THRESHOLD_EMP
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_THRESHOLD_EXPLOSION
+        ArtDefs.SkillDexFrameId.DamageResistance.id(), // STAT_DAMAGE_RESISTANCE
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_RESISTANCE_LASER
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_RESISTANCE_FIRE
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_RESISTANCE_PLASMA
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_RESISTANCE_ELECTRICAL
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_RESISTANCE_EMP
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_DAMAGE_RESISTANCE_EXPLOSION
+        ArtDefs.SkillDexFrameId.RadResistance.id(), // STAT_RADIATION_RESISTANCE
+        ArtDefs.SkillDexFrameId.PoisonResistance.id(), // STAT_POISON_RESISTANCE
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_AGE
+        ArtDefs.SkillDexFrameId.Strength.id(), // STAT_GENDER
+        ArtDefs.SkillDexFrameId.HitPoints.id(), // STAT_CURRENT_HIT_POINTS
+        ArtDefs.SkillDexFrameId.Poisoned.id(), // STAT_CURRENT_POISON_LEVEL
+        ArtDefs.SkillDexFrameId.Radiated.id(), // STAT_CURRENT_RADIATION_LEVEL
+    };
+
     // Port of `xpTable[]` / `xpTableThresholds` (src/stat.cc): zero
     // headless (no content config parsed, so `pcExperienceTableInit` never
     // fills the table), hence `pcGetMaxLevel()` returns PC_LEVEL_MAX (99)
@@ -165,6 +219,17 @@ public final class Stat {
     /** Port of {@code statGetUnspentApPerkBonus}. */
     public static int statGetUnspentApPerkBonus() {
         return unspentApPerkBonus;
+    }
+
+    /**
+     * Port of {@code statGetFrmId} ({@code src/stat.cc}): valid stat yields
+     * the compile-time {@code frmId} frame id, invalid stat yields
+     * {@code SkillDexFrameId::Invalid} ({@code -1}).
+     */
+    public static int statGetFrmId(int stat) {
+        return StatDefs.statIsValid(stat)
+            ? STAT_FRM_IDS[stat]
+            : ArtDefs.SkillDexFrameId.Invalid.id();
     }
 
     // Port of `statGetMaximum` (src/stat.cc): dude reads the pc tables,

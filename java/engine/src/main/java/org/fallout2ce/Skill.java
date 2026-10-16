@@ -158,6 +158,37 @@ public final class Skill {
     };
 
     /**
+     * Compile-time per-skill {@code frmId} column of
+     * {@code gSkillDescriptions}/{@code defaultSkillDescriptions} in
+     * {@code src/skill.cc} (index = skill id), as raw skilldex frame ids.
+     * Transcribed from the enum names: SmallGuns(28) BigGuns(29)
+     * EnergyWeapons(30) Unarmed(31) MeleeWeapons(32) Throwing(33)
+     * FirstAid(34) Doctor(35) Sneak(36) Lockpick(37) Steal(38) Traps(39)
+     * Science(40) Repair(41) Speech(42) Barter(43) Gambling(44)
+     * Outdoorsman(45). {@code Sneak=36} pins the {@code [frmids]} vector.
+     */
+    private static final int[] SKILL_FRM_IDS = {
+        ArtDefs.SkillDexFrameId.SmallGuns.id(), // SmallGuns
+        ArtDefs.SkillDexFrameId.BigGuns.id(), // BigGuns
+        ArtDefs.SkillDexFrameId.EnergyWeapons.id(), // EnergyWeapons
+        ArtDefs.SkillDexFrameId.Unarmed.id(), // Unarmed
+        ArtDefs.SkillDexFrameId.MeleeWeapons.id(), // MeleeWeapons
+        ArtDefs.SkillDexFrameId.Throwing.id(), // Throwing
+        ArtDefs.SkillDexFrameId.FirstAid.id(), // FirstAid
+        ArtDefs.SkillDexFrameId.Doctor.id(), // Doctor
+        ArtDefs.SkillDexFrameId.Sneak.id(), // Sneak
+        ArtDefs.SkillDexFrameId.Lockpick.id(), // Lockpick
+        ArtDefs.SkillDexFrameId.Steal.id(), // Steal
+        ArtDefs.SkillDexFrameId.Traps.id(), // Traps
+        ArtDefs.SkillDexFrameId.Science.id(), // Science
+        ArtDefs.SkillDexFrameId.Repair.id(), // Repair
+        ArtDefs.SkillDexFrameId.Speech.id(), // Speech
+        ArtDefs.SkillDexFrameId.Barter.id(), // Barter
+        ArtDefs.SkillDexFrameId.Gambling.id(), // Gambling
+        ArtDefs.SkillDexFrameId.Outdoorsman.id(), // Outdoorsman
+    };
+
+    /**
      * Tagged-state array, mirroring {@code gTaggedSkills} in
      * {@code src/skill.cc}. Zero-init (all ids 0 = SmallGuns).
      */
@@ -221,6 +252,17 @@ public final class Skill {
     /** Port of {@code skillGetDefaultValue}: invalid skill yields -5. */
     public static int getDefaultValue(int skill) {
         return SkillDefs.skillIsValid(skill) ? DEFAULT_VALUES[skill] : -5;
+    }
+
+    /**
+     * Port of {@code skillGetFrmId} ({@code src/skill.cc}): valid skill
+     * yields the compile-time {@code frmId} frame id, invalid skill yields
+     * {@code SkillDexFrameId::Invalid} ({@code -1}).
+     */
+    public static int skillGetFrmId(int skill) {
+        return SkillDefs.skillIsValid(skill)
+            ? SKILL_FRM_IDS[skill]
+            : ArtDefs.SkillDexFrameId.Invalid.id();
     }
 
     /** Port of {@code skillIsTagged}. */
