@@ -4534,6 +4534,107 @@ void sectionWinDlg()
     kbSim(SDL_SCANCODE_ESCAPE, 1);
     int numEscRc = fallout::win_get_num_i(&numVal2, 0, 99, true, (char*)"Age", 200, 150);
     std::printf("num-rc=%d num-val=%d numesc-rc=%d numesc-val=%d\n", numRc, numVal, numEscRc, numVal2);
+}
+
+static const char* const* gListCbItems = nullptr;
+static int gListCbIndex = -99;
+
+static void testListCb(const char* const* items, int index)
+{
+    gListCbItems = items;
+    gListCbIndex = index;
+}
+
+void sectionWinMenu2()
+{
+    std::puts("[winmenu2]");
+
+    // Reuses the live system (re-init is impossible, see [winbtn]).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+    fallout::mouseSetFrame(nullptr, 0, 0, 0, 0, 0, 0);
+    fallout::mouseManagerShowMouse();
+    fallout::keyboardSetLayout(fallout::KEYBOARD_LAYOUT_QWERTY);
+
+    // Park the mouse away from every button: the modal pumps below read
+    // keys from _kb_getch, mouse input would corrupt the sequences.
+    fallout::_mouse_set_position(639, 479);
+    fallout::_mouse_simulate_input(0, 0, 0);
+
+    // Standalone pulldown (no menu bar): arrows skip the "" separator.
+    char* navItems[] = { (char*)"A", (char*)"", (char*)"C" };
+    kbSim(SDL_SCANCODE_DOWN, 1);
+    kbSim(SDL_SCANCODE_DOWN, 1);
+    kbSim(SDL_SCANCODE_DOWN, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int navRc = fallout::_win_pull_down(navItems, 3, 300, 200, (fallout::ColorWithFlags)3);
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int navEscRc = fallout::_win_pull_down(navItems, 3, 300, 200, (fallout::ColorWithFlags)3);
+    std::printf("nav=%d navesc=%d\n", navRc, navEscRc);
+
+    // Menu-bar processing on a registered bar: DOWN+RETURN picks item 0
+    // of pulldown 0 (returns its keyCode, enqueues the item index).
+    int mwin = fallout::windowCreate(10, 300, 200, 60, (fallout::ColorWithFlags)5, 0);
+    fallout::windowShow(mwin);
+    fallout::_win_register_menu_bar(mwin, 0, 0, 200, 12,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    char* gameItems[] = { (char*)"New", (char*)"Load", (char*)"Exit" };
+    char* optItems[] = { (char*)"On", (char*)"Off" };
+    fallout::_win_register_menu_pulldown(mwin, 2, (char*)"Game", 101, 3, gameItems,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    fallout::_win_register_menu_pulldown(mwin, 60, (char*)"Opt", 102, 2, optItems,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    fallout::MenuBar* menuBar = fallout::windowGetWindow(mwin)->menuBar;
+    kbSim(SDL_SCANCODE_DOWN, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int menuRet = fallout::_GNW_process_menu(menuBar, 0);
+    int menuQueued = fallout::inputGetInput();
+    // RIGHT switches to pulldown 1, ESC aborts the whole menu.
+    kbSim(SDL_SCANCODE_RIGHT, 1);
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int menuSwitch = fallout::_GNW_process_menu(menuBar, 0);
+    std::printf("menuret=%d menuqueued=%d menuswitch=%d\n", menuRet, menuQueued, menuSwitch);
+    fallout::_win_delete_menu_bar(mwin);
+    fallout::windowDestroy(mwin);
+
+    // List selection: immediate RETURN, arrows, ESC, callback, start offset.
+    const char* files[] = { "alpha", "bravo", "CHARLIE", "delta" };
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int listNow = fallout::_win_list_select((char*)"Pick", files, 4, nullptr, 200, 100,
+        (fallout::ColorWithFlags)3);
+    kbSim(SDL_SCANCODE_DOWN, 1);
+    kbSim(SDL_SCANCODE_DOWN, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int listNav = fallout::_win_list_select((char*)"Pick", files, 4, nullptr, 200, 100,
+        (fallout::ColorWithFlags)3);
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int listEsc = fallout::_win_list_select((char*)"Pick", files, 4, nullptr, 200, 100,
+        (fallout::ColorWithFlags)3);
+    std::printf("list-now=%d list-nav=%d list-esc=%d\n", listNow, listNav, listEsc);
+
+    gListCbIndex = -99;
+    kbSim(SDL_SCANCODE_DOWN, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int listCbRet = fallout::_win_list_select((char*)"Pick", files, 4, testListCb, 200, 100,
+        (fallout::ColorWithFlags)3);
+    // NOTE: start>0 with a short list overreads the item array upstream
+    // (_win_text(items+start, itemsLength)), so the offset/scroll paths use
+    // a 12-item list (capacity is 10): start=2 selects index 2, 'g' jumps
+    // to index 6 through the first-letter branch.
+    const char* files12[] = { "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l" };
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int listAt = fallout::_win_list_select_at((char*)"Pick", files12, 12, nullptr, 200, 100,
+        (fallout::ColorWithFlags)3, 2);
+    kbSim(SDL_SCANCODE_G, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int listLetter = fallout::_win_list_select_at((char*)"Pick", files12, 12, nullptr, 200, 100,
+        (fallout::ColorWithFlags)3, 0);
+    std::printf("listcb-idx=%d listcb-ret=%d listat=%d listletter=%d\n",
+        gListCbIndex, listCbRet, listAt, listLetter);
 
     fallout::windowManagerExit();
 }
@@ -4610,5 +4711,6 @@ int main()
     sectionWinMenu();
     sectionWinFrm();
     sectionWinDlg();
+    sectionWinMenu2();
     return 0;
 }

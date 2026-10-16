@@ -448,8 +448,14 @@ public final class Draw {
 
     /** Port of {@code _swap_color_buf}. */
     public static void swapColorBuf(byte[] buf, int width, int height, int pitch, int color1, int color2) {
+        swapColorBuf(buf, 0, width, height, pitch, color1, color2);
+    }
+
+    /** Port of {@code _swap_color_buf} starting at an offset (C++ pointer arithmetic). */
+    public static void swapColorBuf(byte[] buf, int offset, int width, int height, int pitch, int color1,
+            int color2) {
         int step = pitch - width;
-        int i = 0;
+        int i = offset;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int current = Byte.toUnsignedInt(buf[i]) & 0xFF;

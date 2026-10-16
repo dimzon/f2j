@@ -184,6 +184,12 @@ public final class WindowManager {
         void handle(int btn);
     }
 
+    /** Port of {@code ListSelectionHandler} (window_manager_private.h). */
+    @FunctionalInterface
+    public interface ListSelectionHandler {
+        void handle(String[] items, int index);
+    }
+
     /** Port of {@code Button}. */
     public static final class Button {
         public int id;
@@ -358,6 +364,9 @@ public final class WindowManager {
 
     /** Port of {@code _last_button_winID}. */
     private static int lastButtonWinId = -1;
+
+    /** Port of {@code _curr_menu} (re-entrancy guard for {@code gnwProcessMenu}). */
+    private static MenuBar currMenu;
 
     static {
         for (int index = 0; index < buttonGroups.length; index++) {
@@ -2107,16 +2116,42 @@ public final class WindowManager {
         return input;
     }
 
-    /**
-     * Stub for {@code _GNW_process_menu} (window_manager_private.cc): the full
-     * pulldown loop needs dialogs/text input, so only the no-menu passthrough
-     * is live. Never triggers while no window owns a matching pulldown.
-     */
+    /** Port of {@code _GNW_process_menu} (0x4DC930, window_manager_private.cc). */
     static int gnwProcessMenu(MenuBar menuBar, int pulldownIndex) {
-        if (menuBar == null || pulldownIndex < 0 || pulldownIndex >= menuBar.pulldownsLength) {
+        if (currMenu != null) {
             return -1;
         }
-        return menuBar.pulldowns[pulldownIndex].keyCode;
+
+        currMenu = menuBar;
+
+        int keyCode;
+        Geometry.Rect rect = new Geometry.Rect();
+        do {
+            MenuPulldown pulldown = menuBar.pulldowns[pulldownIndex];
+            int win = createPullDown(pulldown.items, pulldown.itemsLength,
+                pulldown.rect.left, menuBar.rect.bottom + 1,
+                pulldown.foregroundColor, pulldown.backgroundColor, rect);
+            if (win == -1) {
+                currMenu = null;
+                return -1;
+            }
+
+            keyCode = processPullDown(win, rect, pulldown.items, pulldown.itemsLength,
+                pulldown.foregroundColor, pulldown.backgroundColor, menuBar, pulldownIndex);
+            if (keyCode < -1) {
+                pulldownIndex = -2 - keyCode;
+            }
+        } while (keyCode < -1);
+
+        if (keyCode != -1) {
+            Input.inputEventQueueReset();
+            Input.enqueueInputEvent(keyCode);
+            keyCode = menuBar.pulldowns[pulldownIndex].keyCode;
+        }
+
+        currMenu = null;
+
+        return keyCode;
     }
 
     /** Port of {@code win_drag} (0x4D765C): harness never drags, minimal stub. */
@@ -3309,6 +3344,592 @@ public final class WindowManager {
         return win;
     }
 
+    /** Port of {@code _win_pull_down} (window_manager_private.cc). */
+    public static int winPullDown(String[] items, int itemsLength, int x, int y, int color) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        Geometry.Rect rect = new Geometry.Rect();
+        int win = createPullDown(items, itemsLength, x, y, color,
+            (Color.colorTable[gnwWcolor[0]] & 0xFF) | Color.DRAW_TEXT_FLAG_NONE, rect);
+        if (win == -1) {
+            return -1;
+        }
+
+        return processPullDown(win, rect, items, itemsLength, color,
+            (Color.colorTable[gnwWcolor[0]] & 0xFF) | Color.DRAW_TEXT_FLAG_NONE, null, -1);
+    }
+
+    /** Port of {@code process_pull_down} (0x4DBD04, window_manager_private.cc). */
+    public static int processPullDown(int win, Geometry.Rect rect, String[] items, int itemsLength,
+            int foregroundColor, int backgroundColor, MenuBar menuBar, int pulldownIndex) {
+        if (menuBar != null) {
+            Window parentWindow = windowGetWindow(menuBar.win);
+            byte[] parentWindowBuffer = parentWindow.buffer;
+            MenuPulldown pulldown = menuBar.pulldowns[pulldownIndex];
+
+            int swapX = pulldown.rect.left;
+            int swapY = pulldown.rect.top;
+            int swapWidth = pulldown.rect.right - swapX + 1;
+            int swapHeight = pulldown.rect.bottom - swapY + 1;
+
+            int color1 = resolveMenuColor(menuBar.foregroundColor);
+            int color2 = resolveMenuColor(menuBar.backgroundColor);
+
+            swapPulldownColors(menuBar.win, parentWindowBuffer, swapX, swapY, swapWidth, swapHeight,
+                color1, color2);
+            windowRefreshRect(menuBar.win, pulldown.rect);
+        }
+
+        Window window = windowGetWindow(win);
+        byte[] windowBuffer = window.buffer;
+        int width = Geometry.rectGetWidth(rect);
+        int height = Geometry.rectGetHeight(rect);
+
+        int focusedIndex = -1;
+        int rc = -1;
+        int[] pos = new int[2];
+        Mouse.mouseGetPosition(pos);
+        int mx1 = pos[0];
+        int my1 = pos[1];
+        int input;
+
+        while (true) {
+            Color.fpsLimiter.mark();
+
+            input = Input.inputGetInput();
+            if (input != -1) {
+                break;
+            }
+
+            Mouse.mouseGetPosition(pos);
+            int mx2 = pos[0];
+            int my2 = pos[1];
+
+            if (mx2 < mx1 - 4 || mx2 > mx1 + 4 || my2 < my1 - 4 || my2 > my1 + 4) {
+                break;
+            }
+
+            Svga.renderPresent();
+            Color.fpsLimiter.throttle();
+        }
+
+        while (true) {
+            Color.fpsLimiter.mark();
+
+            Mouse.mouseGetPosition(pos);
+            int mx2 = pos[0];
+            int my2 = pos[1];
+
+            if (input == -2) {
+                if (menuBar != null
+                    && Mouse.mouseClickIn(menuBar.rect.left, menuBar.rect.top,
+                        menuBar.rect.right, menuBar.rect.bottom)) {
+                    int index;
+                    for (index = 0; index < menuBar.pulldownsLength; index++) {
+                        MenuPulldown pulldown = menuBar.pulldowns[index];
+                        if (Mouse.mouseClickIn(pulldown.rect.left, pulldown.rect.top,
+                            pulldown.rect.right, pulldown.rect.bottom)) {
+                            break;
+                        }
+                    }
+
+                    if (index < menuBar.pulldownsLength && index != pulldownIndex) {
+                        rc = -2 - index;
+                        break;
+                    }
+                }
+            }
+
+            int mouseEvent = Mouse.mouseGetEvent();
+            if ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_UP) != 0
+                || ((mouseEvent & Mouse.EVENT_LEFT_BUTTON_DOWN) != 0
+                    && (mouseEvent & Mouse.EVENT_LEFT_BUTTON_REPEAT) == 0)) {
+                if (Mouse.mouseClickIn(rect.left, rect.top + 8, rect.right, rect.bottom - 9)) {
+                    rc = focusedIndex;
+                } else {
+                    rc = -1;
+                }
+                break;
+            }
+
+            boolean done = false;
+            if (input == Kb.KEY_ESCAPE) {
+                rc = -1;
+                done = true;
+            } else if (input == Kb.KEY_RETURN) {
+                rc = focusedIndex;
+                done = true;
+            } else if (input == Kb.KEY_ARROW_LEFT) {
+                if (menuBar != null && pulldownIndex > 0) {
+                    rc = -2 - (pulldownIndex - 1);
+                    done = true;
+                }
+            } else if (input == Kb.KEY_ARROW_RIGHT) {
+                if (menuBar != null && pulldownIndex < menuBar.pulldownsLength - 1) {
+                    rc = -2 - (pulldownIndex + 1);
+                    done = true;
+                }
+            } else if (input == Kb.KEY_ARROW_UP) {
+                while (focusedIndex > 0) {
+                    focusedIndex--;
+
+                    if (!items[focusedIndex].isEmpty()) {
+                        break;
+                    }
+                }
+                input = -3;
+            } else if (input == Kb.KEY_ARROW_DOWN) {
+                while (focusedIndex < itemsLength - 1) {
+                    focusedIndex++;
+
+                    if (!items[focusedIndex].isEmpty()) {
+                        break;
+                    }
+                }
+                input = -3;
+            } else {
+                if (mx2 != mx1 || my2 != my1) {
+                    if (Mouse.mouseClickIn(rect.left, rect.top + 8, rect.right, rect.bottom - 9)) {
+                        input = (my2 - rect.top - 8) / TextFont.fontGetLineHeight();
+                        if (input != -1) {
+                            focusedIndex = !items[input].isEmpty() ? input : -1;
+                            input = -3;
+                        }
+                    }
+
+                    mx1 = mx2;
+                    my1 = my2;
+                }
+            }
+
+            if (done) {
+                break;
+            }
+
+            if (input == -3) {
+                windowFill(win, 2, 8, width - 4, height - 16, backgroundColor);
+                winText(win, sliceItems(items, 0, itemsLength), width - 4, 2, 8, foregroundColor);
+
+                if (focusedIndex != -1) {
+                    Draw.lightenBuf(windowBuffer,
+                        (focusedIndex * TextFont.fontGetLineHeight() + 8) * width + 2,
+                        width - 4, TextFont.fontGetLineHeight(), width);
+                }
+
+                windowRefresh(win);
+            }
+
+            input = Input.inputGetInput();
+
+            Svga.renderPresent();
+            Color.fpsLimiter.throttle();
+        }
+
+        if (menuBar != null) {
+            Window parentWindow = windowGetWindow(menuBar.win);
+            byte[] parentWindowBuffer = parentWindow.buffer;
+            MenuPulldown pulldown = menuBar.pulldowns[pulldownIndex];
+
+            int swapX = pulldown.rect.left;
+            int swapY = pulldown.rect.top;
+            int swapWidth = pulldown.rect.right - swapX + 1;
+            int swapHeight = pulldown.rect.bottom - swapY + 1;
+
+            int color1 = resolveMenuColor(menuBar.foregroundColor);
+            int color2 = resolveMenuColor(menuBar.backgroundColor);
+
+            swapPulldownColors(menuBar.win, parentWindowBuffer, swapX, swapY, swapWidth, swapHeight,
+                color1, color2);
+            windowRefreshRect(menuBar.win, pulldown.rect);
+
+            Svga.renderPresent();
+        }
+
+        windowDestroy(win);
+
+        return rc;
+    }
+
+    /** Port of {@code _win_list_select} (window_manager_private.cc). */
+    public static int winListSelect(String title, String[] fileList, int fileListLength,
+            ListSelectionHandler callback, int x, int y, int color) {
+        return winListSelectAt(title, fileList, fileListLength, callback, x, y, color, 0);
+    }
+
+    /** Port of {@code _win_list_select_at} (0x4DA70C, window_manager_private.cc). */
+    public static int winListSelectAt(String title, String[] items, int itemsLength,
+            ListSelectionHandler callback, int x, int y, int color, int start) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        int listViewWidth = winWidthNeeded(items, itemsLength);
+        int windowWidth = listViewWidth + 16;
+
+        int titleWidth = TextFont.fontGetStringWidth(title);
+        if (titleWidth > windowWidth) {
+            windowWidth = titleWidth;
+            listViewWidth = titleWidth - 16;
+        }
+
+        windowWidth += 20;
+
+        int win = -1;
+        int windowHeight = 0;
+        int listViewCapacity = 10;
+        for (int heightMultiplier = 13; heightMultiplier > 8; heightMultiplier--) {
+            windowHeight = heightMultiplier * TextFont.fontGetLineHeight() + 22;
+            win = windowCreate(x, y, windowWidth, windowHeight, Color.COLOR_COUNT,
+                WindowFlags.WINDOW_MODAL.id() | WindowFlags.WINDOW_MOVE_ON_TOP.id());
+            if (win != -1) {
+                break;
+            }
+            listViewCapacity--;
+        }
+
+        if (win == -1) {
+            return -1;
+        }
+
+        Window window = windowGetWindow(win);
+        Geometry.Rect windowRect = window.rect;
+        byte[] windowBuffer = window.buffer;
+
+        int lineHeight = TextFont.fontGetLineHeight();
+        int light = Color.colorTable[gnwWcolor[1]] & 0xFF;
+        int shadow = Color.colorTable[gnwWcolor[2]] & 0xFF;
+        int fill = Color.colorTable[gnwWcolor[0]] & 0xFF;
+
+        Draw.bufferDrawRect(windowBuffer, windowWidth, 0, 0, windowWidth - 1, windowHeight - 1,
+            Color.colorTable[Color.rgb555(0x000000)] & 0xFF);
+        Draw.bufferDrawRectShadowed(windowBuffer, windowWidth, 1, 1, windowWidth - 2, windowHeight - 2,
+            light, shadow);
+
+        Draw.bufferFill(windowBuffer, windowWidth * 5 + 5, windowWidth - 11, lineHeight + 3,
+            windowWidth, fill);
+
+        TextFont.fontDrawText(
+            windowBuffer, windowWidth / 2 + 8 * windowWidth - TextFont.fontGetStringWidth(title) / 2,
+            title, windowWidth, windowWidth,
+            (Color.colorTable[gnwWcolor[3]] & 0xFF) | Color.DRAW_TEXT_FLAG_NONE);
+
+        Draw.bufferDrawRectShadowed(windowBuffer, windowWidth, 5, 5, windowWidth - 6,
+            lineHeight + 8, shadow, light);
+
+        int listViewX = 8;
+        int listViewY = lineHeight + 16;
+        int listViewBase = windowWidth * listViewY + listViewX;
+        int listViewMaxY = listViewCapacity * lineHeight + listViewY;
+
+        Draw.bufferFill(windowBuffer, listViewBase + windowWidth * (-2) + (-3),
+            listViewWidth + listViewX - 2, listViewCapacity * lineHeight + 2, windowWidth, fill);
+
+        int scrollOffset = start;
+        if (start < 0 || start >= itemsLength) {
+            scrollOffset = 0;
+        }
+
+        // Relative to `scrollOffset`.
+        int selectedItemIndex;
+        if (itemsLength - scrollOffset < listViewCapacity) {
+            int newScrollOffset = itemsLength - listViewCapacity;
+            if (newScrollOffset < 0) {
+                newScrollOffset = 0;
+            }
+            int oldScrollOffset = scrollOffset;
+            scrollOffset = newScrollOffset;
+            selectedItemIndex = oldScrollOffset - newScrollOffset;
+        } else {
+            selectedItemIndex = 0;
+        }
+
+        // NOTE: upstream draws `_win_text(items + start, min(itemsLength, capacity))`
+        // here (and `items + scrollOffset` on the -4 repaint path). With start > 0
+        // and a short list that pointer/count pair overreads the item array (a
+        // segfault in C; `sliceItems` throws AIOOBE on the same misuse). The
+        // golden vectors never exercise it (offsets only run on the 12-item list).
+        winText(win, sliceItems(items, start, Math.min(itemsLength, listViewCapacity)),
+            listViewWidth, listViewX, listViewY, color | Color.DRAW_TEXT_FLAG_NO_BG);
+
+        Draw.lightenBuf(windowBuffer, listViewBase + windowWidth * selectedItemIndex * lineHeight,
+            listViewWidth, lineHeight, windowWidth);
+
+        Draw.bufferDrawRectShadowed(windowBuffer, windowWidth, 5, listViewY - 3,
+            listViewWidth + 10, listViewMaxY, shadow, light);
+
+        winRegisterTextButton(win, windowWidth - 25, listViewY - 3, -1, -1, Kb.KEY_ARROW_UP, -1,
+            "\u0018", 0);
+
+        winRegisterTextButton(win, windowWidth - 25, listViewMaxY - lineHeight - 5, -1, -1,
+            Kb.KEY_ARROW_DOWN, -1, "\u0019", 0);
+
+        winRegisterTextButton(win, windowWidth / 2 - 32, windowHeight - 8 - lineHeight - 6, -1, -1,
+            -1, Kb.KEY_ESCAPE, "Done", 0);
+
+        int scrollbarX = windowWidth - 21;
+        int scrollbarY = listViewY + lineHeight + 7;
+        int scrollbarKnobSize = 14;
+        int scrollbarHeight = listViewMaxY - scrollbarY;
+
+        Draw.bufferFill(windowBuffer, windowWidth * scrollbarY + scrollbarX, scrollbarKnobSize + 1,
+            scrollbarHeight - lineHeight - 8, windowWidth, fill);
+
+        buttonCreate(win, scrollbarX, scrollbarY, scrollbarKnobSize + 1,
+            scrollbarHeight - lineHeight - 8, -1, -1, 2048, -1, null, null, null, 0);
+
+        Draw.bufferDrawRectShadowed(windowBuffer, windowWidth, windowWidth - 22, scrollbarY - 1,
+            scrollbarX + scrollbarKnobSize + 1, listViewMaxY - lineHeight - 9, shadow, light);
+        Draw.bufferDrawRectShadowed(windowBuffer, windowWidth, scrollbarX, scrollbarY,
+            scrollbarX + scrollbarKnobSize, scrollbarY + scrollbarKnobSize, light, shadow);
+
+        Draw.lightenBuf(windowBuffer, windowWidth * scrollbarY + scrollbarX, scrollbarKnobSize,
+            scrollbarKnobSize, windowWidth);
+
+        for (int index = 0; index < listViewCapacity; index++) {
+            buttonCreate(win, listViewX, listViewY + index * lineHeight, listViewWidth, lineHeight,
+                512 + index, -1, 1024 + index, -1, null, null, null, 0);
+        }
+
+        buttonCreate(win, 0, 0, windowWidth, lineHeight + 8, -1, -1, -1, -1, null, null, null,
+            ButtonFlags.BUTTON_DRAG_HANDLE.id());
+
+        windowRefresh(win);
+
+        int absoluteSelectedItemIndex = -1;
+
+        // Relative to `scrollOffset`.
+        int previousSelectedItemIndex = -1;
+        while (true) {
+            Color.fpsLimiter.mark();
+
+            int keyCode = Input.inputGetInput();
+            int[] mousePos = new int[2];
+            Mouse.mouseGetPosition(mousePos);
+            int mouseY = mousePos[1];
+
+            if (keyCode == Kb.KEY_RETURN
+                || (keyCode >= 1024 && keyCode < listViewCapacity + 1024)) {
+                if (selectedItemIndex != -1) {
+                    absoluteSelectedItemIndex = scrollOffset + selectedItemIndex;
+                    if (absoluteSelectedItemIndex < itemsLength) {
+                        if (callback == null) {
+                            break;
+                        }
+
+                        callback.handle(items, absoluteSelectedItemIndex);
+                    }
+                    absoluteSelectedItemIndex = -1;
+                }
+            } else if (keyCode == 2048) {
+                if (window.rect.top + scrollbarY > mouseY) {
+                    keyCode = Kb.KEY_PAGE_UP;
+                } else if (window.rect.top + scrollbarKnobSize + scrollbarY < mouseY) {
+                    keyCode = Kb.KEY_PAGE_DOWN;
+                }
+            }
+
+            if (keyCode == Kb.KEY_ESCAPE) {
+                break;
+            }
+
+            if (keyCode >= 512 && keyCode < listViewCapacity + 512) {
+                int itemIndex = keyCode - 512;
+                if (itemIndex != selectedItemIndex && itemIndex < itemsLength) {
+                    previousSelectedItemIndex = selectedItemIndex;
+                    selectedItemIndex = itemIndex;
+                    keyCode = -3;
+                } else {
+                    continue;
+                }
+            } else {
+                if (keyCode == Kb.KEY_HOME) {
+                    if (scrollOffset > 0) {
+                        keyCode = -4;
+                        scrollOffset = 0;
+                    }
+                } else if (keyCode == Kb.KEY_ARROW_UP) {
+                    if (selectedItemIndex > 0) {
+                        keyCode = -3;
+                        previousSelectedItemIndex = selectedItemIndex;
+                        selectedItemIndex -= 1;
+                    } else {
+                        if (scrollOffset > 0) {
+                            keyCode = -4;
+                            scrollOffset -= 1;
+                        }
+                    }
+                } else if (keyCode == Kb.KEY_PAGE_UP) {
+                    if (scrollOffset > 0) {
+                        scrollOffset -= listViewCapacity;
+                        if (scrollOffset < 0) {
+                            scrollOffset = 0;
+                        }
+                        keyCode = -4;
+                    }
+                } else if (keyCode == Kb.KEY_END) {
+                    if (scrollOffset < itemsLength - listViewCapacity) {
+                        keyCode = -4;
+                        scrollOffset = itemsLength - listViewCapacity;
+                    }
+                } else if (keyCode == Kb.KEY_ARROW_DOWN) {
+                    if (selectedItemIndex < listViewCapacity - 1
+                        && selectedItemIndex < itemsLength - 1) {
+                        keyCode = -3;
+                        previousSelectedItemIndex = selectedItemIndex;
+                        selectedItemIndex += 1;
+                    } else {
+                        if (scrollOffset + listViewCapacity < itemsLength) {
+                            keyCode = -4;
+                            scrollOffset += 1;
+                        }
+                    }
+                } else if (keyCode == Kb.KEY_PAGE_DOWN) {
+                    if (scrollOffset < itemsLength - listViewCapacity) {
+                        scrollOffset += listViewCapacity;
+                        if (scrollOffset > itemsLength - listViewCapacity) {
+                            scrollOffset = itemsLength - listViewCapacity;
+                        }
+                        keyCode = -4;
+                    }
+                } else {
+                    if (itemsLength > listViewCapacity) {
+                        if ((keyCode >= 'a' && keyCode <= 'z')
+                            || (keyCode >= 'A' && keyCode <= 'Z')) {
+                            int found = findFirstLetter(keyCode, items, itemsLength);
+                            if (found != -1) {
+                                scrollOffset = found;
+                                if (scrollOffset > itemsLength - listViewCapacity) {
+                                    scrollOffset = itemsLength - listViewCapacity;
+                                }
+                                keyCode = -4;
+                                selectedItemIndex = found - scrollOffset;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (keyCode == -4) {
+                Draw.bufferFill(windowBuffer, listViewBase, listViewWidth,
+                    listViewMaxY - listViewY, windowWidth, fill);
+
+                winText(win, sliceItems(items, scrollOffset, Math.min(itemsLength, listViewCapacity)),
+                    listViewWidth, listViewX, listViewY, color | Color.DRAW_TEXT_FLAG_NO_BG);
+
+                Draw.lightenBuf(windowBuffer,
+                    listViewBase + windowWidth * selectedItemIndex * lineHeight, listViewWidth,
+                    lineHeight, windowWidth);
+
+                if (itemsLength > listViewCapacity) {
+                    Draw.bufferFill(windowBuffer, windowWidth * scrollbarY + scrollbarX,
+                        scrollbarKnobSize + 1, scrollbarKnobSize + 1, windowWidth, fill);
+
+                    scrollbarY = (scrollOffset * (listViewMaxY - listViewY - 2 * lineHeight - 16
+                        - scrollbarKnobSize - 1)) / (itemsLength - listViewCapacity)
+                        + listViewY + lineHeight + 7;
+
+                    Draw.bufferDrawRectShadowed(windowBuffer, windowWidth, scrollbarX, scrollbarY,
+                        scrollbarX + scrollbarKnobSize, scrollbarY + scrollbarKnobSize, light,
+                        shadow);
+
+                    Draw.lightenBuf(windowBuffer, windowWidth * scrollbarY + scrollbarX,
+                        scrollbarKnobSize, scrollbarKnobSize, windowWidth);
+
+                    gnwWinRefresh(window, windowRect, null);
+                }
+            } else if (keyCode == -3) {
+                Geometry.Rect itemRect = new Geometry.Rect();
+                itemRect.left = windowRect.left + listViewX;
+                itemRect.right = itemRect.left + listViewWidth;
+
+                if (previousSelectedItemIndex != -1) {
+                    itemRect.top = windowRect.top + listViewY
+                        + previousSelectedItemIndex * lineHeight;
+                    itemRect.bottom = itemRect.top + lineHeight;
+
+                    Draw.bufferFill(windowBuffer,
+                        listViewBase + windowWidth * previousSelectedItemIndex * lineHeight,
+                        listViewWidth, lineHeight, windowWidth, fill);
+
+                    int textColor;
+                    if ((color & 0xFF00) != 0) {
+                        int colorIndex = (color & Color.COLOR_LAST) - 1;
+                        textColor = (Color.colorTable[gnwWcolor[colorIndex]] & 0xFF)
+                            | (color & ~0xFFFF);
+                    } else {
+                        textColor = color;
+                    }
+
+                    TextFont.fontDrawText(windowBuffer,
+                        listViewBase + windowWidth * previousSelectedItemIndex * lineHeight,
+                        items[scrollOffset + previousSelectedItemIndex], windowWidth, windowWidth,
+                        textColor);
+
+                    gnwWinRefresh(window, itemRect, null);
+                }
+
+                if (selectedItemIndex != -1) {
+                    itemRect.top = windowRect.top + listViewY + selectedItemIndex * lineHeight;
+                    itemRect.bottom = itemRect.top + lineHeight;
+
+                    Draw.lightenBuf(windowBuffer,
+                        listViewBase + windowWidth * selectedItemIndex * lineHeight, listViewWidth,
+                        lineHeight, windowWidth);
+
+                    gnwWinRefresh(window, itemRect, null);
+                }
+            }
+
+            Svga.renderPresent();
+            Color.fpsLimiter.throttle();
+        }
+
+        windowDestroy(win);
+
+        return absoluteSelectedItemIndex;
+    }
+
+    /** C {@code items + offset} slice for the explicit-length ports above. */
+    private static String[] sliceItems(String[] items, int offset, int count) {
+        String[] slice = new String[count];
+        System.arraycopy(items, offset, slice, 0, count);
+        return slice;
+    }
+
+    /** Menu-bar color resolve shared by the {@code process_pull_down} swap pair. */
+    private static int resolveMenuColor(int color) {
+        if ((color & 0xFF00) != 0) {
+            int colorIndex = (color & Color.COLOR_LAST) - 1;
+            color = (Color.colorTable[gnwWcolor[colorIndex]] & 0xFF) | (color & ~0xFFFF);
+        }
+        return color;
+    }
+
+    /**
+     * Pulldown highlight swap shared by the {@code process_pull_down} swap pair.
+     *
+     * <p>NOTE: pulldown titles can sit half above a short menu bar (titleY goes
+     * negative), so the swap rect may start above the parent buffer. C++ swaps
+     * through a raw pointer and corrupts the heap there (unobservable in the
+     * vectors); clip to the window instead, like TextFont does for the titles.
+     */
+    private static void swapPulldownColors(int win, byte[] parentWindowBuffer, int swapX, int swapY,
+            int swapWidth, int swapHeight, int color1, int color2) {
+        int parentWidth = windowGetWidth(win);
+        int parentHeight = windowGetHeight(win);
+        int clipLeft = Math.max(swapX, 0);
+        int clipTop = Math.max(swapY, 0);
+        int clipRight = Math.min(swapX + swapWidth - 1, parentWidth - 1);
+        int clipBottom = Math.min(swapY + swapHeight - 1, parentHeight - 1);
+        if (clipRight >= clipLeft && clipBottom >= clipTop) {
+            Draw.swapColorBuf(parentWindowBuffer, clipTop * parentWidth + clipLeft,
+                clipRight - clipLeft + 1, clipBottom - clipTop + 1, parentWidth,
+                color1 & Color.COLOR_LAST, color2 & Color.COLOR_LAST);
+        }
+    }
+
     /** Port of {@code _win_input_str} (0x4DCA5C). */
     public static int winInputStr(int win, StringBuilder dest, int maxLength, int x, int y,
             int textColor, int backgroundColor) {
@@ -3697,6 +4318,7 @@ public final class WindowManager {
             buttonGroups[index] = new ButtonGroup();
         }
         lastButtonWinId = -1;
+        currMenu = null;
         txTyCounter = 0;
         tmPersistence = 0;
         tmAdd = 0;
