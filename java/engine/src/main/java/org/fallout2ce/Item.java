@@ -18,7 +18,14 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * inventory/item-accessor slice of {@code src/item.cc}: {@code itemGetType},
  * {@code itemGetWeight}, {@code itemGetCost}, {@code objectGetCost},
  * {@code objectGetInventoryWeight}, {@code itemGetQuantity}, {@code itemAdd},
- * {@code itemRemove} and the small helpers they need ({@code itemIsHidden},
+ * {@code itemAttemptAdd} (quantity/container/misc/critter gates),
+ * {@code itemGetSize}, {@code containerGetMaxSize},
+ * {@code containerGetTotalSize}, {@code miscItemGetPowerTypeProtoId},
+ * {@code itemRemove} (+ {@code itemRemoveWithReason}/{@code itemRemoveQuietly}
+ * via {@code RemoveInventoryObjectHookReason}), {@code itemMove}/
+ * {@code itemMoveForce} ({@code _item_move_func}), {@code itemMoveAll} (+
+ * {@code itemMoveAllHidden}/{@code itemDestroyAllHidden}) and the small
+ * helpers they need ({@code itemIsHidden},
  * ammo quantity/capacity, weapon ammo-type id, {@code _item_identical}),
  * plus the weapon/armor mapping slice backing {@code inven_wield}:
  * {@code weaponGetSkillForHitMode}, {@code weaponGetAttackTypeForHitMode},
@@ -41,7 +48,10 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code sectionEquip}; see {@link Inventory#inventoryEquipFunc}) and
  * {@code [ballistics]} in {@code docker/refharness/golden/v61.txt}
  * (produced by {@code sectionBallistics}; bare-hands PUNCH probes plus the
- * scorcher damage/radius and jacket armor probes).
+ * scorcher damage/radius and jacket armor probes) and {@code [itemmove]} in
+ * {@code docker/refharness/golden/v62.txt} (produced by
+ * {@code sectionItemMove}: blocked non-force move, force move + owner pin,
+ * move-all, remove + destroy + null-destroy).
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
@@ -58,9 +68,16 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code _obj_copy}/{@code _obj_disconnect}; those come with the
  * object/map ports, so the remainder keeps the same reference here.
  * Vectors pin the full-drop + shift path only.</li>
- * <li>Script hooks ({@code scriptHooks_RemoveInventoryObject},
- * {@code stealthBoyTurnOn/Off}) need the script/skill engine (game phase);
+ * <li>{@code scriptHooks_RemoveInventoryObject} fires
+ * {@code HOOK_REMOVEINVENOBJ}; with no hooks registered the call is a
+ * no-op, so headless it is a silent seam (like {@link Reaction}).
+ * {@code stealthBoyTurnOn/Off} need the script/skill engine (game phase);
  * the headless harness never arms them.</li>
+ * <li>{@code _item_move_func} re-add-failure tail ({@code _obj_connect} +
+ * tile refresh) needs the map engine (game phase); harness objects sit at
+ * tile {@code -1}, so the refresh is dormant.</li>
+ * <li>{@code objectDestroy} on the {@code itemDestroyAllHidden} path is
+ * {@link ObjectSystem#objectDestroy} (same slice, v62).</li>
  * </ul>
  */
 public final class Item {
@@ -136,6 +153,63 @@ public final class Item {
 
     public static HealingItem ofHealingItem(int id) {
         return HEALING_BY_ID.get(id);
+    }
+
+    /**
+     * Port of {@code RemoveInventoryObjectHookReason}
+     * ({@code src/sfall_script_hooks.h}): the {@code HOOK_REMOVEINVENOBJ}
+     * reason tag threaded through {@code itemRemoveInternal}. Values are
+     * the C++ hook ids (preserved).
+     */
+    public enum RemoveInventoryObjectHookReason {
+        ITEM_REMOVED_INVENTORY(4831349),
+        ITEM_REMOVED(4548572),
+        ITEM_REMOVED_MULTI(4563866),
+        ITEM_DESTROYED(4543215),
+        ITEM_DESTROY_MULTI(4571599),
+        ITEM_MOVE(4683293),
+        ITEM_REPLACE(4686256),
+        CONSUME_DRUG(4666772),
+        USE_OBJ(4666865),
+        EQUIP_ARMOR(4658121),
+        EQUIP_WEAPON(4658675),
+        UNLOAD_WEAPON(4667030),
+        USE_DRUG_ON(4834866),
+        STEAL_VIEW(4668206),
+        ARMOR_EQUIPPED(4651961),
+        LEFT_HAND_EQUIPPED(4651899),
+        RIGHT_HAND_EQUIPPED(4651934),
+        REPLACE_WEAPON(4658526),
+        THROW(4266040),
+        SUB_CONTAINER(4683191),
+        AI_USE_DRUG_ON(4359920),
+        BARTER_ARMOR(4675656),
+        BARTER_WEAPON(4675722),
+        INVENTORY_DROP_CAPS(4667295),
+        DROP_INTO_CONTAINER(4678833);
+
+        private final int id;
+
+        RemoveInventoryObjectHookReason(int id) {
+            this.id = id;
+        }
+
+        public int id() {
+            return id;
+        }
+    }
+
+    private static final Map<Integer, RemoveInventoryObjectHookReason> REMOVE_REASON_BY_ID =
+            new HashMap<>();
+
+    static {
+        for (RemoveInventoryObjectHookReason e : RemoveInventoryObjectHookReason.values()) {
+            REMOVE_REASON_BY_ID.put(e.id, e);
+        }
+    }
+
+    public static RemoveInventoryObjectHookReason ofRemoveInventoryObjectHookReason(int id) {
+        return REMOVE_REASON_BY_ID.get(id);
     }
 
     // 0x477AFC item_get_type.
@@ -507,6 +581,153 @@ public final class Item {
         return same;
     }
 
+    // 0x477158 item_attempt_add: quantity gate, then the owner-kind
+    // gates, then itemAdd. Item owners check container capacity (+ the
+    // carrier weight when the container itself is carried); misc owners
+    // only accept their power-type pid; critter owners must be biped (or
+    // carry the BARTER proto flag: -5 otherwise, including the proto-miss)
+    // and must not exceed carry weight (-6). Non-item/non-critter owners
+    // (scenery and below) skip straight to itemAdd, like C++.
+    public static int itemAttemptAdd(GameObject owner, GameObject itemToAdd, int quantity) {
+        if (quantity < 1) {
+            return -1;
+        }
+
+        ObjectType parentType = FrmId.ofFid(owner.fid).objectType();
+        if (parentType == ObjectType.ITEM) {
+            ItemType itemType = itemGetType(owner);
+            if (itemType == ItemType.ITEM_TYPE_CONTAINER) {
+                int sizeToAdd = itemGetSize(itemToAdd) * quantity;
+
+                int currentSize = containerGetTotalSize(owner);
+                int maxSize = containerGetMaxSize(owner);
+                if (currentSize + sizeToAdd > maxSize) {
+                    return -6;
+                }
+
+                GameObject containerOwner = ObjectSystem.objectGetOwner(owner);
+                if (containerOwner != null
+                        && FrmId.ofFid(containerOwner.fid).objectType() == ObjectType.CRITTER) {
+                    int weightToAdd = itemGetWeight(itemToAdd) * quantity;
+
+                    int currentWeight = objectGetInventoryWeight(containerOwner);
+                    int maxWeight = Stat.critterGetStat(containerOwner,
+                            StatDefs.Stat.STAT_CARRY_WEIGHT.id());
+                    if (currentWeight + weightToAdd > maxWeight) {
+                        return -6;
+                    }
+                }
+            } else if (itemType == ItemType.ITEM_TYPE_MISC) {
+                ProtoId powerTypeProtoId = miscItemGetPowerTypeProtoId(owner);
+                if (powerTypeProtoId.pid() != itemToAdd.pid) {
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+        } else if (parentType == ObjectType.CRITTER) {
+            if (critterGetBodyType(owner) != ProtoTypes.BodyType.BODY_TYPE_BIPED) {
+                // SFALL: non-biped critters with the Barter flag (Skynet,
+                // Goris) can still be planted on.
+                Proto[] slot = new Proto[1];
+                if (ProtoDb.protoGetProto(ProtoId.ofGameObject(owner), slot) == -1) {
+                    return -5;
+                }
+
+                if ((slot[0].critter.data.flags.bits()
+                        & ObjTypes.CritterFlags.BARTER.bits()) == 0) {
+                    return -5;
+                }
+            }
+
+            int weightToAdd = itemGetWeight(itemToAdd) * quantity;
+
+            int currentWeight = objectGetInventoryWeight(owner);
+            int maxWeight =
+                    Stat.critterGetStat(owner, StatDefs.Stat.STAT_CARRY_WEIGHT.id());
+            if (currentWeight + weightToAdd > maxWeight) {
+                return -6;
+            }
+        }
+
+        return itemAdd(owner, itemToAdd, quantity);
+    }
+
+    // item_get_size (src/item.cc): null -> 0 (C++ skips the proto-miss
+    // check; vectors always load).
+    public static int itemGetSize(GameObject item) {
+        if (item == null) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(item), slot);
+
+        return slot[0].item.size;
+    }
+
+    // 0x479A00 container_get_max_size: null -> 0.
+    public static int containerGetMaxSize(GameObject container) {
+        if (container == null) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(container), slot);
+
+        return slot[0].item.data.container.maxSize;
+    }
+
+    // 0x479A20 container_get_total_size: null -> 0, else quantity x size
+    // over the stack list.
+    public static int containerGetTotalSize(GameObject container) {
+        if (container == null) {
+            return 0;
+        }
+
+        int totalSize = 0;
+
+        List<InventoryItem> items = container.data.inventory.items;
+        for (int index = 0; index < items.size(); index++) {
+            InventoryItem entry = items.get(index);
+            totalSize += entry.quantity * itemGetSize(entry.item);
+        }
+
+        return totalSize;
+    }
+
+    // 0x479454 misc_item_get_power_type_pid: null -> empty (C++ skips the
+    // proto-miss check; vectors always load).
+    public static ProtoId miscItemGetPowerTypeProtoId(GameObject miscItem) {
+        if (miscItem == null) {
+            return ProtoId.empty();
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(miscItem), slot);
+
+        return ProtoId.ofPid(slot[0].item.data.misc.powerTypePid);
+    }
+
+    // critter_get_body_type (src/critter.cc 0x42E6AC-ish): null or
+    // non-critter -> BIPED (C++ debugPrints on null; Java stays silent,
+    // see Reaction). C++ skips the proto-miss check (vectors always load).
+    private static ProtoTypes.BodyType critterGetBodyType(GameObject critter) {
+        if (critter == null) {
+            return ProtoTypes.BodyType.BODY_TYPE_BIPED;
+        }
+
+        ProtoId protoId = ProtoId.ofGameObject(critter);
+        if (protoId.objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return ProtoTypes.BodyType.BODY_TYPE_BIPED;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(protoId, slot);
+
+        return slot[0].critter.data.bodyType;
+    }
+
     // 0x4772B8 item_add_force: quantity < 1 -> -1; identical stacks merge
     // (ammo clips have their own merge math); new stacks store item +
     // quantity and take ownership; returns 0.
@@ -571,14 +792,32 @@ public final class Item {
 
     // 0x477490 item_remove.
     public static int itemRemove(GameObject owner, GameObject itemToRemove, int quantity) {
-        return itemRemoveInternal(owner, itemToRemove, quantity);
+        return itemRemoveInternal(owner, itemToRemove, quantity,
+                RemoveInventoryObjectHookReason.ITEM_REMOVED_INVENTORY, null, true);
     }
 
-    // item_remove_internal: pointer scan (+ sub-container recursion);
+    // item_remove_with_reason (src/item.cc): reason + target ride into
+    // the RemoveInventoryObject hook.
+    public static int itemRemoveWithReason(GameObject owner, GameObject itemToRemove, int quantity,
+            RemoveInventoryObjectHookReason reason, GameObject target) {
+        return itemRemoveInternal(owner, itemToRemove, quantity, reason, target, true);
+    }
+
+    // item_remove_quietly: the hook is skipped.
+    public static int itemRemoveQuietly(GameObject owner, GameObject itemToRemove, int quantity) {
+        return itemRemoveInternal(owner, itemToRemove, quantity,
+                RemoveInventoryObjectHookReason.ITEM_REMOVED_INVENTORY, null, false);
+    }
+
+    // item_remove_internal: pointer scan (+ sub-container recursion, which
+    // re-tags the reason as SubContainer with a null target, keeping the
+    // hook flag);
     // miss or short stack -> -1; full drop compacts (shifts the tail);
-    // partial drop decrements. Hook + stealth-boy engine tails deferred
+    // partial drop decrements. The hook is silent headless (no script
+    // engine); stealth-boy + _obj_copy/_obj_disconnect tails deferred
     // (game phase); the harness never arms them.
-    private static int itemRemoveInternal(GameObject owner, GameObject itemToRemove, int quantity) {
+    private static int itemRemoveInternal(GameObject owner, GameObject itemToRemove, int quantity,
+            RemoveInventoryObjectHookReason reason, GameObject target, boolean runHook) {
         List<InventoryItem> items = owner.data.inventory.items;
 
         int index = 0;
@@ -589,7 +828,8 @@ public final class Item {
             }
 
             if (itemGetType(entry.item) == ItemType.ITEM_TYPE_CONTAINER) {
-                if (itemRemoveInternal(entry.item, itemToRemove, quantity) == 0) {
+                if (itemRemoveInternal(entry.item, itemToRemove, quantity,
+                        RemoveInventoryObjectHookReason.SUB_CONTAINER, null, runHook) == 0) {
                     return 0;
                 }
             }
@@ -604,7 +844,9 @@ public final class Item {
             return -1;
         }
 
-        // scriptHooks_RemoveInventoryObject(owner, ...): script engine.
+        if (runHook) {
+            scriptHooksRemoveInventoryObject(owner, itemToRemove, quantity, reason, target);
+        }
 
         if (entry.quantity == quantity) {
             // _item_compact: shift the tail down.
@@ -627,7 +869,11 @@ public final class Item {
             GameObject item1 = Inventory.critterGetItem1(owner);
             GameObject item2 = Inventory.critterGetItem2(owner);
             if (itemToRemove == item1 || itemToRemove == item2) {
-                // stealthBoyTurnOff(owner, itemToRemove): skill engine.
+                GameObject ultimateOwner = ObjectSystem.objectGetOwner(itemToRemove);
+                if (ultimateOwner != null) {
+                    // stealthBoyTurnOff(ultimateOwner, itemToRemove):
+                    // skill engine (game phase).
+                }
             }
         }
 
@@ -635,6 +881,110 @@ public final class Item {
         itemToRemove.flags = itemToRemove.flags.and(ObjectFlags.EQUIPPED.not());
 
         return 0;
+    }
+
+    // 0x477608 _item_move_func: remove-with-reason (ItemMove, target rides
+    // along) FIRST; a -1 there returns -1 with the source untouched. Then
+    // the force-gated add; on add failure the stack is re-added to the
+    // source (re-add failure drops to the tile-connect tail) and -1 is
+    // returned. Success pins item->owner to the target (itemAdd already
+    // does; C++ writes it again).
+    private static int itemMoveFunc(
+            GameObject source, GameObject target, GameObject item, int quantity, boolean force) {
+        if (itemRemoveWithReason(
+                source, item, quantity, RemoveInventoryObjectHookReason.ITEM_MOVE, target)
+                == -1) {
+            return -1;
+        }
+
+        int rc;
+        if (force) {
+            rc = itemAdd(target, item, quantity);
+        } else {
+            rc = itemAttemptAdd(target, item, quantity);
+        }
+
+        if (rc != 0) {
+            if (itemAdd(source, item, quantity) != 0) {
+                GameObject owner = ObjectSystem.objectGetOwner(source);
+                if (owner == null) {
+                    owner = source;
+                }
+
+                if (owner.tile != -1) {
+                    // _obj_connect(item, tile, elevation, rect) +
+                    // tileWindowRefreshRect: map engine (game phase).
+                    // Harness objects sit at tile -1, so this is dormant.
+                }
+            }
+            return -1;
+        }
+
+        item.owner = target;
+
+        return 0;
+    }
+
+    // 0x47769C item_move.
+    public static int itemMove(GameObject from, GameObject to, GameObject item, int quantity) {
+        return itemMoveFunc(from, to, item, quantity, false);
+    }
+
+    // 0x4776A4 item_move_force.
+    public static int itemMoveForce(GameObject from, GameObject to, GameObject item, int quantity) {
+        return itemMoveFunc(from, to, item, quantity, true);
+    }
+
+    // 0x4776AC item_move_all: force-move slot 0 until the source is empty.
+    public static void itemMoveAll(GameObject from, GameObject to) {
+        List<InventoryItem> items = from.data.inventory.items;
+        while (!items.isEmpty()) {
+            InventoryItem entry = items.get(0);
+            itemMoveForce(from, to, entry.item, entry.quantity);
+        }
+    }
+
+    // 0x4776E0 item_move_all_hidden: force-move hidden stacks only (the
+    // moved stack shifts into the scan slot, so the index only advances
+    // past non-hidden stacks). Not vectored; trivially pure, ported whole.
+    public static int itemMoveAllHidden(GameObject from, GameObject to) {
+        List<InventoryItem> items = from.data.inventory.items;
+        for (int index = 0; index < items.size();) {
+            InventoryItem entry = items.get(index);
+            if (itemIsHidden(entry.item)) {
+                itemMoveForce(from, to, entry.item, entry.quantity);
+            } else {
+                index++;
+            }
+        }
+        return 0;
+    }
+
+    // 0x477770 item_destroy_all_hidden: remove one + destroy every hidden
+    // stack (same scan shape as move-all-hidden). Not vectored; trivially
+    // pure, ported whole (destroy is ObjectSystem#objectDestroy, v62).
+    public static int itemDestroyAllHidden(GameObject owner) {
+        List<InventoryItem> items = owner.data.inventory.items;
+        for (int index = 0; index < items.size();) {
+            InventoryItem entry = items.get(index);
+            GameObject item = entry.item;
+            if (itemIsHidden(item)) {
+                itemRemoveWithReason(owner, item, 1,
+                        RemoveInventoryObjectHookReason.ITEM_DESTROYED, null);
+                ObjectSystem.objectDestroy(item);
+            } else {
+                index++;
+            }
+        }
+        return 0;
+    }
+
+    // scriptHooks_RemoveInventoryObject (src/sfall_script_hooks.cc): fires
+    // HOOK_REMOVEINVENOBJ; with no hooks registered the call is a no-op.
+    // The script engine is game phase; headless this is silent (see
+    // Reaction).
+    private static void scriptHooksRemoveInventoryObject(GameObject owner, GameObject item,
+            int quantity, RemoveInventoryObjectHookReason reason, GameObject target) {
     }
 
     // Weapon extended-flags -> skill table (src/item.cc 0x519160

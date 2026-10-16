@@ -250,4 +250,69 @@ class InventoryTest {
         assertEquals(3, worn.pid);
         assertNull(bare);
     }
+
+    @Test
+    void itemMoveVectors() {
+        // [itemmove] from docker/refharness/golden/v62.txt, produced by
+        // sectionItemMove in docker/refharness/ref_main.cc. Two dogs pass a
+        // stimpak (pid 40) and cash (pid 41) back and forth: the plain move
+        // is blocked (dogs are non-biped without the barter flag, so
+        // itemAttemptAdd rejects with -5 AFTER the remove; the stack is
+        // re-added to the source and _item_move_func returns -1), the force
+        // move skips the gate (owner pins to dog2), moveAll force-moves the
+        // cash, then cash is removed and destroyed (null destroy -> -1),
+        // leaving the stimpak in dog2 slot 0.
+        GameObject[] dog1Slot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dog1Slot, ProtoId.ofPid(16777558)));
+        assertNotNull(dog1Slot[0]);
+        GameObject dog1 = dog1Slot[0];
+
+        GameObject[] dog2Slot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dog2Slot, ProtoId.ofPid(16777558)));
+        assertNotNull(dog2Slot[0]);
+        GameObject dog2 = dog2Slot[0];
+
+        GameObject[] stimSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(stimSlot, ProtoId.ofPid(40)));
+        assertNotNull(stimSlot[0]);
+        GameObject stim = stimSlot[0];
+
+        GameObject[] cashSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(cashSlot, ProtoId.ofPid(41)));
+        assertNotNull(cashSlot[0]);
+        GameObject cash = cashSlot[0];
+
+        assertEquals(0, Item.itemAdd(dog1, stim, 1));
+        assertEquals(0, Item.itemAdd(dog1, cash, 2));
+
+        // move=-1 blocked-q=1 force=0 q=0,1 owned=1 moveall-cash=0,2
+        int move = Item.itemMove(dog1, dog2, stim, 1);
+        int blockedQ = Item.itemGetQuantity(dog1, stim);
+        int force = Item.itemMoveForce(dog1, dog2, stim, 1);
+        int q1 = Item.itemGetQuantity(dog1, stim);
+        int q2 = Item.itemGetQuantity(dog2, stim);
+        int owned = stim.owner == dog2 ? 1 : 0;
+        Item.itemMoveAll(dog1, dog2);
+        int cashQ1 = Item.itemGetQuantity(dog1, cash);
+        int cashQ2 = Item.itemGetQuantity(dog2, cash);
+        assertEquals(-1, move);
+        assertEquals(1, blockedQ);
+        assertEquals(0, force);
+        assertEquals(0, q1);
+        assertEquals(1, q2);
+        assertEquals(1, owned);
+        assertEquals(0, cashQ1);
+        assertEquals(2, cashQ2);
+
+        // rem=0 destroy=0 destroynull=-1 slot0=40
+        int rem = Item.itemRemove(dog2, cash, 2);
+        int destroy = ObjectSystem.objectDestroy(cash);
+        int destroyNull = ObjectSystem.objectDestroy(null);
+        GameObject slot0 = Inventory.inventoryItemByIndex(dog2, 0);
+        assertEquals(0, rem);
+        assertEquals(0, destroy);
+        assertEquals(-1, destroyNull);
+        assertNotNull(slot0);
+        assertEquals(40, slot0.pid);
+    }
 }

@@ -5569,6 +5569,43 @@ void sectionBallistics()
         worn != nullptr ? worn->pid : -999, bare == nullptr ? 1 : 0);
 }
 
+void sectionItemMove()
+{
+    std::puts("[itemmove]");
+
+    // No window system needed. Two critters pass stacks back and forth.
+    fallout::Object* dog1 = nullptr;
+    fallout::objectCreateWithProtoId(&dog1, fallout::ProtoId(16777558));
+    fallout::Object* dog2 = nullptr;
+    fallout::objectCreateWithProtoId(&dog2, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* cash = nullptr;
+    fallout::objectCreateWithProtoId(&cash, fallout::ProtoId(41));
+    fallout::itemAdd(dog1, stim, 1);
+    fallout::itemAdd(dog1, cash, 2);
+
+    int moveStim = fallout::itemMove(dog1, dog2, stim, 1);
+    int qBlocked1 = fallout::itemGetQuantity(dog1, stim);
+    // Non-force checks biped/barter carrying rules (dogs fail); force skips.
+    int moveForce = fallout::itemMoveForce(dog1, dog2, stim, 1);
+    int q1 = fallout::itemGetQuantity(dog1, stim);
+    int q2 = fallout::itemGetQuantity(dog2, stim);
+    int owned2 = stim->owner == dog2 ? 1 : 0;
+    fallout::itemMoveAll(dog1, dog2);
+    int qCash1 = fallout::itemGetQuantity(dog1, cash);
+    int qCash2 = fallout::itemGetQuantity(dog2, cash);
+    std::printf("move=%d blocked-q=%d force=%d q=%d,%d owned=%d moveall-cash=%d,%d\n",
+        moveStim, qBlocked1, moveForce, q1, q2, owned2, qCash1, qCash2);
+
+    int remCash = fallout::itemRemove(dog2, cash, 2);
+    int destroyCash = fallout::objectDestroy(cash, nullptr);
+    int destroyNull = fallout::objectDestroy(nullptr, nullptr);
+    fallout::Object* slot0 = fallout::inventoryItemByIndex(dog2, 0);
+    std::printf("rem=%d destroy=%d destroynull=%d slot0=%d\n",
+        remCash, destroyCash, destroyNull, slot0 != nullptr ? slot0->pid : -999);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5661,5 +5698,6 @@ int main()
     sectionInventory();
     sectionEquip();
     sectionBallistics();
+    sectionItemMove();
     return 0;
 }

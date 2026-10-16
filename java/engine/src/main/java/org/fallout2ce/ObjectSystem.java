@@ -1,9 +1,12 @@
 package org.fallout2ce;
 
+import java.util.List;
+
 import org.fallout2ce.ObjTypes.CritterManeuver;
 import org.fallout2ce.ObjTypes.Dam;
 import org.fallout2ce.ObjTypes.GameObject;
 import org.fallout2ce.ObjTypes.GameObjectListNode;
+import org.fallout2ce.ObjTypes.InventoryItem;
 import org.fallout2ce.ObjTypes.ObjectFlags;
 import org.fallout2ce.ObjTypes.OutlineType;
 import org.fallout2ce.ObjTypes.Rotation;
@@ -20,12 +23,18 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code src/scripts.cc}), {@code objectSetLight} /
  * {@code _obj_turn_off_light} / {@code _obj_turn_on_light},
  * {@code _obj_toggle_flat}, {@code objectSetScriptFromProto} (gate only,
- * from {@code src/proto_instance.cc}) and {@code _proto_update_init} /
- * {@code objectDataReset} (gates only, from {@code src/proto.cc}).
+ * from {@code src/proto_instance.cc}), {@code _proto_update_init} /
+ * {@code objectDataReset} (gates only, from {@code src/proto.cc}), plus the
+ * destroy path: {@code objectDestroy} ({@code obj_erase_object}) over
+ * {@code _obj_remove} / {@code _obj_inven_free} / {@code objectGetListNode}
+ * (floating-head slice) and {@code objectGetOwner}.
  *
  * <p>Vectors: {@code [objcreate]} in
  * {@code docker/refharness/golden/v57.txt}, produced by
- * {@code sectionObjCreate} in {@code docker/refharness/ref_main.cc}.
+ * {@code sectionObjCreate} in {@code docker/refharness/ref_main.cc}, and
+ * the destroy tail ({@code destroy}/{@code destroynull}) of
+ * {@code [itemmove]} in {@code docker/refharness/golden/v62.txt}
+ * (produced by {@code sectionItemMove}).
  *
  * <p>Game objects reuse {@link ObjTypes.GameObject} (v33, renamed from C
  * {@code Object}); nothing is duplicated here. Flags stay immutable bit
@@ -76,10 +85,26 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code -1} (stim prints {@code sid=-1}); the extra-id rule
  * ({@code object->id == -1} grabs another id) is unreachable here
  * because the id is assigned before the call.</li>
- * <li>{@code protoGetProto}-miss quirk: like C, the miss returns 0
- * <em>after</em> insert (the object stays listed with pid/id set).</li>
- * </ul>
- */
+  * <li>{@code protoGetProto}-miss quirk: like C, the miss returns 0
+  * <em>after</em> insert (the object stays listed with pid/id set).</li>
+  * <li>{@code objectDestroy} takes no rect: the slice always passes null
+  * (the light call keeps its null-rect shape: the adjust result is
+  * ignored, like C++). The non-null-rect path ({@code objectGetRect} into
+  * the caller rect) needs the render engine (game phase).</li>
+  * <li>{@code _obj_remove} runs no event-queue removal: the C++ body calls
+  * {@code _obj_inven_free}, the sid destroy proc + {@code scriptRemove},
+  * and {@code aiRemoveBurstDisabled}, but never {@code queueRemoveEvents}.
+  * The sid/AI tails need the script/AI engines (game phase); harness sids
+  * are {@code -1}, so they are dormant.</li>
+  * <li>{@code _gmouse_remove_item_outline} needs the game-mouse highlight
+  * state ({@code gGameMouseHighlightedItem}, game phase, null headless) +
+  * tile refresh; headless it is a no-op seam.</li>
+  * <li>{@code objectGetListNode}/{@code _obj_remove} unlink: tile-bound
+  * nodes live in {@code gObjectListHeadByTile} (map port); every listed
+  * harness object sits at tile {@code -1}, so the floating-head unlink is
+  * exact here.</li>
+  * </ul>
+  */
 public final class ObjectSystem {
 
     private ObjectSystem() {
@@ -334,6 +359,61 @@ public final class ObjectSystem {
         return 0;
     }
 
+    // 0x48B0FC obj_erase_object (rect overload deferred: the slice always
+    // passes null, so the rect is dropped; the light call keeps its
+    // null-rect shape: the adjust result is ignored, like C++).
+    public static int objectDestroy(GameObject object) {
+        if (object == null) {
+            return -1;
+        }
+
+        removeItemOutline(object);
+
+        GameObjectListNode[] prevSlot = new GameObjectListNode[1];
+        GameObjectListNode node = findListNode(object, prevSlot);
+        if (node != null) {
+            // _obj_adjust_light(object, 1, rect): with a null rect C++
+            // ignores the -1, so the guards-only slice runs bare.
+            adjustLight(object, true);
+
+            if (removeNode(node, prevSlot[0]) != 0) {
+                return -1;
+            }
+
+            return 0;
+        }
+
+        // Non-listed object: C++ builds a throwaway node and removes
+        // (node, node), so no unlink runs; only the inventory free, the
+        // sid/AI tails and the deallocation observe. The Java temp node
+        // mirrors that (deallocation itself is the GC, see removeNode).
+        GameObjectListNode temp = new GameObjectListNode();
+        temp.obj = object;
+        temp.next = null;
+
+        if (removeNode(temp, temp) != 0) {
+            return -1;
+        }
+
+        return 0;
+    }
+
+    // objectGetOwner (src/object.cc): the ultimate owner up the owner
+    // chain; a directly owned object returns its owner, an unowned one
+    // null. Like C++, a null object is not guarded (it dereferences).
+    public static GameObject objectGetOwner(GameObject object) {
+        GameObject owner = object.owner;
+        if (owner == null) {
+            return null;
+        }
+
+        while (owner.owner != null) {
+            owner = owner.owner;
+        }
+
+        return owner;
+    }
+
     // 0x49A9B4 objectSetScriptFromProto (src/proto_instance.cc): pure
     // prefix only; the scriptAdd tail needs the script engine (see class
     // notes). Operates on obj.sid directly (C takes &obj->sid).
@@ -429,6 +509,99 @@ public final class ObjectSystem {
 
         node.next = head;
         head = node;
+    }
+
+    // Floating-head slice of objectGetListNode (src/object.cc): tile-bound
+    // nodes live in gObjectListHeadByTile (map port); every listed harness
+    // object sits at tile -1, so the floating scan is exact here. The
+    // previous node rides in prevPtr[0] (null when the node is the head),
+    // like the C++ out-param.
+    private static GameObjectListNode findListNode(GameObject object, GameObjectListNode[] prevPtr) {
+        GameObjectListNode prev = null;
+        GameObjectListNode node = head;
+        while (node != null) {
+            if (node.obj == object) {
+                break;
+            }
+
+            prev = node;
+            node = node.next;
+        }
+
+        if (prevPtr != null && prevPtr.length > 0) {
+            prevPtr[0] = prev;
+        }
+
+        return node;
+    }
+
+    // 0x48DA58 obj_remove: null object or NO_REMOVE -> -1; otherwise free
+    // the inventory contents, run the sid destroy proc + scriptRemove and
+    // aiRemoveBurstDisabled, unlink (a1 == a2 skips the unlink, which is
+    // the non-listed path), and deallocate. The queue is untouched (C++
+    // never calls queueRemoveEvents here); deallocation is the GC, so only
+    // the unlink observes.
+    private static int removeNode(GameObjectListNode node, GameObjectListNode prev) {
+        if (node.obj == null) {
+            return -1;
+        }
+
+        if (!node.obj.flags.and(ObjectFlags.NO_REMOVE).equals(ObjectFlags.NONE)) {
+            return -1;
+        }
+
+        freeInventory(node.obj);
+
+        if (node.obj.sid != -1) {
+            // scriptExecProc(sid, SCRIPT_PROC_DESTROY) + scriptRemove(sid):
+            // script engine (game phase); harness sids are -1.
+        }
+
+        // aiRemoveBurstDisabled(obj): AI engine (game phase).
+
+        if (node != prev) {
+            if (prev != null) {
+                prev.next = node.next;
+            } else {
+                // Tile-bound heads (gObjectListHeadByTile) come with the
+                // map port; every listed harness object is floating.
+                head = node.next;
+            }
+        }
+
+        return 0;
+    }
+
+    // 0x48B1B0 obj_inven_free: destroy every member (NO_REMOVE cleared
+    // first, like C++) and empty the stack list. Members are not list
+    // nodes, so their removal takes the (node, node) path: no unlink,
+    // recursive member free + sid/AI tails, then the GC.
+    private static int freeInventory(GameObject owner) {
+        List<InventoryItem> items = owner.data.inventory.items;
+        for (int index = 0; index < items.size(); index++) {
+            InventoryItem entry = items.get(index);
+
+            GameObjectListNode node = new GameObjectListNode();
+            node.obj = entry.item;
+            node.next = null;
+
+            node.obj.flags = node.obj.flags.and(ObjectFlags.NO_REMOVE.not());
+            removeNode(node, node);
+
+            entry.item = null;
+        }
+
+        items.clear();
+
+        return 0;
+    }
+
+    // _gmouse_remove_item_outline seam (src/game_mouse.cc): clears the
+    // outline when the destroyed object is the highlighted item
+    // (gGameMouseHighlightedItem) + tile refresh. The highlight state is
+    // game-mouse engine (game phase, null headless); headless this is a
+    // no-op.
+    private static void removeItemOutline(GameObject object) {
     }
 
     private static GameObject advanceFind() {
