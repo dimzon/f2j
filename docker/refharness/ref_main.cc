@@ -54,6 +54,7 @@
 #include "game_mouse.h"
 #include "stat.h"
 #include "skill.h"
+#include "combat.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5231,6 +5232,71 @@ void sectionStatSkill()
         defSneak, defBad, tagged, diffNorm, diffOther, diffHard, diffEasy);
 }
 
+void sectionCombatSkill()
+{
+    std::puts("[combatskill]");
+
+    // No window system needed. Penalty tables start zeroed (no combatInit:
+    // it touches gDude), reset restores the compiled defaults.
+    int pen0 = fallout::combat_get_hit_location_penalty(fallout::HIT_LOCATION_HEAD);
+    fallout::combat_set_hit_location_penalty(fallout::HIT_LOCATION_HEAD, -15);
+    int penSet = fallout::combat_get_hit_location_penalty(fallout::HIT_LOCATION_HEAD);
+    fallout::combat_set_hit_location_penalty((fallout::HitLocation)99, -15);
+    int penBad = fallout::combat_get_hit_location_penalty((fallout::HitLocation)99);
+    fallout::combat_reset_hit_location_penalty();
+    int penHead = fallout::combat_get_hit_location_penalty(fallout::HIT_LOCATION_HEAD);
+    int penTorso = fallout::combat_get_hit_location_penalty((fallout::HitLocation)3);
+    int highlight = fallout::combatGetTargetHighlight();
+    std::printf("pen0=%d penset=%d penbad=%d penhead=%d pentorso=%d highlight=%d\n",
+        pen0, penSet, penBad, penHead, penTorso, highlight);
+
+    // Skill-use timestamps (game time is the 302400 static) with save/load.
+    int upd1 = fallout::skillUpdateLastUse(fallout::SKILL_SNEAK);
+    int upd2 = fallout::skillUpdateLastUse(fallout::SKILL_SNEAK);
+    fallout::File* save1 = fallout::fileOpen((char*)"/tmp/sku1.bin", (char*)"wb");
+    int saveRc1 = save1 != nullptr ? fallout::skillsUsageSave(save1) : -99;
+    if (save1 != nullptr) {
+        fallout::fileClose(save1);
+    }
+    unsigned char buf1[216] = {};
+    fallout::File* read1 = fallout::fileOpen((char*)"/tmp/sku1.bin", (char*)"rb");
+    size_t got1 = read1 != nullptr ? fallout::fileRead(buf1, 1, sizeof(buf1), read1) : 0;
+    if (read1 != nullptr) {
+        fallout::fileClose(read1);
+    }
+    int upd3 = fallout::skillUpdateLastUse(fallout::SKILL_SNEAK);
+    fallout::File* save2 = fallout::fileOpen((char*)"/tmp/sku2.bin", (char*)"wb");
+    int saveRc2 = save2 != nullptr ? fallout::skillsUsageSave(save2) : -99;
+    if (save2 != nullptr) {
+        fallout::fileClose(save2);
+    }
+    unsigned char buf2[216] = {};
+    fallout::File* read2 = fallout::fileOpen((char*)"/tmp/sku2.bin", (char*)"rb");
+    size_t got2 = read2 != nullptr ? fallout::fileRead(buf2, 1, sizeof(buf2), read2) : 0;
+    if (read2 != nullptr) {
+        fallout::fileClose(read2);
+    }
+    fallout::File* loadBack = fallout::fileOpen((char*)"/tmp/sku1.bin", (char*)"rb");
+    int loadRc = loadBack != nullptr ? fallout::skillsUsageLoad(loadBack) : -99;
+    if (loadBack != nullptr) {
+        fallout::fileClose(loadBack);
+    }
+    unsigned char buf3[216] = {};
+    fallout::File* save3 = fallout::fileOpen((char*)"/tmp/sku3.bin", (char*)"wb");
+    int saveRc3 = save3 != nullptr ? fallout::skillsUsageSave(save3) : -99;
+    if (save3 != nullptr) {
+        fallout::fileClose(save3);
+    }
+    fallout::File* read3 = fallout::fileOpen((char*)"/tmp/sku3.bin", (char*)"rb");
+    size_t got3 = read3 != nullptr ? fallout::fileRead(buf3, 1, sizeof(buf3), read3) : 0;
+    if (read3 != nullptr) {
+        fallout::fileClose(read3);
+    }
+    std::printf("upd=%d,%d,%d save=%d,%d,%d load=%d got=%d,%d,%d crc=%08lX,%08lX,%08lX\n",
+        upd1, upd2, upd3, saveRc1, saveRc2, saveRc3, loadRc, (int)got1, (int)got2, (int)got3,
+        rawBufCrc(buf1, sizeof(buf1)), rawBufCrc(buf2, sizeof(buf2)), rawBufCrc(buf3, sizeof(buf3)));
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5315,5 +5381,6 @@ int main()
     sectionLightReact();
     sectionGameMouseUtil();
     sectionStatSkill();
+    sectionCombatSkill();
     return 0;
 }

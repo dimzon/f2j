@@ -136,5 +136,102 @@ public final class Skill {
     /** Test seam: zero the tagged-state array (fresh-process mirror). */
     static void resetForTests() {
         java.util.Arrays.fill(TAGGED_SKILLS, 0);
+        for (int skill = 0; skill < SkillDefs.SKILL_COUNT; skill++) {
+            java.util.Arrays.fill(TIMES_SKILL_USED[skill], 0);
+        }
+    }
+
+    /** {@code SKILLS_MAX_USES_PER_DAY} ({@code src/skill.cc}): stamps per skill. */
+    public static final int MAX_USES_PER_DAY = 3;
+
+    /** {@code GAME_TIME_TICKS_PER_HOUR} ({@code src/scripts.h}). */
+    private static final int GAME_TIME_TICKS_PER_HOUR = 36000;
+
+    /**
+     * {@code _timesSkillUsed} ({@code src/skill.cc}, BSS zeroed): last-use
+     * game-time stamps, [skill][slot].
+     */
+    private static final int[][] TIMES_SKILL_USED =
+        new int[SkillDefs.SKILL_COUNT][MAX_USES_PER_DAY];
+
+    /**
+     * Port of {@code skillGetFreeUsageSlot} (file-static in C): the first
+     * zero-valued slot wins; when all slots are stamped, the oldest entry
+     * (slot 0) decides: within 24 hours there is no free slot (-1), otherwise
+     * the last slot is recycled.
+     *
+     * <p>NOTE: {@code skill_use_slot_clear} (inlined memset, unexported in
+     * {@code src/skill.h}) is intentionally not ported; the
+     * {@link #resetForTests} seam covers its fresh-state role.
+     */
+    private static int getFreeUsageSlot(int skill) {
+        for (int slot = 0; slot < MAX_USES_PER_DAY; slot++) {
+            if (TIMES_SKILL_USED[skill][slot] == 0) {
+                return slot;
+            }
+        }
+
+        int time = EventQueue.gameTimeGetTime();
+        int hoursSinceLastUsage =
+            (time - TIMES_SKILL_USED[skill][0]) / GAME_TIME_TICKS_PER_HOUR;
+        if (hoursSinceLastUsage <= 24) {
+            return -1;
+        }
+
+        return MAX_USES_PER_DAY - 1;
+    }
+
+    /**
+     * Port of {@code skillUpdateLastUse}: stamps the free slot with
+     * {@code gameTimeGetTime()}. A recycled (nonzero) last slot shifts the
+     * older stamps down first. Returns 0, or -1 when no slot is free.
+     */
+    public static int updateLastUse(int skill) {
+        int slot = getFreeUsageSlot(skill);
+        if (slot == -1) {
+            return -1;
+        }
+
+        if (TIMES_SKILL_USED[skill][slot] != 0) {
+            for (int i = 0; i < slot; i++) {
+                TIMES_SKILL_USED[skill][i] = TIMES_SKILL_USED[skill][i + 1];
+            }
+        }
+
+        TIMES_SKILL_USED[skill][slot] = EventQueue.gameTimeGetTime();
+
+        return 0;
+    }
+
+    /**
+     * Port of {@code skillsUsageSave}: writes the table as
+     * {@code SKILL_COUNT * SKILLS_MAX_USES_PER_DAY} (54) big-endian int32s in
+     * row-major order (skill-major, slot-minor), matching the C
+     * {@code (int*)_timesSkillUsed} cast.
+     */
+    public static int skillsUsageSave(XFile.Handle stream) {
+        int count = SkillDefs.SKILL_COUNT * MAX_USES_PER_DAY;
+        int[] flat = new int[count];
+        for (int skill = 0; skill < SkillDefs.SKILL_COUNT; skill++) {
+            for (int slot = 0; slot < MAX_USES_PER_DAY; slot++) {
+                flat[skill * MAX_USES_PER_DAY + slot] = TIMES_SKILL_USED[skill][slot];
+            }
+        }
+        return Db.fileWriteInt32List(stream, flat, 0, count);
+    }
+
+    /** Port of {@code skillsUsageLoad}: reads back {@link #skillsUsageSave}. */
+    public static int skillsUsageLoad(XFile.Handle stream) {
+        int count = SkillDefs.SKILL_COUNT * MAX_USES_PER_DAY;
+        int[] flat = new int[count];
+        if (Db.fileReadInt32List(stream, flat, 0, count) == -1) {
+            return -1;
+        }
+        for (int skill = 0; skill < SkillDefs.SKILL_COUNT; skill++) {
+            for (int slot = 0; slot < MAX_USES_PER_DAY; slot++) {
+                TIMES_SKILL_USED[skill][slot] = flat[skill * MAX_USES_PER_DAY + slot];
+            }
+        }
+        return 0;
     }
 }
