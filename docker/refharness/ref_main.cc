@@ -55,6 +55,7 @@
 #include "stat.h"
 #include "skill.h"
 #include "combat.h"
+#include "scripts.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5297,6 +5298,54 @@ void sectionCombatSkill()
         rawBufCrc(buf1, sizeof(buf1)), rawBufCrc(buf2, sizeof(buf2)), rawBufCrc(buf3, sizeof(buf3)));
 }
 
+void sectionGameTime()
+{
+    std::puts("[gametime]");
+
+    // No window system needed. Clock starts at the 302400 static init.
+    unsigned int t0 = fallout::gameTimeGetTime();
+    int month = -1;
+    int day = -1;
+    int year = -1;
+    fallout::gameTimeGetDate(&month, &day, &year);
+    int hour = fallout::gameTimeGetHour();
+    char timeStr[16] = {};
+    snprintf(timeStr, sizeof(timeStr), "%s", fallout::gameTimeGetTimeString());
+    std::printf("t0=%u date=%d/%d/%d hour=%d timestr=[%s]\n", t0, month, day, year, hour, timeStr);
+
+    // Set/add arithmetic (0 maps to 1; big jumps would end the game).
+    fallout::gameTimeSetTime(1000);
+    unsigned int tSet = fallout::gameTimeGetTime();
+    fallout::gameTimeAddTicks(600);
+    fallout::gameTimeAddSeconds(6);
+    unsigned int tAdv = fallout::gameTimeGetTime();
+    fallout::gameTimeSetTime(0);
+    unsigned int tZero = fallout::gameTimeGetTime();
+    fallout::gameTimeSetTime(302400);
+    std::printf("set=%u adv=%u zero=%u\n", tSet, tAdv, tZero);
+
+    // Midnight update event lands on the queue (no map header: single add).
+    fallout::queueInit();
+    int schedRc = fallout::gameTimeScheduleUpdateEvent();
+    unsigned int nextEv = fallout::queueGetNextEventTime();
+    int hasGameTime = fallout::queueHasEvent(nullptr, fallout::EVENT_TYPE_GAME_TIME) ? 1 : 0;
+    fallout::queueExit();
+    std::printf("sched=%d next=%u has-gametime=%d\n", schedRc, nextEv, hasGameTime);
+
+    // Unique object id counter: fresh, bump, restore, guard rails.
+    int idCounter0 = fallout::scriptsGetUniqueObjectIdCounter();
+    int idNew1 = fallout::scriptsNewUniqueObjectId();
+    int idNew2 = fallout::scriptsNewUniqueObjectId();
+    fallout::scriptsRestoreUniqueObjectIdCounter(idNew1);
+    int idRestored = fallout::scriptsGetUniqueObjectIdCounter();
+    fallout::scriptsRestoreUniqueObjectIdCounter(-5);
+    int idBadRestore = fallout::scriptsGetUniqueObjectIdCounter();
+    fallout::scriptsResetUniqueObjectIdCounter();
+    int idReset = fallout::scriptsGetUniqueObjectIdCounter();
+    std::printf("ids=%d,%d,%d restored=%d badrestore=%d reset=%d\n",
+        idCounter0, idNew1, idNew2, idRestored, idBadRestore, idReset);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5382,5 +5431,6 @@ int main()
     sectionGameMouseUtil();
     sectionStatSkill();
     sectionCombatSkill();
+    sectionGameTime();
     return 0;
 }

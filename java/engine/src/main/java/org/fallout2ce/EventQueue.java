@@ -14,8 +14,9 @@ import java.util.Map;
  * {@link Integer#toUnsignedLong} for {@code %u} output.
  *
  * <p>Game time ({@code gGameTime}, 0x51C720, in {@code src/scripts.cc})
- * lives here until {@code Scripts} is ported: static init {@code 302400}
- * with get/set/add. This is unrelated to
+ * is canonical in {@link GameTime}; the {@code gameTime*} methods below
+ * delegate there (the clock lived here until the scripts slice was
+ * ported). This is unrelated to
  * {@link GameRandom.GameClock} (an injectable day-0 seam for the RNG,
  * still defaulting to 0); the two are deliberately not wired.
  *
@@ -154,8 +155,8 @@ public final class EventQueue {
         QueueListNode next;
     }
 
-    /** scripts.cc {@code gGameTime} (0x51C720) static init: 302400 ticks. */
-    public static final int GAME_TIME_INITIAL = 302400;
+    /** scripts.cc {@code gGameTime} (0x51C720) static init (canonical in {@link GameTime}). */
+    public static final int GAME_TIME_INITIAL = GameTime.GAME_TIME_INITIAL;
 
     /** C object id written for a {@code null} owner (and read back to {@code null}). */
     static final int NULL_OBJECT_ID = -2;
@@ -176,9 +177,6 @@ public final class EventQueue {
 
     // Stand-in for Object.flags (no game Object port yet): OBJECT_QUEUED bits by identity.
     private static final Map<Object, Integer> ownerFlags = new IdentityHashMap<>();
-
-    // scripts.cc gGameTime slice (0x51C720).
-    private static int gameTime = GAME_TIME_INITIAL;
 
     private static OwnerIdMapper ownerIdMapper;
 
@@ -236,29 +234,27 @@ public final class EventQueue {
         queueListHead = null;
         lastFoundQueueListNode = null;
         ownerFlags.clear();
-        gameTime = GAME_TIME_INITIAL;
+        GameTime.resetClockForTests();
         ownerIdMapper = null;
         initDescriptors();
     }
 
-    // scripts.cc 0x4A3330 game_time
+    // scripts.cc 0x4A3330 game_time (canonical store: GameTime).
     public static int gameTimeGetTime() {
-        return gameTime;
+        return GameTime.gameTimeGetTime();
     }
 
     // scripts.cc 0x4A347C (0 maps to 1, like C; endgame side effects live
-    // with the future Game/Scripts port, only the tick store is kept here).
+    // with the future Game port: see GameTime's timeout seam).
     public static void gameTimeSetTime(int time) {
-        if (time == 0) {
-            time = 1;
-        }
-        gameTime = time;
+        GameTime.gameTimeSetTime(time);
     }
 
     // scripts.cc 0x4A34CC inc_game_time (tick add only; the year>=13
-    // endgame quit request is out of scope until Game is ported).
+    // endgame quit request is out of scope until Game is ported:
+    // see GameTime's timeout seam, default off).
     public static void gameTimeAddTicks(int ticks) {
-        gameTime += ticks;
+        GameTime.gameTimeAddTicks(ticks);
     }
 
     /** Stand-in {@code OBJECT_QUEUED} view (identity-keyed; 0 when never queued). */
@@ -451,7 +447,7 @@ public final class EventQueue {
         QueueListNode newNode = new QueueListNode();
 
         // C unsigned wrap: identical in two's-complement int arithmetic.
-        newNode.time = gameTime + delay;
+        newNode.time = gameTimeGetTime() + delay;
         newNode.type = type;
         newNode.owner = owner;
         newNode.data = data;
