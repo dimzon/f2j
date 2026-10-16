@@ -25,6 +25,11 @@ import org.junit.jupiter.api.Test;
  * {@code dogid=34200 dog=1:[Dogmeat] kill=1:[Dogs]} and
  * {@code stimdesc=1:[A healing chem. When injected, the chem provides immediate healing of minor wounds.] gifteddesc=1:[You have more innate abilities than most, so you have not spent as much time honing your skills.  Your primary statistics are e]}.
  *
+ * <p>Also covers {@code [moredesc]} vectors from
+ * {@code docker/refharness/golden/v90.txt} (3 lines appended to v89),
+ * produced by {@code sectionMoreDesc}:
+ * {@code taggeddesc=1:[...]}/{@code sneakdesc=1:[...]}/{@code strdesc=1:[...]}.
+ *
  * <p>Mirrors the harness {@code getMsgText} helper exactly: local
  * {@link Message.MessageList} via {@link Message#messageListInit},
  * {@code "game\\"} + file via {@link Message#messageListLoad},
@@ -177,5 +182,53 @@ class NamesTest {
         assertEquals("dogid=34200 dog=1:[Dogmeat] kill=1:[Dogs]", line1);
         String line2 = "stimdesc=1:[" + stimDesc + "] gifteddesc=1:[" + giftedDesc + "]";
         assertEquals("stimdesc=1:[A healing chem. When injected, the chem provides immediate healing of minor wounds.] gifteddesc=1:[You have more innate abilities than most, so you have not spent as much time honing your skills.  Your primary statistics are e]", line2);
+    }
+
+    /**
+     * Harness {@code sectionMoreDesc} mirror (v90.txt {@code [moredesc]}, 3 lines
+     * appended to v89).
+     *
+     * <p>Message id conventions mirror the owners: perk description
+     * {@code 1101+perk} ({@code src/perk.cc} {@code perkGetDescription}, Tag = 51
+     * {@link PerkDefs.Perk#PERK_TAG}), skill description {@code 200+skill}
+     * ({@code src/skill.cc} {@code skillGetDescription}, Sneak = 8
+     * {@link SkillDefs.Skill#SKILL_SNEAK}), stat description {@code 200+stat}
+     * ({@code src/stat.cc} {@code statGetDescription}, Strength = 0
+     * {@link StatDefs.Stat#STAT_STRENGTH}).
+     *
+     * <p>Buffer sizes mirror the harness exactly: all three {@code char[128]}.
+     * Tagged (118 chars) and STR (125 chars) fit whole; sneak raw is 144 chars
+     * and truncates to 127, matching the golden tail; the assertions route
+     * through {@code cTruncate} to mirror the harness {@code snprintf} path.
+     */
+    @Test
+    void moreDescVectors() {
+        assertEquals(51, PerkDefs.Perk.PERK_TAG.id());
+        assertEquals(8, SkillDefs.Skill.SKILL_SNEAK.id());
+        assertEquals(0, StatDefs.Stat.STAT_STRENGTH.id());
+
+        String taggedRaw = getMsgText("perk.msg", 1101 + PerkDefs.Perk.PERK_TAG.id());
+        String sneakRaw = getMsgText("skill.msg", 200 + SkillDefs.Skill.SKILL_SNEAK.id());
+        String strRaw = getMsgText("stat.msg", 200 + StatDefs.Stat.STAT_STRENGTH.id());
+
+        // FULL verbatim texts (raw game data; sneak/str raw may exceed the
+        // harness char[128] and truncate to the golden tail below).
+        assertEquals("Your skills have improved to the point where you can pick an additional Tag Skill.  Tag skills increase twice as fast.", taggedRaw);
+        assertEquals("Quiet movement, and the ability to remain unnoticed. If successful, you will be much harder to locate. You cannot run and sneak at the same time.", sneakRaw);
+        assertEquals("Raw physical strength. A high Strength is good for physical characters. Modifies: Hit Points, Melee Damage, and Carry Weight.", strRaw);
+
+        // C snprintf truncation (128 -> 127); tagged/str fit whole, sneak is cut
+        // from 144 to 127 chars (drops " at the same time.").
+        String taggedDesc = cTruncate(taggedRaw, 128);
+        String sneakDesc = cTruncate(sneakRaw, 128);
+        String strDesc = cTruncate(strRaw, 128);
+        assertEquals(taggedRaw, taggedDesc);
+        assertEquals("Quiet movement, and the ability to remain unnoticed. If successful, you will be much harder to locate. You cannot run and sneak", sneakDesc);
+        assertEquals(strRaw, strDesc);
+
+        // Verbatim golden lines (v90.txt [moredesc], 3 lines appended to v89).
+        assertEquals("taggeddesc=1:[Your skills have improved to the point where you can pick an additional Tag Skill.  Tag skills increase twice as fast.]", "taggeddesc=1:[" + taggedDesc + "]");
+        assertEquals("sneakdesc=1:[Quiet movement, and the ability to remain unnoticed. If successful, you will be much harder to locate. You cannot run and sneak]", "sneakdesc=1:[" + sneakDesc + "]");
+        assertEquals("strdesc=1:[Raw physical strength. A high Strength is good for physical characters. Modifies: Hit Points, Melee Damage, and Carry Weight.]", "strdesc=1:[" + strDesc + "]");
     }
 }

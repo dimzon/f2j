@@ -6483,6 +6483,23 @@ void sectionMoreNames()
         gotStimDesc ? 1 : 0, stimDesc, gotGiftedDesc ? 1 : 0, giftedDesc);
 }
 
+void sectionMoreDesc()
+{
+    std::puts("[moredesc]");
+
+    // Car pids come from the type tables; description ids mirror inits.
+    // (Critter descriptions have no entry for the dog; skipped.)
+    char taggedDesc[128] = {};
+    bool gotTaggedDesc = getMsgText("perk.msg", 1101 + 51, taggedDesc, sizeof(taggedDesc));
+    char sneakDesc[128] = {};
+    bool gotSneakDesc = getMsgText("skill.msg", 200 + 8, sneakDesc, sizeof(sneakDesc));
+    char strDesc[128] = {};
+    bool gotStrDesc = getMsgText("stat.msg", 200 + 0, strDesc, sizeof(strDesc));
+    std::printf("taggeddesc=%d:[%s]\nsneakdesc=%d:[%s]\nstrdesc=%d:[%s]\n",
+        gotTaggedDesc ? 1 : 0, taggedDesc,
+        gotSneakDesc ? 1 : 0, sneakDesc, gotStrDesc ? 1 : 0, strDesc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6603,5 +6620,6 @@ int main()
     sectionItemNames();
     sectionNames();
     sectionMoreNames();
+    sectionMoreDesc();
     return 0;
 }
