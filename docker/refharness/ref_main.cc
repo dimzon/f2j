@@ -6421,6 +6421,46 @@ void sectionItemNames()
     fallout::messageListRepositoryExit();
 }
 
+static bool getMsgText(const char* file, int num, char* dest, size_t destSize)
+{
+    fallout::MessageList msgList;
+    if (!fallout::messageListInit(&msgList)) {
+        return false;
+    }
+    char path[64] = {};
+    snprintf(path, sizeof(path), "%s%s", fallout::asc_5186C8, file);
+    if (!fallout::messageListLoad(&msgList, path)) {
+        return false;
+    }
+    fallout::MessageListItem item;
+    item.num = num;
+    bool found = fallout::messageListGetItem(&msgList, &item);
+    if (found) {
+        snprintf(dest, destSize, "%s", item.text);
+    }
+    fallout::messageListFree(&msgList);
+    return found;
+}
+
+void sectionNames()
+{
+    std::puts("[names]");
+
+    // No window system needed. Message ids mirror the init loops
+    // (trait 100+n, perk 101+n, stat 100+n, skill 100+n).
+    char traitName[64] = {};
+    bool gotTrait = getMsgText("trait.msg", 100 + 15, traitName, sizeof(traitName));
+    char perkName[64] = {};
+    bool gotPerk = getMsgText("perk.msg", 101 + 51, perkName, sizeof(perkName));
+    char statName[64] = {};
+    bool gotStat = getMsgText("stat.msg", 100 + 0, statName, sizeof(statName));
+    char skillName[64] = {};
+    bool gotSkill = getMsgText("skill.msg", 100 + 8, skillName, sizeof(skillName));
+    std::printf("trait=%d:[%s] perk=%d:[%s] stat=%d:[%s] skill=%d:[%s]\n",
+        gotTrait ? 1 : 0, traitName, gotPerk ? 1 : 0, perkName,
+        gotStat ? 1 : 0, statName, gotSkill ? 1 : 0, skillName);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6539,5 +6579,6 @@ int main()
     sectionSfallIni();
     sectionObjPlace();
     sectionItemNames();
+    sectionNames();
     return 0;
 }
