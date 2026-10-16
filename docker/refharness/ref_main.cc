@@ -6461,6 +6461,28 @@ void sectionNames()
         gotStat ? 1 : 0, statName, gotSkill ? 1 : 0, skillName);
 }
 
+void sectionMoreNames()
+{
+    std::puts("[morenames]");
+
+    // Message ids mirror the init loops; dog id comes from its proto.
+    fallout::Proto* dogProto = nullptr;
+    fallout::protoGetProto(fallout::ProtoId(16777558), &dogProto);
+    int dogMsgId = dogProto != nullptr ? dogProto->messageId : -999;
+    char dogName[64] = {};
+    bool gotDog = getMsgText("pro_crit.msg", dogMsgId, dogName, sizeof(dogName));
+    char killName[64] = {};
+    bool gotKill = getMsgText("proto.msg", 1450 + 11, killName, sizeof(killName));
+    char stimDesc[128] = {};
+    bool gotStimDesc = getMsgText("pro_item.msg", 4001, stimDesc, sizeof(stimDesc));
+    char giftedDesc[128] = {};
+    bool gotGiftedDesc = getMsgText("trait.msg", 200 + 15, giftedDesc, sizeof(giftedDesc));
+    std::printf("dogid=%d dog=%d:[%s] kill=%d:[%s]\n",
+        dogMsgId, gotDog ? 1 : 0, dogName, gotKill ? 1 : 0, killName);
+    std::printf("stimdesc=%d:[%s] gifteddesc=%d:[%s]\n",
+        gotStimDesc ? 1 : 0, stimDesc, gotGiftedDesc ? 1 : 0, giftedDesc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6580,5 +6602,6 @@ int main()
     sectionObjPlace();
     sectionItemNames();
     sectionNames();
+    sectionMoreNames();
     return 0;
 }
