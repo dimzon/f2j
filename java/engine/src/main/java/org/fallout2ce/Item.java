@@ -19,13 +19,21 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code itemGetWeight}, {@code itemGetCost}, {@code objectGetCost},
  * {@code objectGetInventoryWeight}, {@code itemGetQuantity}, {@code itemAdd},
  * {@code itemRemove} and the small helpers they need ({@code itemIsHidden},
- * ammo quantity/capacity, weapon ammo-type id, {@code _item_identical}).
+ * ammo quantity/capacity, weapon ammo-type id, {@code _item_identical}),
+ * plus the weapon/armor mapping slice backing {@code inven_wield}:
+ * {@code weaponGetSkillForHitMode}, {@code weaponGetAttackTypeForHitMode},
+ * {@code weaponGetAnimationForHitMode}, {@code weaponGetAnimationCode},
+ * {@code weaponGetDamageType}, the {@code armorGet*} getters and
+ * {@code adjustCritterStatsOnArmorChange} (ported here from
+ * {@code src/inventory.cc}, next to its only callers).
  *
  * <p>See {@link StatDefs} for the {@code operator++} iteration note.
  *
  * <p>Vectors: {@code [inventory]} in
- * {@code docker/refharness/golden/v59.txt}, produced by
- * {@code sectionInventory} in {@code docker/refharness/ref_main.cc}.
+ * {@code docker/refharness/golden/v59.txt} (produced by
+ * {@code sectionInventory} in {@code docker/refharness/ref_main.cc}) and
+ * {@code [equip]} in {@code docker/refharness/golden/v60.txt} (produced by
+ * {@code sectionEquip}; see {@link Inventory#inventoryEquipFunc}).
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
@@ -619,6 +627,294 @@ public final class Item {
         itemToRemove.flags = itemToRemove.flags.and(ObjectFlags.EQUIPPED.not());
 
         return 0;
+    }
+
+    // Weapon extended-flags -> skill table (src/item.cc 0x519160
+    // attack_skill). Entries are SkillDefs ids (SKILL_INVALID -1,
+    // SKILL_UNARMED 3, SKILL_MELEE_WEAPONS 4, SKILL_THROWING 5,
+    // SKILL_SMALL_GUNS 0).
+    private static final int[] ATTACK_SKILL = { -1, 3, 3, 4, 4, 5, 0, 0, 0 };
+
+    // Extended-flags -> animation table (0x519184 attack_anim). Entries
+    // are AnimationType values.
+    private static final int[] ATTACK_ANIM = { 0, 16, 17, 42, 41, 18, 45, 46, 47 };
+
+    // Extended-flags -> weapon class table (0x5191A8 attack_subtype).
+    // Entries are AttackType ids (NONE 0, UNARMED 1, MELEE 2, THROW 3,
+    // RANGED 4).
+    private static final int[] ATTACK_SUBTYPE = { 0, 1, 1, 2, 2, 3, 4, 4, 4 };
+
+    // 0x478280 weapon_get_attack_type_for_hit_mode. Returns the AttackType
+    // id; null weapon -> UNARMED, like C++. The primary/secondary nibble
+    // pick mirrors C++; weapon protos only use indices 0-8.
+    public static int weaponGetAttackTypeForHitMode(GameObject weapon, int hitMode) {
+        if (weapon == null) {
+            return AttackType.ATTACK_TYPE_UNARMED.id();
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+        int index;
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) {
+            index = slot[0].item.extendedFlags.bits() & 0xF;
+        } else {
+            index = (slot[0].item.extendedFlags.bits() & 0xF0) >> 4;
+        }
+
+        return ATTACK_SUBTYPE[index];
+    }
+
+    // 0x4782CC weapon_get_skill_for_hit_mode. Returns the SkillDefs skill
+    // id; null weapon -> SKILL_UNARMED. A SMALL_GUNS base becomes
+    // ENERGY_WEAPONS for laser/plasma/electrical damage, else BIG_GUNS
+    // when the proto carries PROTO_EXT_FLAG_BIG_GUN.
+    public static int weaponGetSkillForHitMode(GameObject weapon, int hitMode) {
+        if (weapon == null) {
+            return SkillDefs.Skill.SKILL_UNARMED.id();
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+        int index;
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) {
+            index = slot[0].item.extendedFlags.bits() & 0xF;
+        } else {
+            index = (slot[0].item.extendedFlags.bits() & 0xF0) >> 4;
+        }
+
+        int skill = ATTACK_SKILL[index];
+
+        if (skill == SkillDefs.Skill.SKILL_SMALL_GUNS.id()) {
+            ProtoTypes.DamageType damageType = weaponGetDamageType(null, weapon);
+            if (damageType == ProtoTypes.DamageType.DAMAGE_TYPE_LASER
+                    || damageType == ProtoTypes.DamageType.DAMAGE_TYPE_PLASMA
+                    || damageType == ProtoTypes.DamageType.DAMAGE_TYPE_ELECTRICAL) {
+                skill = SkillDefs.Skill.SKILL_ENERGY_WEAPONS.id();
+            } else {
+                if ((slot[0].item.extendedFlags.bits()
+                        & ProtoTypes.ProtoExtendedFlags.BIG_GUN.bits()) != 0) {
+                    skill = SkillDefs.Skill.SKILL_BIG_GUNS.id();
+                }
+            }
+        }
+
+        return skill;
+    }
+
+    // 0x478570 weapon_get_damage_type.
+    public static ProtoTypes.DamageType weaponGetDamageType(GameObject critter, GameObject weapon) {
+        if (weapon != null) {
+            Proto[] slot = new Proto[1];
+            ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+            return slot[0].item.data.weapon.damageType;
+        }
+
+        if (critter != null) {
+            return critterGetDamageType(critter);
+        }
+
+        return ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
+    }
+
+    // critter_get_damage_type (src/critter.cc): non-critter or proto miss
+    // -> NORMAL, else the critter proto damage type.
+    private static ProtoTypes.DamageType critterGetDamageType(GameObject critter) {
+        if (FrmId.ofFid(critter.fid).objectType() != ObjectType.CRITTER) {
+            return ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(critter), slot) == -1) {
+            return ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
+        }
+
+        return slot[0].critter.data.damageType;
+    }
+
+    // 0x47860C weapon_get_animation_for_hit_mode. Returns the AnimationType
+    // value id; kicks (including advanced) -> KICK_LEG, null weapon ->
+    // THROW_PUNCH.
+    public static int weaponGetAnimationForHitMode(GameObject weapon, int hitMode) {
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_KICK.id()
+                || (hitMode >= CombatDefs.FIRST_ADVANCED_KICK_HIT_MODE
+                        && hitMode <= CombatDefs.LAST_ADVANCED_KICK_HIT_MODE)) {
+            return AnimationType.KICK_LEG.value();
+        }
+
+        if (weapon == null) {
+            return AnimationType.THROW_PUNCH.value();
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+        int index;
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) {
+            index = slot[0].item.extendedFlags.bits() & 0xF;
+        } else {
+            index = (slot[0].item.extendedFlags.bits() & 0xF0) >> 4;
+        }
+
+        return ATTACK_ANIM[index];
+    }
+
+    // 0x478DA8 weapon_get_animation_code. Returns the WeaponAnimation id
+    // (ArtDefs ids match WeaponAnimation values); null weapon -> None.
+    public static int weaponGetAnimationCode(GameObject weapon) {
+        if (weapon == null) {
+            return ArtDefs.WeaponAnimation.None.id();
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+
+        ArtDefs.WeaponAnimation code = slot[0].item.data.weapon.animationCode;
+        return code == null ? ArtDefs.WeaponAnimation.None.id() : code.id();
+    }
+
+    // 0x4792F8 armor_get_armor_class (null -> 0).
+    public static int armorGetArmorClass(GameObject armor) {
+        if (armor == null) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(armor), slot);
+
+        return slot[0].item.data.armor.armorClass;
+    }
+
+    // 0x479318 armor_get_damage_resistance (damageType is a DamageType id;
+    // null armor -> 0).
+    public static int armorGetDamageResistance(GameObject armor, int damageType) {
+        if (armor == null) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(armor), slot);
+
+        return slot[0].item.data.armor.damageResistance[damageType];
+    }
+
+    // 0x479338 armor_get_damage_threshold (null -> 0).
+    public static int armorGetDamageThreshold(GameObject armor, int damageType) {
+        if (armor == null) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(armor), slot);
+
+        return slot[0].item.data.armor.damageThreshold[damageType];
+    }
+
+    // 0x479358 armor_get_perk (null -> PERK_INVALID).
+    public static PerkDefs.Perk armorGetPerk(GameObject armor) {
+        if (armor == null) {
+            return PerkDefs.Perk.PERK_INVALID;
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(armor), slot);
+
+        return slot[0].item.data.armor.perk;
+    }
+
+    // 0x479380 armor_get_male_fid: the male fid's frame id
+    // (CritterFrameId::Invalid is -1, preserved); null armor -> -1.
+    public static int armorGetMaleFrameId(GameObject armor) {
+        if (armor == null) {
+            return ArtDefs.CritterFrameId.Invalid.id();
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(armor), slot);
+
+        return FrmId.ofFid(slot[0].item.data.armor.maleFid).frameId();
+    }
+
+    // 0x4793A8 armor_get_female_fid (same shape as the male getter).
+    public static int armorGetFemaleFrameId(GameObject armor) {
+        if (armor == null) {
+            return ArtDefs.CritterFrameId.Invalid.id();
+        }
+
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(armor), slot);
+
+        return FrmId.ofFid(slot[0].item.data.armor.femaleFid).frameId();
+    }
+
+    // adjust_critter_stats_on_armor_change (src/inventory.cc 0x4715F8):
+    // removes the [oldArmor] bonuses and adds the [newArmor] ones (either
+    // may be null). The party-member perk tails need the perk engine (game
+    // phase); the equip vectors never reach them (the harness dog is not a
+    // party member: harness objects get ids < 18000, which C rejects up
+    // front, and the headless roster is empty).
+    public static void adjustCritterStatsOnArmorChange(
+            GameObject critter, GameObject oldArmor, GameObject newArmor) {
+        int armorClassBonus =
+                Stat.critterGetBonusStat(critter, StatDefs.Stat.STAT_ARMOR_CLASS.id());
+        int oldArmorClass = armorGetArmorClass(oldArmor);
+        int newArmorClass = armorGetArmorClass(newArmor);
+        Stat.critterSetBonusStat(critter, StatDefs.Stat.STAT_ARMOR_CLASS.id(),
+                armorClassBonus - oldArmorClass + newArmorClass);
+
+        StatDefs.Stat damageResistanceStat = StatDefs.Stat.STAT_DAMAGE_RESISTANCE;
+        StatDefs.Stat damageThresholdStat = StatDefs.Stat.STAT_DAMAGE_THRESHOLD;
+        for (int damageType = ProtoTypes.DAMAGE_TYPE_FIRST;
+                damageType < ProtoTypes.DAMAGE_TYPE_COUNT;
+                damageType++) {
+            int damageResistanceBonus =
+                    Stat.critterGetBonusStat(critter, damageResistanceStat.id());
+            int oldArmorDamageResistance = armorGetDamageResistance(oldArmor, damageType);
+            int newArmorDamageResistance = armorGetDamageResistance(newArmor, damageType);
+            Stat.critterSetBonusStat(critter, damageResistanceStat.id(),
+                    damageResistanceBonus - oldArmorDamageResistance + newArmorDamageResistance);
+
+            int damageThresholdBonus =
+                    Stat.critterGetBonusStat(critter, damageThresholdStat.id());
+            int oldArmorDamageThreshold = armorGetDamageThreshold(oldArmor, damageType);
+            int newArmorDamageThreshold = armorGetDamageThreshold(newArmor, damageType);
+            Stat.critterSetBonusStat(critter, damageThresholdStat.id(),
+                    damageThresholdBonus - oldArmorDamageThreshold + newArmorDamageThreshold);
+
+            damageResistanceStat = damageResistanceStat.next();
+            damageThresholdStat = damageThresholdStat.next();
+        }
+
+        if (objectIsPartyMember(critter)) {
+            if (oldArmor != null) {
+                perkRemoveEffect(critter, armorGetPerk(oldArmor));
+            }
+
+            if (newArmor != null) {
+                perkAddEffect(critter, armorGetPerk(newArmor));
+            }
+        }
+    }
+
+    // Port of objectIsPartyMember (src/party_member.cc 0x494FC4): the
+    // gPartyMembers roster scan needs the party/map engine (game phase);
+    // headless the roster is empty, so this is false for every vector
+    // object.
+    private static boolean objectIsPartyMember(GameObject critter) {
+        return false;
+    }
+
+    // perkAddEffect/perkRemoveEffect (src/perk.cc): perk engine (game
+    // phase); unreachable headless (see adjustCritterStatsOnArmorChange).
+    private static void perkAddEffect(GameObject critter, PerkDefs.Perk perk) {
+    }
+
+    private static void perkRemoveEffect(GameObject critter, PerkDefs.Perk perk) {
     }
 
     private static boolean isCritter(GameObject obj) {

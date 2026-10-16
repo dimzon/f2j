@@ -510,6 +510,52 @@ public final class Stat {
     }
 
     /**
+     * Port of {@code critterSetBonusStat} (0x4AF63C): invalid stat -5,
+     * saveable stats write the proto {@code bonusStats} (+ derived recalc
+     * for STR..LUCK), CURRENT_* adjust via the live-field helpers,
+     * otherwise -1.
+     *
+     * <p>Like {@link #critterSetBaseStat}, a successful saveable write
+     * mutates the shared {@link ProtoDb} cache (like C, which writes into
+     * the cached {@code Proto*}). The equip vectors ({@code [equip]} in
+     * {@code docker/refharness/golden/v60.txt}) commit such writes via
+     * {@link Item#adjustCritterStatsOnArmorChange}, so tests must reset
+     * {@link ProtoDb} afterwards (the usual setup/teardown does this).
+     */
+    public static int critterSetBonusStat(GameObject critter, int stat, int value) {
+        if (!StatDefs.statIsValid(stat)) {
+            return -5;
+        }
+
+        if (stat >= StatDefs.STAT_FIRST && stat < StatDefs.SAVEABLE_STAT_COUNT) {
+            Proto proto = protoFor(critter);
+            if (proto == null) {
+                return -1;
+            }
+            proto.critter.data.bonusStats[stat] = value;
+
+            if (stat >= StatDefs.Stat.STAT_STRENGTH.id()
+                    && stat <= StatDefs.Stat.STAT_LUCK.id()) {
+                critterUpdateDerivedStats(critter);
+            }
+
+            return 0;
+        }
+
+        switch (stat) {
+        case 35: // STAT_CURRENT_HIT_POINTS
+            return critterAdjustHitPoints(critter, value);
+        case 36: // STAT_CURRENT_POISON_LEVEL
+            return critterAdjustPoison(critter, value);
+        case 37: // STAT_CURRENT_RADIATION_LEVEL
+            return critterAdjustRadiation(critter, value);
+        default:
+            // Should be unreachable
+            return -1;
+        }
+    }
+
+    /**
      * Port of {@code critterSetBaseStat} (0x4AF4BC): invalid stat -5,
      * derived-stat write -1, below-minimum -2, above-maximum -3, else the
      * proto store (+ derived recalc for STR..LUCK). CURRENT_* adjust via the

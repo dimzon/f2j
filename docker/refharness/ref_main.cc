@@ -5493,6 +5493,48 @@ void sectionInventory()
         remStim, slot0After != nullptr ? slot0After->pid : -999, qtyAfter);
 }
 
+void sectionEquip()
+{
+    std::puts("[equip]");
+
+    // No window system needed. Dog wields with animate=false (no iso anim).
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* jacket = nullptr;
+    int jacketRc = fallout::objectCreateWithProtoId(&jacket, fallout::ProtoId(3));
+    int jacketType = jacket != nullptr ? (int)fallout::itemGetType(jacket) : -999;
+    int equipArmor = -99;
+    int wornAfter = -99;
+    if (jacketRc == 0 && jacketType == (int)fallout::ITEM_TYPE_ARMOR) {
+        equipArmor = fallout::inventoryEquipFunc(dog, jacket, fallout::HAND_RIGHT, false);
+        wornAfter = (jacket->flags & fallout::OBJECT_WORN) != 0 ? 1 : 0;
+    }
+    std::printf("jacket-rc=%d jacket-type=%d equip-armor=%d worn=%d\n",
+        jacketRc, jacketType, equipArmor, wornAfter);
+
+    // Weapon skill/attack mapping is pure proto reads (scorcher=390).
+    fallout::Object* gun = nullptr;
+    int gunRc = fallout::objectCreateWithProtoId(&gun, fallout::ProtoId(390));
+    int gunType = gun != nullptr ? (int)fallout::itemGetType(gun) : -999;
+    int gunSkill = gun != nullptr
+        ? (int)fallout::weaponGetSkillForHitMode(gun, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY)
+        : -999;
+    int gunAttack = gun != nullptr
+        ? (int)fallout::weaponGetAttackTypeForHitMode(gun, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY)
+        : -999;
+    std::printf("gun-rc=%d gun-type=%d gun-skill=%d gun-attack=%d\n",
+        gunRc, gunType, gunSkill, gunAttack);
+
+    // Dog has no gun frames: art gate rejects the wield, no crash.
+    int equipGun = -99;
+    if (gunRc == 0) {
+        equipGun = fallout::inventoryEquipFunc(dog, gun, fallout::HAND_RIGHT, false);
+    }
+    fallout::Object* handItem = fallout::critterGetItem2(dog);
+    std::printf("equip-gun=%d hand2=%d\n",
+        equipGun, handItem != nullptr ? handItem->pid : -1);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5583,5 +5625,6 @@ int main()
     sectionObjCreate();
     sectionCritterStats();
     sectionInventory();
+    sectionEquip();
     return 0;
 }
