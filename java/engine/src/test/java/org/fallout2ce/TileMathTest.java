@@ -19,6 +19,13 @@ import org.junit.jupiter.api.Test;
  * <p>Note {@code back=17288}: the tile-center screen point maps to the
  * NEIGHBOR tile through the {@code _tile_mask} switch. This quirk is
  * asserted as-is (reproduced, not "fixed").
+ *
+ * <p>{@code [squaremath]} vectors from
+ * {@code docker/refharness/golden/v49.txt} (produced by
+ * {@code sectionSquareMath}: hermetic re-init with the same geometry,
+ * then {@code tileSetCenter(17488, IGNORE)}; square 5050 is hex 20100).
+ * The screen round-trip has the same neighbor-mapping quirk
+ * ({@code back=4950}); asserted as-is.
  */
 class TileMathTest {
 
@@ -86,5 +93,45 @@ class TileMathTest {
         assertEquals(17288, TileMath.tileFromScreenXY(sx[0], sy[0]));
         assertEquals(-1, TileMath.tileToScreenXY(-1, sx, sy));
         assertEquals(-1, TileMath.tileFromScreenXY(-1000, -1000));
+    }
+
+    @Test
+    void squareMathVectors() {
+        // Hermetic re-init (same geometry as tileMathVectors).
+        byte[] buf = new byte[640 * 480];
+        int initRc = TileMath.tileInit(null, 100, 100, 200, 200, buf, 640, 480, 640, rect -> {
+        });
+        TileMath.tileSetCenter(17488,
+                TileMath.TILE_SET_CENTER_FLAG_IGNORE_SCROLL_RESTRICTIONS);
+
+        // Square 5050 is hex 20100; elevation is ignored.
+        int[] sx = new int[1];
+        int[] sy = new int[1];
+        int toScrRc = TileMath.squareTileToScreenXY(5050, sx, sy, 0);
+        int px = sx[0];
+        int py = sy[0];
+        assertEquals(0, initRc);
+        assertEquals(0, toScrRc);
+        assertEquals(4950, TileMath.squareTileFromScreenXY(sx[0], sy[0], 0));
+        assertEquals(-1, TileMath.squareTileToScreenXY(-1, sx, sy, 0));
+        assertEquals(-1, TileMath.squareTileFromScreenXY(-1000, -1000, 0));
+
+        int[] rx = new int[1];
+        int[] ry = new int[1];
+        assertEquals(0, TileMath.squareTileToRoofScreenXY(5050, rx, ry, 0));
+        assertEquals(176, rx[0]);
+        assertEquals(362, ry[0]);
+
+        int[] cx = new int[1];
+        int[] cy = new int[1];
+        TileMath.squareTileScreenToCoord(px, py, 0, cx, cy);
+        assertEquals(50, cx[0]);
+        assertEquals(49, cy[0]);
+
+        int[] rcx = new int[1];
+        int[] rcy = new int[1];
+        TileMath.squareTileScreenToCoordRoof(rx[0], ry[0], 0, rcx, rcy);
+        assertEquals(50, rcx[0]);
+        assertEquals(49, rcy[0]);
     }
 }

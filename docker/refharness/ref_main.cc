@@ -5001,6 +5001,41 @@ void sectionTileMath()
     fallout::tileExit();
 }
 
+void sectionSquareMath()
+{
+    std::puts("[squaremath]");
+
+    // Hermetic re-init (same geometry as [tilemath]); tileExit is a no-op.
+    int initRc = fallout::tileInit(nullptr, 100, 100, 200, 200, tileBuf, 640, 480, 640, noopTileRefresh);
+    fallout::tileSetCenter(17488, TILE_SET_CENTER_FLAG_IGNORE_SCROLL_RESTRICTIONS);
+
+    // Square 5050 is hex 20100 (see [tilemath]); elevation is ignored.
+    int sx = -1;
+    int sy = -1;
+    int toScrRc = fallout::squareTileToScreenXY(5050, &sx, &sy, 0);
+    int px = sx;
+    int py = sy;
+    int backSq = fallout::squareTileFromScreenXY(sx, sy, 0);
+    int badScr = fallout::squareTileToScreenXY(-1, &sx, &sy, 0);
+    int outsideSq = fallout::squareTileFromScreenXY(-1000, -1000, 0);
+    std::printf("init=%d toscr=%d back=%d badscr=%d outside=%d\n",
+        initRc, toScrRc, backSq, badScr, outsideSq);
+
+    int rx = -1;
+    int ry = -1;
+    int roofRc = fallout::squareTileToRoofScreenXY(5050, &rx, &ry, 0);
+    int cx = -999;
+    int cy = -999;
+    fallout::squareTileScreenToCoord(px, py, 0, &cx, &cy);
+    int rcx = -999;
+    int rcy = -999;
+    fallout::squareTileScreenToCoordRoof(rx, ry, 0, &rcx, &rcy);
+    std::printf("roof=%d roofxy=%d,%d coord=%d,%d roofcoord=%d,%d\n",
+        roofRc, rx, ry, cx, cy, rcx, rcy);
+
+    fallout::tileExit();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5080,5 +5115,6 @@ int main()
     sectionWinFile();
     sectionProtoDb();
     sectionTileMath();
+    sectionSquareMath();
     return 0;
 }

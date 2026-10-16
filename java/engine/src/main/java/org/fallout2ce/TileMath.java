@@ -519,6 +519,114 @@ public final class TileMath {
         return gSquareGridWidth - 1 - squareCol + gSquareGridWidth * squareRow;
     }
 
+    // 0x4B1DC8 square_coord (elevation ignored, like C). Out params are
+    // length-1 int arrays (repo convention for C pointer outs).
+    public static int squareTileToScreenXY(int squareTile, int[] coordX, int[] coordY, int elevation) {
+        coordX[0] = 0;
+        coordY[0] = 0;
+
+        if (squareTile < 0 || squareTile >= gSquareGridSize) {
+            return -1;
+        }
+
+        int tileCol = gSquareGridWidth - 1 - squareTile % gSquareGridWidth;
+        int tileRow = squareTile / gSquareGridWidth;
+
+        coordX[0] = squareOffX;
+        coordY[0] = squareOffY;
+
+        int colDelta = tileCol - squareX;
+        coordX[0] += 48 * colDelta;
+        coordY[0] -= 12 * colDelta;
+
+        int rowDelta = tileRow - squareY;
+        coordX[0] += 32 * rowDelta;
+        coordY[0] += 24 * rowDelta;
+
+        return 0;
+    }
+
+    // 0x4B1E60 square_coord_roof (elevation ignored, like C; the -96 roof
+    // shift is applied after the identical floor math).
+    public static int squareTileToRoofScreenXY(int squareTile, int[] screenX, int[] screenY, int elevation) {
+        screenX[0] = 0;
+        screenY[0] = 0;
+
+        if (squareTile < 0 || squareTile >= gSquareGridSize) {
+            return -1;
+        }
+
+        int tileCol = gSquareGridWidth - 1 - squareTile % gSquareGridWidth;
+        int tileRow = squareTile / gSquareGridWidth;
+
+        screenX[0] = squareOffX;
+        screenY[0] = squareOffY;
+
+        int colDelta = tileCol - squareX;
+        screenX[0] += 48 * colDelta;
+        screenY[0] -= 12 * colDelta;
+
+        int rowDelta = tileRow - squareY;
+        screenX[0] += 32 * rowDelta;
+        screenY[0] += 24 * rowDelta;
+        screenY[0] -= 96;
+
+        return 0;
+    }
+
+    // 0x4B1F04 square_num (elevation ignored, like C; bounds gate
+    // returning -1).
+    public static int squareTileFromScreenXY(int screenX, int screenY, int elevation) {
+        int[] coordX = new int[1];
+        int[] coordY = new int[1];
+
+        squareTileScreenToCoord(screenX, screenY, elevation, coordX, coordY);
+
+        if (coordX[0] >= 0 && coordX[0] < gSquareGridWidth
+                && coordY[0] >= 0 && coordY[0] < gSquareGridHeight) {
+            return coordX[0] + gSquareGridWidth * coordY[0];
+        }
+
+        return -1;
+    }
+
+    // 0x4B1F94 square_xy (elevation ignored, like C). NOTE: Java / and %
+    // truncate toward zero like C, so the (v + 1) / n - 1 negative forms
+    // port verbatim; the final coordX mirror is width - 1 - coordX.
+    public static void squareTileScreenToCoord(int screenX, int screenY, int elevation,
+            int[] coordX, int[] coordY) {
+        int v4 = screenX - squareOffX;
+        int v5 = screenY - squareOffY - 12;
+        int v6 = 3 * v4 - 4 * v5;
+        coordX[0] = v6 >= 0 ? (v6 / 192) : ((v6 + 1) / 192 - 1);
+
+        int v8 = 4 * v5 + v4;
+        coordY[0] = v8 >= 0 ? (v8 / 128) : ((v8 + 1) / 128 - 1);
+
+        coordX[0] += squareX;
+        coordY[0] += squareY;
+
+        coordX[0] = gSquareGridWidth - 1 - coordX[0];
+    }
+
+    // 0x4B203C square_xy_roof (elevation ignored, like C; +96 roof shift
+    // folded into v5, otherwise identical to square_xy).
+    public static void squareTileScreenToCoordRoof(int screenX, int screenY, int elevation,
+            int[] coordX, int[] coordY) {
+        int v4 = screenX - squareOffX;
+        int v5 = screenY + 96 - squareOffY - 12;
+        int v6 = 3 * v4 - 4 * v5;
+        coordX[0] = v6 >= 0 ? (v6 / 192) : ((v6 + 1) / 192 - 1);
+
+        int v8 = 4 * v5 + v4;
+        coordY[0] = v8 >= 0 ? (v8 / 128) : ((v8 + 1) / 128 - 1);
+
+        coordX[0] += squareX;
+        coordY[0] += squareY;
+
+        coordX[0] = gSquareGridWidth - 1 - coordX[0];
+    }
+
     // 0x4B185C tile_dist.
     public static int tileDistanceBetween(int tile1, int tile2) {
         if (!tileIsValid(tile1) || !tileIsValid(tile2)) {
