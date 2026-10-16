@@ -21,6 +21,7 @@
 
 #include "color.h"
 #include "cycle.h"
+#include "dbox.h"
 #include "delay.h"
 #include "fps_limiter.h"
 #include "dictionary.h"
@@ -4740,6 +4741,92 @@ void sectionWinText()
     unsigned char tileDst[12 * 12] = {};
     fallout::_fillBuf3x3(tile3, 9, 9, tileDst, 12, 12);
     std::printf("fill3x3=%08lX\n", rawBufCrc(tileDst, sizeof(tileDst)));
+}
+
+void sectionWinDbg()
+{
+    std::puts("[windbg]");
+
+    // Reuses the live system (re-init is impossible, see [winbtn]).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+
+    int dbg1 = fallout::_win_debug((char*)"Hi");
+    // Debug window sits at 80,80; its center hits nothing else alive.
+    int dbgWin = fallout::windowGetAtPoint(230, 176);
+    uLong dbgCrc = winBufCrc(dbgWin);
+    int dbg2 = fallout::_win_debug((char*)"Hello world, this is a long debug line that wraps!\nsecond");
+    uLong dbgCrc2 = winBufCrc(dbgWin);
+    std::printf("dbg1=%d dbgwin=%d dbg-crc=%08lX dbg2=%d dbg-crc2=%08lX\n",
+        dbg1, dbgWin, dbgCrc, dbg2, dbgCrc2);
+
+    // The Close-button callback destroys the window; the next message
+    // recreates it from scratch.
+    fallout::_win_debug_delete(-1, -1);
+    int dbgGone = fallout::windowGetWindow(dbgWin) == nullptr ? 1 : 0;
+    int dbgAtAfter = fallout::windowGetAtPoint(230, 176);
+    int dbg3 = fallout::_win_debug((char*)"Again");
+    int dbgWin3 = fallout::windowGetAtPoint(230, 176);
+    std::printf("dbg-gone=%d dbg-at-after=%d dbg3=%d dbgwin3=%d\n",
+        dbgGone, dbgAtAfter, dbg3, dbgWin3);
+    fallout::_win_debug_delete(-1, -1);
+}
+
+void sectionWinDbox()
+{
+    std::puts("[windbox]");
+
+    // Reuses the live system (re-init is impossible, see [winbtn]).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+    fallout::mouseSetFrame(nullptr, 0, 0, 0, 0, 0, 0);
+    fallout::mouseManagerShowMouse();
+    fallout::keyboardSetLayout(fallout::KEYBOARD_LAYOUT_QWERTY);
+
+    // Park the mouse away from every button: the modal pumps below read
+    // keys from _kb_getch, mouse input would corrupt the sequences.
+    fallout::_mouse_set_position(639, 479);
+    fallout::_mouse_simulate_input(0, 0, 0);
+
+    const char* body[] = { "line one", "line two" };
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int dlgEsc = fallout::showDialogBox((char*)"Hi", body, 2, 200, 150,
+        (fallout::ColorWithFlags)3, nullptr, (fallout::ColorWithFlags)5, 0);
+    kbSim(SDL_SCANCODE_Y, 1);
+    int dlgYes = fallout::showDialogBox((char*)"Hi", body, 2, 200, 150,
+        (fallout::ColorWithFlags)3, nullptr, (fallout::ColorWithFlags)5, fallout::DIALOG_BOX_YES_NO);
+    kbSim(SDL_SCANCODE_N, 1);
+    int dlgNo = fallout::showDialogBox((char*)"Hi", body, 2, 200, 150,
+        (fallout::ColorWithFlags)3, nullptr, (fallout::ColorWithFlags)5, fallout::DIALOG_BOX_YES_NO);
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int dlgClean = fallout::showDialogBox((char*)"Hi", body, 2, 200, 150,
+        (fallout::ColorWithFlags)3, nullptr, (fallout::ColorWithFlags)5, fallout::DIALOG_BOX_NO_BUTTONS);
+    std::printf("dlg-esc=%d dlg-yes=%d dlg-no=%d dlg-clean=%d\n", dlgEsc, dlgYes, dlgNo, dlgClean);
+
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    const char* inpAb = fallout::showInputDialog((char*)"ab", 200, 150, (char*)"Done");
+    char inpAbBuf[32] = "(null)";
+    if (inpAb != nullptr) {
+        snprintf(inpAbBuf, sizeof(inpAbBuf), "%s", inpAb);
+    }
+    kbSim(SDL_SCANCODE_BACKSPACE, 1);
+    kbSim(SDL_SCANCODE_C, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    const char* inpAc = fallout::showInputDialog((char*)"ab", 200, 150, (char*)"Done");
+    char inpAcBuf[32] = "(null)";
+    if (inpAc != nullptr) {
+        snprintf(inpAcBuf, sizeof(inpAcBuf), "%s", inpAc);
+    }
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    const char* inpEsc = fallout::showInputDialog((char*)"ab", 200, 150, (char*)"Done");
+    std::printf("inp-ab=[%s] inp-ac=[%s] inp-escnull=%d\n",
+        inpAbBuf, inpAcBuf, inpEsc == nullptr ? 1 : 0);
 
     fallout::windowManagerExit();
 }
@@ -4818,5 +4905,7 @@ int main()
     sectionWinDlg();
     sectionWinMenu2();
     sectionWinText();
+    sectionWinDbg();
+    sectionWinDbox();
     return 0;
 }

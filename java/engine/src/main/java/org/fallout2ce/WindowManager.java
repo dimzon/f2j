@@ -3344,6 +3344,156 @@ public final class WindowManager {
         return win;
     }
 
+    /**
+     * Port of {@code _wd} (0x51E414): the debug-window id, -1 while closed.
+     *
+     * <p>Test seam: {@link #resetForTests} sets this back to -1 <em>without</em>
+     * destroying any window (C has no reset; the windows themselves are torn
+     * down by {@code resetForTests}, which mirrors a fresh process).
+     */
+    private static int debugWindow = -1;
+
+    /**
+     * Port of {@code _win_debug} (0x4DC30C, window_manager_private.cc).
+     *
+     * <p>The text cursor ({@code _currx}/{@code _curry}) reuses this class's
+     * {@code currx}/{@code curry} fields: in C they are touched only by the
+     * debug window, and nothing else in the port reads them. Raw color ints
+     * ({@code 0x100 | n}) flow through, remapped inside
+     * {@code windowFill}/{@code windowDrawText} exactly like C.
+     */
+    public static int winDebug(String string) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        // CE: Debug window metrics were designed for default DOS-style font (0).
+        // We don't expect caller to properly set one, so without manually forcing
+        // it debug window might contain mixed fonts.
+        int oldFont = TextFont.fontGetCurrent();
+        TextFont.fontSetCurrent(0);
+
+        int lineHeight = TextFont.fontGetLineHeight();
+
+        int winWidth = Settings.settings.debug.window_width;
+        int winHeight = Settings.settings.debug.window_height;
+        if (debugWindow == -1) {
+            debugWindow = windowCreate(80, 80, winWidth, winHeight, 256,
+                WindowFlags.WINDOW_MOVE_ON_TOP.id());
+            if (debugWindow == -1) {
+                return -1;
+            }
+
+            windowDrawBorder(debugWindow);
+
+            Window window = windowGetWindow(debugWindow);
+            byte[] windowBuffer = window.buffer;
+
+            windowFill(debugWindow, 8, 8, winWidth - 16, lineHeight, 0x100 | 1);
+
+            windowDrawText(debugWindow,
+                "Debug",
+                0,
+                (winWidth - TextFont.fontGetStringWidth("Debug")) / 2,
+                8,
+                Color.DRAW_TEXT_FLAG_NO_BG | 0x100 | 4);
+
+            Draw.bufferDrawRectShadowed(windowBuffer,
+                winWidth,
+                8,
+                8,
+                winWidth - 9,
+                lineHeight + 8,
+                Color.colorTable[gnwWcolor[2]] & 0xFF,
+                Color.colorTable[gnwWcolor[1]] & 0xFF);
+
+            windowFill(debugWindow, 9, 26, winWidth - 18, winHeight - 57, 0x100 | 1);
+
+            Draw.bufferDrawRectShadowed(windowBuffer,
+                winWidth,
+                8,
+                25,
+                winWidth - 9,
+                lineHeight + winHeight - 47,
+                Color.colorTable[gnwWcolor[2]] & 0xFF,
+                Color.colorTable[gnwWcolor[1]] & 0xFF);
+
+            currx = 9;
+            curry = 26;
+
+            int btn = winRegisterTextButton(debugWindow,
+                (winWidth - TextFont.fontGetStringWidth("Close")) / 2,
+                winHeight - 8 - lineHeight - 6,
+                -1,
+                -1,
+                -1,
+                -1,
+                "Close",
+                0);
+            buttonSetMouseCallbacks(btn, null, null, null, WindowManager::winDebugDelete);
+
+            buttonCreate(debugWindow,
+                8,
+                8,
+                winWidth - 16,
+                lineHeight,
+                -1,
+                -1,
+                -1,
+                -1,
+                null,
+                null,
+                null,
+                ButtonFlags.BUTTON_DRAG_HANDLE.id());
+        }
+
+        int pch = 0;
+        while (pch < string.length() && string.charAt(pch) != '\0') {
+            char ch = string.charAt(pch);
+            int characterWidth = TextFont.fontGetCharacterWidth(ch & 0xFF);
+            if (ch == '\n' || currx + characterWidth > winWidth - 9) {
+                currx = 9;
+                curry += lineHeight;
+            }
+
+            while (winHeight - 32 - curry < lineHeight) {
+                Window window = windowGetWindow(debugWindow);
+                byte[] windowBuffer = window.buffer;
+                Draw.blitBufferToBuffer(windowBuffer,
+                    lineHeight * winWidth + winWidth * 26 + 9,
+                    winWidth - 18,
+                    winHeight - 58 - lineHeight - 1,
+                    winWidth,
+                    windowBuffer,
+                    winWidth * 26 + 9,
+                    winWidth);
+                curry -= lineHeight;
+                windowFill(debugWindow, 9, curry, winWidth - 18, lineHeight, 0x100 | 1);
+            }
+
+            if (ch != '\n') {
+                windowDrawText(debugWindow, String.valueOf(ch), 0, currx, curry,
+                    Color.DRAW_TEXT_FLAG_NO_BG | 0x100 | 4);
+                currx += characterWidth + TextFont.fontGetLetterSpacing();
+            }
+
+            pch++;
+        }
+
+        windowRefresh(debugWindow);
+
+        // CE: Restore font.
+        TextFont.fontSetCurrent(oldFont);
+
+        return 0;
+    }
+
+    /** Port of {@code _win_debug_delete} (0x4DC65C). */
+    public static void winDebugDelete(int btn, int keyCode) {
+        windowDestroy(debugWindow);
+        debugWindow = -1;
+    }
+
     /** Port of {@code _win_pull_down} (window_manager_private.cc). */
     public static int winPullDown(String[] items, int itemsLength, int x, int y, int color) {
         if (!windowSystemInitialized) {
@@ -4299,6 +4449,7 @@ public final class WindowManager {
     static void resetForTests() {
         windowSystemInitialized = false;
         java.util.Arrays.fill(gnwWcolor, 0);
+        debugWindow = -1;
         alreadyRunning = false;
         insideWinExit = false;
         for (int index = 0; index < MAX_WINDOW_COUNT; index++) {
