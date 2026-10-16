@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <unistd.h>
 #include <variant>
 #include <zlib.h>
@@ -45,6 +46,7 @@
 #include "options_settings_model.h"
 #include "pcx.h"
 #include "pointer_registry.h"
+#include "queue.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5036,6 +5038,78 @@ void sectionSquareMath()
     fallout::tileExit();
 }
 
+static int testQueueClearCalls = 0;
+
+static int testQueueClearFn(fallout::Object* owner, void* data)
+{
+    (void)owner;
+    (void)data;
+    testQueueClearCalls++;
+    return 1;
+}
+
+void sectionEventQueue()
+{
+    std::puts("[eventqueue]");
+
+    // No window system needed: game time is 302400 (static init).
+    fallout::queueInit();
+    int emptyInit = fallout::queueIsEmpty() ? 1 : 0;
+    unsigned int nextEmpty = fallout::queueGetNextEventTime();
+    // Opaque data cookies: never dereferenced (these types have no
+    // free/read/write procs), only null-tested through find.
+    int add1 = fallout::queueAddEvent(100, nullptr, (void*)(uintptr_t)0x1001, fallout::EVENT_TYPE_KNOCKOUT);
+    int add2 = fallout::queueAddEvent(50, nullptr, (void*)(uintptr_t)0x1002, fallout::EVENT_TYPE_SNEAK);
+    int add3 = fallout::queueAddEvent(150, nullptr, (void*)(uintptr_t)0x1003, fallout::EVENT_TYPE_KNOCKOUT);
+    unsigned int nextTime = fallout::queueGetNextEventTime();
+    int emptyAfter = fallout::queueIsEmpty() ? 1 : 0;
+    int hasKnock = fallout::queueHasEvent(nullptr, fallout::EVENT_TYPE_KNOCKOUT) ? 1 : 0;
+    int hasDrug = fallout::queueHasEvent(nullptr, fallout::EVENT_TYPE_DRUG) ? 1 : 0;
+    std::printf("empty-init=%d next-empty=%u add=%d,%d,%d next=%u empty=%d has-knock=%d has-drug=%d\n",
+        emptyInit, nextEmpty, add1, add2, add3, nextTime, emptyAfter, hasKnock, hasDrug);
+
+    // Find chain walks the two KNOCKOUT nodes, then exhausts.
+    void* found1 = fallout::queueFindFirstEvent(nullptr, fallout::EVENT_TYPE_KNOCKOUT);
+    void* found2 = fallout::queueFindNextEvent(nullptr, fallout::EVENT_TYPE_KNOCKOUT);
+    void* found3 = fallout::queueFindNextEvent(nullptr, fallout::EVENT_TYPE_KNOCKOUT);
+    std::printf("find=%d,%d,%d\n",
+        found1 != nullptr ? 1 : 0, found2 != nullptr ? 1 : 0, found3 != nullptr ? 1 : 0);
+
+    // Processing with no due events touches no handlers (game time is 0).
+    int procIdle = fallout::queueProcessEvents();
+    unsigned int nextIdle = fallout::queueGetNextEventTime();
+    int remType = fallout::queueRemoveEventsByType(nullptr, fallout::EVENT_TYPE_KNOCKOUT);
+    int hasKnockAfter = fallout::queueHasEvent(nullptr, fallout::EVENT_TYPE_KNOCKOUT) ? 1 : 0;
+    std::printf("proc-idle=%d next-idle=%u remtype=%d has-knock-after=%d\n",
+        procIdle, nextIdle, remType, hasKnockAfter);
+
+    // Save/clear/load roundtrip through a scratch file (no serde procs).
+    fallout::File* saveStream = fallout::fileOpen((char*)"/tmp/qev.bin", (char*)"wb");
+    int saveRc = saveStream != nullptr ? fallout::queueSave(saveStream) : -99;
+    if (saveStream != nullptr) {
+        fallout::fileClose(saveStream);
+    }
+    fallout::queueClear();
+    int emptyCleared = fallout::queueIsEmpty() ? 1 : 0;
+    fallout::File* loadStream = fallout::fileOpen((char*)"/tmp/qev.bin", (char*)"rb");
+    int loadRc = loadStream != nullptr ? fallout::queueLoad(loadStream) : -99;
+    if (loadStream != nullptr) {
+        fallout::fileClose(loadStream);
+    }
+    unsigned int nextLoaded = fallout::queueGetNextEventTime();
+    int hasSneakLoaded = fallout::queueHasEvent(nullptr, fallout::EVENT_TYPE_SNEAK) ? 1 : 0;
+    std::printf("save=%d cleared=%d load=%d next-loaded=%u has-sneak=%d\n",
+        saveRc, emptyCleared, loadRc, nextLoaded, hasSneakLoaded);
+
+    // Conditional clear counts + drops the survivors; exit drains all.
+    testQueueClearCalls = 0;
+    fallout::queueClearByEventType(fallout::EVENT_TYPE_SNEAK, testQueueClearFn);
+    int emptyAfterClear = fallout::queueIsEmpty() ? 1 : 0;
+    int exitRc = fallout::queueExit();
+    std::printf("clear-calls=%d empty-after-clear=%d exit=%d\n",
+        testQueueClearCalls, emptyAfterClear, exitRc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5116,5 +5190,6 @@ int main()
     sectionProtoDb();
     sectionTileMath();
     sectionSquareMath();
+    sectionEventQueue();
     return 0;
 }
