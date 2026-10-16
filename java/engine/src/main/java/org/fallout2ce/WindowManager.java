@@ -125,6 +125,7 @@ public final class WindowManager {
     public static final class MenuPulldown {
         public final Rect rect = new Rect();
         public int keyCode;
+        public int itemsLength;
         public String[] items = new String[0];
         public int foregroundColor;
         public int backgroundColor;
@@ -314,6 +315,13 @@ public final class WindowManager {
         boolean taken;
     }
 
+    /** Port of {@code tm_queue} entry ({@code created}/{@code id}/{@code location}). */
+    static final class TimedMessageQueueEntry {
+        long created;
+        int id;
+        int location;
+    }
+
     // window_manager_private.cc timed-message state (init here, used there).
     static final int TIMED_MSGS = 5;
     static int tmPersistence;
@@ -326,10 +334,11 @@ public final class WindowManager {
     static final TimedMessageSlot[] tmLocation = new TimedMessageSlot[TIMED_MSGS];
     static int curry;
     static int currx;
+    static final TimedMessageQueueEntry[] tmQueue = new TimedMessageQueueEntry[TIMED_MSGS];
+    static boolean tmWatchActive;
 
-    /** Placeholder for the timed-message watcher (body with private.cc). */
-    static final Runnable tmWatchMsgs = () -> {
-    };
+    /** Port of {@code tm_watch_msgs} (ticker proc; re-entrancy via {@code tmWatchActive}). */
+    static final Runnable tmWatchMsgs = WindowManager::tmWatchMsgsProc;
 
     private static boolean alreadyRunning;
     private static boolean insideWinExit;
@@ -356,6 +365,9 @@ public final class WindowManager {
         }
         for (int index = 0; index < tmLocation.length; index++) {
             tmLocation[index] = new TimedMessageSlot();
+        }
+        for (int index = 0; index < tmQueue.length; index++) {
+            tmQueue[index] = new TimedMessageQueueEntry();
         }
     }
 
@@ -537,9 +549,340 @@ public final class WindowManager {
         }
     }
 
-    /** Placeholder for {@code tm_kill_msg} (body with private.cc). */
+    /** Port of {@code tm_kill_msg} (0x4DD6C0). */
     static void tmKillMsg() {
-        tmKill = -1;
+        if (tmKill != -1) {
+            windowDestroy(tmQueue[tmKill].id);
+            tmLocation[tmQueue[tmKill].location].taken = false;
+
+            tmKill++;
+            if (tmKill == TIMED_MSGS) {
+                tmKill = 0;
+            }
+
+            if (tmKill == tmAdd) {
+                tmAdd = 0;
+                tmKill = -1;
+                Input.tickersRemove(tmWatchMsgs);
+            }
+        }
+    }
+
+    /** Port of {@code _win_register_menu_bar} (0x4DC6C0). */
+    public static int winRegisterMenuBar(int win, int x, int y, int width, int height,
+            int foregroundColor, int backgroundColor) {
+        Window window = windowGetWindow(win);
+
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (window == null) {
+            return -1;
+        }
+
+        if (window.menuBar != null) {
+            return -1;
+        }
+
+        int right = x + width;
+        if (right > window.width) {
+            return -1;
+        }
+
+        int bottom = y + height;
+        if (bottom > window.height) {
+            return -1;
+        }
+
+        MenuBar menuBar = new MenuBar();
+        window.menuBar = menuBar;
+
+        menuBar.win = win;
+        menuBar.rect.left = x;
+        menuBar.rect.top = y;
+        menuBar.rect.right = right - 1;
+        menuBar.rect.bottom = bottom - 1;
+        menuBar.pulldownsLength = 0;
+        menuBar.foregroundColor = foregroundColor;
+        menuBar.backgroundColor = backgroundColor;
+
+        windowFill(win, x, y, width, height, backgroundColor);
+        windowDrawRect(win, x, y, right - 1, bottom - 1, foregroundColor);
+
+        return 0;
+    }
+
+    /** Port of {@code _win_register_menu_pulldown} (0x4DC768). */
+    public static int winRegisterMenuPulldown(int win, int x, String title, int keyCode,
+            int itemsLength, String[] items, int foregroundColor, int backgroundColor) {
+        Window window = windowGetWindow(win);
+
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (window == null) {
+            return -1;
+        }
+
+        MenuBar menuBar = window.menuBar;
+        if (menuBar == null) {
+            return -1;
+        }
+
+        if (menuBar.pulldownsLength == 15) {
+            return -1;
+        }
+
+        int titleX = menuBar.rect.left + x;
+        int titleY = (menuBar.rect.top + menuBar.rect.bottom - TextFont.fontGetLineHeight()) / 2;
+        int btn = buttonCreate(win,
+            titleX,
+            titleY,
+            TextFont.fontGetStringWidth(title),
+            TextFont.fontGetLineHeight(),
+            -1,
+            -1,
+            keyCode,
+            -1,
+            null,
+            null,
+            null,
+            0);
+        if (btn == -1) {
+            return -1;
+        }
+
+        windowDrawText(win, title, 0, titleX, titleY,
+            window.menuBar.foregroundColor | Color.DRAW_TEXT_FLAG_NO_BG);
+
+        MenuPulldown pulldown = window.menuBar.pulldowns[window.menuBar.pulldownsLength];
+        pulldown.rect.left = titleX;
+        pulldown.rect.top = titleY;
+        pulldown.rect.right = TextFont.fontGetStringWidth(title) + titleX - 1;
+        pulldown.rect.bottom = TextFont.fontGetLineHeight() + titleY - 1;
+        pulldown.keyCode = keyCode;
+        pulldown.itemsLength = itemsLength;
+        pulldown.items = items;
+        pulldown.foregroundColor = foregroundColor;
+        pulldown.backgroundColor = backgroundColor;
+
+        window.menuBar.pulldownsLength++;
+
+        return 0;
+    }
+
+    /** Port of {@code _win_delete_menu_bar} (0x4DC8D0). */
+    public static void winDeleteMenuBar(int win) {
+        Window window = windowGetWindow(win);
+
+        if (!windowSystemInitialized) {
+            return;
+        }
+
+        if (window == null) {
+            return;
+        }
+
+        if (window.menuBar == null) {
+            return;
+        }
+
+        windowFill(win,
+            window.menuBar.rect.left,
+            window.menuBar.rect.top,
+            Geometry.rectGetWidth(window.menuBar.rect),
+            Geometry.rectGetHeight(window.menuBar.rect),
+            window.color);
+
+        window.menuBar = null;
+    }
+
+    /** Port of {@code _find_first_letter} (0x4DC9F0). */
+    public static int findFirstLetter(int ch, String[] stringList, int stringListLength) {
+        if (ch >= 'A' && ch <= 'Z') {
+            ch += ' ';
+        }
+
+        for (int index = 0; index < stringListLength; index++) {
+            String string = stringList[index];
+            int first = string.isEmpty() ? 0 : string.charAt(0);
+            if (first == ch || first == ch - ' ') {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    /** Port of {@code _win_width_needed} (0x4DCA30). */
+    public static int winWidthNeeded(String[] fileNameList, int fileNameListLength) {
+        int maxWidth = 0;
+
+        for (int index = 0; index < fileNameListLength; index++) {
+            int width = TextFont.fontGetStringWidth(fileNameList[index]);
+            if (width > maxWidth) {
+                maxWidth = width;
+            }
+        }
+
+        return maxWidth;
+    }
+
+    /** Port of {@code win_timed_msg} (0x4DD4C8). */
+    public static int winTimedMsg(String msg, int color) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (tmAdd == tmKill) {
+            return -1;
+        }
+
+        int width = TextFont.fontGetStringWidth(msg) + 2 * tmTextX;
+        int x = scrCenterX - width / 2;
+        int height = tmH;
+        int y = 0;
+
+        int index;
+        for (index = 0; index < TIMED_MSGS; index++) {
+            if (!tmLocation[index].taken) {
+                tmLocation[index].taken = true;
+                y = tmLocation[index].y;
+                break;
+            }
+        }
+
+        if (index == TIMED_MSGS) {
+            return -1;
+        }
+
+        int win = windowCreate(x, y, width, height, 0x100 | 1, WindowFlags.WINDOW_MOVE_ON_TOP.id());
+        windowDrawBorder(win);
+        windowDrawText(win, msg, 0, tmTextX, tmTextY, color);
+
+        int btn = buttonCreate(win,
+            0,
+            0,
+            width,
+            height,
+            -1,
+            -1,
+            -1,
+            -1,
+            null,
+            null,
+            null,
+            0);
+        buttonSetMouseCallbacks(btn, null, null, null, WindowManager::tmClickResponse);
+
+        windowRefresh(win);
+
+        tmQueue[tmAdd].id = win;
+        tmQueue[tmAdd].created = Ticks.getTicks();
+        tmQueue[tmAdd].location = index;
+
+        tmAdd++;
+        if (tmAdd == TIMED_MSGS) {
+            tmAdd = 0;
+        } else if (tmKill == -1) {
+            tmKill = 0;
+            Input.tickersAdd(tmWatchMsgs);
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code tm_watch_msgs} (0x4DD66C). */
+    static void tmWatchMsgsProc() {
+        if (tmWatchActive) {
+            return;
+        }
+
+        tmWatchActive = true;
+        while (tmKill != -1) {
+            if (Ticks.getTicksSince(tmQueue[tmKill].created) < tmPersistence) {
+                break;
+            }
+
+            tmKillMsg();
+        }
+        tmWatchActive = false;
+    }
+
+    /** Port of {@code tm_kill_out_of_order} (0x4DD744). */
+    static void tmKillOutOfOrder(int queueIndex) {
+        if (tmKill == -1) {
+            return;
+        }
+
+        if (!tmIndexActive(queueIndex)) {
+            return;
+        }
+
+        windowDestroy(tmQueue[queueIndex].id);
+
+        tmLocation[tmQueue[queueIndex].location].taken = false;
+
+        int copyTo = queueIndex;
+        while (copyTo != tmKill) {
+            int copyFrom = copyTo - 1;
+            if (copyFrom < 0) {
+                copyFrom = TIMED_MSGS - 1;
+            }
+
+            tmQueue[copyTo].created = tmQueue[copyFrom].created;
+            tmQueue[copyTo].id = tmQueue[copyFrom].id;
+            tmQueue[copyTo].location = tmQueue[copyFrom].location;
+            copyTo = copyFrom;
+        }
+
+        tmKill++;
+        if (tmKill == TIMED_MSGS) {
+            tmKill = 0;
+        }
+
+        if (tmAdd == tmKill) {
+            tmAdd = 0;
+            tmKill = -1;
+            Input.tickersRemove(tmWatchMsgs);
+        }
+    }
+
+    /** Port of {@code tm_click_response} (0x4DD82C). */
+    static void tmClickResponse(int btn, int keyCode) {
+        if (tmKill == -1) {
+            return;
+        }
+
+        int win = buttonGetWindowId(btn);
+        int queueIndex = tmKill;
+        while (win != tmQueue[queueIndex].id) {
+            queueIndex++;
+            if (queueIndex == TIMED_MSGS) {
+                queueIndex = 0;
+            }
+
+            if (queueIndex == tmKill || !tmIndexActive(queueIndex)) {
+                return;
+            }
+        }
+
+        tmKillOutOfOrder(queueIndex);
+    }
+
+    /** Port of {@code tm_index_active} (0x4DD870). */
+    static boolean tmIndexActive(int queueIndex) {
+        if (tmKill == tmAdd) {
+            return true;
+        }
+
+        if (tmKill < tmAdd) {
+            return queueIndex >= tmKill && queueIndex < tmAdd;
+        }
+
+        return queueIndex < tmAdd || queueIndex >= tmKill;
     }
 
     /** Port of {@code windowCreate} (win_add, 0x4D6238). */
@@ -2677,6 +3020,10 @@ public final class WindowManager {
         for (int index = 0; index < tmLocation.length; index++) {
             tmLocation[index] = new TimedMessageSlot();
         }
+        for (int index = 0; index < tmQueue.length; index++) {
+            tmQueue[index] = new TimedMessageQueueEntry();
+        }
+        tmWatchActive = false;
         titleHandler = title -> {
         };
         messageBoxHandler = text -> {

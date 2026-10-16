@@ -71,6 +71,7 @@
 #include "widget.h"
 #include "window.h"
 #include "window_manager.h"
+#include "window_manager_private.h"
 #include "font_manager.h"
 #include "game_config.h"
 #include "input.h"
@@ -4264,6 +4265,117 @@ void sectionWinBtn()
     fallout::buttonDestroy(btn2);
     int destroyedLookup = fallout::buttonGetWindowId(btn2);
     std::printf("destroyed-lookup=%d\n", destroyedLookup);
+}
+
+void sectionWinMenu()
+{
+    std::puts("[winmenu]");
+
+    // Reuses [winbtn]'s live system: re-init fails (font managers are
+    // process-lifetime, like [winbtn] documented) and exit would tear down
+    // the shared state. Reset the cursor so click math uses hot (1,1).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+    fallout::mouseSetFrame(nullptr, 0, 0, 0, 0, 0, 0);
+    fallout::mouseManagerShowMouse();
+
+    int win = fallout::windowCreate(10, 10, 200, 60, (fallout::ColorWithFlags)5, 0);
+    fallout::windowShow(win);
+
+    // Pulldown without a bar is rejected.
+    char* noBarItems[] = { (char*)"Nope" };
+    int noBarPulldown = fallout::_win_register_menu_pulldown(win, 2, (char*)"Nope", 99, 1, noBarItems,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    int barRc = fallout::_win_register_menu_bar(win, 0, 0, 200, 12,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    int barAgain = fallout::_win_register_menu_bar(win, 0, 0, 200, 12,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+
+    // Bar wider than its window is rejected (separate small window).
+    int smallWin = fallout::windowCreate(300, 10, 40, 30, (fallout::ColorWithFlags)5, 0);
+    int barTooWide = fallout::_win_register_menu_bar(smallWin, 0, 0, 100, 12,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    fallout::windowDestroy(smallWin);
+    std::printf("nobar-pulldown=%d bar=%d bar-again=%d bar-too-wide=%d\n",
+        noBarPulldown, barRc, barAgain, barTooWide);
+
+    char* gameItems[] = { (char*)"New", (char*)"Load", (char*)"Exit" };
+    int pulldown1 = fallout::_win_register_menu_pulldown(win, 2, (char*)"Game", 101, 3, gameItems,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    char* optItems[] = { (char*)"On", (char*)"Off" };
+    int pulldown2 = fallout::_win_register_menu_pulldown(win, 60, (char*)"Opt", 102, 2, optItems,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    fallout::Window* menuWin = fallout::windowGetWindow(win);
+    int pulldowns = menuWin != nullptr && menuWin->menuBar != nullptr
+        ? menuWin->menuBar->pulldownsLength
+        : -1;
+    std::printf("pulldown1=%d pulldown2=%d pulldowns=%d menu-crc=%08lX\n",
+        pulldown1, pulldown2, pulldowns, winBufCrc(win));
+
+    // Pure helpers: first-letter search is case-insensitive, width is max.
+    const char* names[] = { "New", "Load", "Exit" };
+    int findL = fallout::_find_first_letter('l', names, 3);
+    int findE = fallout::_find_first_letter('E', names, 3);
+    int findMiss = fallout::_find_first_letter('z', names, 3);
+    int widthNeeded = fallout::_win_width_needed(names, 3);
+    int menuPass = fallout::_GNW_check_menu_bars(42);
+    std::printf("find-l=%d find-E=%d find-miss=%d width-needed=%d menu-pass=%d\n",
+        findL, findE, findMiss, widthNeeded, menuPass);
+
+    // Deleting the bar clears it; re-register works and passthrough holds.
+    fallout::_win_delete_menu_bar(win);
+    int menuPassAfter = fallout::_GNW_check_menu_bars(42);
+    int barReRc = fallout::_win_register_menu_bar(win, 0, 0, 200, 12,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5);
+    fallout::_win_delete_menu_bar(win);
+    std::printf("menu-pass-after=%d bar-re=%d\n", menuPassAfter, barReRc);
+
+    // Timed messages: two slots, click-dismiss each via its full-window button.
+    // Timed windows carry WINDOW_MOVE_ON_TOP; locate them by flag scan so
+    // the vectors don't depend on id recycling.
+    int tm1 = fallout::win_timed_msg((char*)"Hi", (fallout::ColorWithFlags)3);
+    int tm2 = fallout::win_timed_msg((char*)"Bye", (fallout::ColorWithFlags)3);
+    int tmWins[2] = { -1, -1 };
+    int tmFound = 0;
+    for (int id = 1; id < 20 && tmFound < 2; id++) {
+        fallout::Window* w = fallout::windowGetWindow(id);
+        if (w != nullptr && (w->flags & fallout::WINDOW_MOVE_ON_TOP) != 0) {
+            tmWins[tmFound++] = id;
+        }
+    }
+    int tmWin1 = tmWins[0];
+    int tmWin2 = tmWins[1];
+    fallout::Rect r1 {};
+    fallout::windowGetRect(tmWin1, &r1);
+    fallout::Rect r2 {};
+    fallout::windowGetRect(tmWin2, &r2);
+    std::printf("tm1=%d tm2=%d tmwins=%d,%d tmrect1=%d,%d,%d,%d tmrect2=%d,%d,%d,%d\n", tm1, tm2,
+        tmWin1, tmWin2,
+        r1.left, r1.top, r1.right, r1.bottom, r2.left, r2.top, r2.right, r2.bottom);
+
+    fallout::_mouse_set_position((r1.left + r1.right) / 2, (r1.top + r1.bottom) / 2);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    int tmWin1Gone = fallout::windowGetWindow(tmWin1) == nullptr ? 1 : 0;
+    int tmWin2Alive = fallout::windowGetWindow(tmWin2) != nullptr ? 1 : 0;
+    std::printf("click1-gone=%d click1-other-alive=%d\n", tmWin1Gone, tmWin2Alive);
+
+    fallout::_mouse_set_position((r2.left + r2.right) / 2, (r2.top + r2.bottom) / 2);
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, MOUSE_STATE_LEFT_BUTTON_DOWN);
+    fallout::_win_check_all_buttons();
+    fallout::_mouse_simulate_input(0, 0, 0);
+    fallout::_win_check_all_buttons();
+    int tmWin2Gone = fallout::windowGetWindow(tmWin2) == nullptr ? 1 : 0;
+    std::printf("click2-gone=%d\n", tmWin2Gone);
 
     fallout::windowManagerExit();
 }
@@ -4337,5 +4449,6 @@ int main()
     sectionUiTypes();
     sectionMouseWin();
     sectionWinBtn();
+    sectionWinMenu();
     return 0;
 }

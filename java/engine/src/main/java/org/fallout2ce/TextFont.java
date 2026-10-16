@@ -417,7 +417,12 @@ public final class TextFont {
                         }
 
                         if ((glyphData[gi] & bits) != 0) {
-                            buf[pos] = (byte) ink;
+                            // NOTE: C++ writes through a raw pointer, so rows above
+                            // the buffer (e.g. menu pulldown titles with a
+                            // negative y) silently land outside; clip them here.
+                            if (pos >= 0 && pos < buf.length) {
+                                buf[pos] = (byte) ink;
+                            }
                         }
 
                         bits >>= 1;
