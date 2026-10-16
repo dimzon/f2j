@@ -6124,6 +6124,26 @@ void sectionSkillTag()
     std::printf("sneak=%d\n", sneakVal);
 }
 
+void sectionPcStat()
+{
+    std::puts("[pcstat]");
+
+    // No window system needed. Tables are compile-time; values start zero
+    // (pcStatsReset never ran headless). Experience paths are skipped:
+    // they pull the level/xp machinery.
+    int sp0 = fallout::pcGetStat(fallout::PC_STAT_UNSPENT_SKILL_POINTS);
+    int badGet = fallout::pcGetStat((fallout::PcStat)99);
+    int setLevel = fallout::pcSetStat(fallout::PC_STAT_LEVEL, 5);
+    int levelVal = fallout::pcGetStat(fallout::PC_STAT_LEVEL);
+    int setLevelHigh = fallout::pcSetStat(fallout::PC_STAT_LEVEL, 1000);
+    int setRepLow = fallout::pcSetStat(fallout::PC_STAT_REPUTATION, -21);
+    int setRep = fallout::pcSetStat(fallout::PC_STAT_REPUTATION, 7);
+    int repVal = fallout::pcGetStat(fallout::PC_STAT_REPUTATION);
+    int setBad = fallout::pcSetStat((fallout::PcStat)99, 1);
+    std::printf("sp0=%d badget=%d setlevel=%d level=%d toohigh=%d toolow=%d setrep=%d rep=%d badset=%d\n",
+        sp0, badGet, setLevel, levelVal, setLevelHigh, setRepLow, setRep, repVal, setBad);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6232,5 +6252,6 @@ int main()
     sectionProtoCopy();
     sectionMapVars();
     sectionSkillTag();
+    sectionPcStat();
     return 0;
 }

@@ -15,7 +15,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  *
  * <p>Vectors: {@code [critterstats]} in
  * {@code docker/refharness/golden/v58.txt}, produced by
- * {@code sectionCritterStats} in {@code docker/refharness/ref_main.cc}.
+ * {@code sectionCritterStats} in {@code docker/refharness/ref_main.cc};
+ * {@code [pcstat]} in {@code docker/refharness/golden/v78.txt}, produced by
+ * {@code sectionPcStat} in {@code docker/refharness/ref_main.cc}.
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
@@ -86,6 +88,27 @@ public final class Stat {
     // Port of `unspentApBonus` / `unspentApPerkBonus` (src/stat.cc, init 4).
     private static int unspentApBonus = 4;
     private static int unspentApPerkBonus = 4;
+
+    // Port of `gPcStatDescriptions` min/max/default (src/stat.cc, compile-time):
+    //   [0]={0,INT_MAX,0} [1]={1,PC_LEVEL_MAX,1} [2]={0,INT_MAX,0}
+    //   [3]={-20,20,0} [4]={0,INT_MAX,0}.
+    // Ids from src/stat_defs.h: UNSPENT=0, LEVEL=1, EXPERIENCE=2,
+    // REPUTATION=3, KARMA=4, COUNT=5. Const tables: never reset.
+    private static final int[] PC_STAT_MINIMUM_VALUES = {0, 1, 0, -20, 0};
+    private static final int[] PC_STAT_MAXIMUM_VALUES = {
+        Integer.MAX_VALUE, StatDefs.PC_LEVEL_MAX, Integer.MAX_VALUE, 20, Integer.MAX_VALUE,
+    };
+    private static final int[] PC_STAT_DEFAULT_VALUES = {0, 1, 0, 0, 0};
+
+    // Port of `gPcStatValues` (src/stat.cc): zero-init mirrors BSS before
+    // pcStatsReset runs (the headless harness never calls it, so values
+    // start zero, not at defaults).
+    private static final int[] PC_STAT_VALUES = new int[StatDefs.PC_STAT_COUNT];
+
+    // Port of `xpTableThresholds` (src/stat.cc): 0 headless (no content
+    // config parsed), so pcGetMaxLevel() returns PC_LEVEL_MAX (99).
+    // The xpTable[] itself comes with the game phase.
+    private static int xpTableThresholds = 0;
 
     /** Port of {@code statGetConfiguredMaximum}: out-of-range stat yields 0. */
     public static int getConfiguredMaximum(int stat, boolean npc) {
@@ -745,6 +768,81 @@ public final class Stat {
         return 0;
     }
 
+    /**
+     * Port of {@code pcGetStat} (0x4AF8FC): valid id reads
+     * {@code gPcStatValues}, invalid id yields 0.
+     */
+    public static int pcGetStat(int pcStat) {
+        return StatDefs.pcStatIsValid(pcStat) ? PC_STAT_VALUES[pcStat] : 0;
+    }
+
+    /**
+     * Port of {@code pcGetMaxLevel} (src/stat.cc): no xp table headless
+     * ({@code xpTableThresholds == 0}) yields {@code PC_LEVEL_MAX} (99),
+     * else {@code thresholds + 1}.
+     */
+    public static int pcGetMaxLevel() {
+        if (xpTableThresholds == 0) {
+            return StatDefs.PC_LEVEL_MAX;
+        }
+        return xpTableThresholds + 1;
+    }
+
+    /**
+     * Port of {@code pcSetStat} (0x4AF910): invalid id -5, below minimum
+     * -2, above maximum -3 (LEVEL uses {@link #pcGetMaxLevel}, the rest the
+     * description max). Otherwise the store runs, except EXPERIENCE
+     * lowering routes to {@link #pcSetExperience}; EXPERIENCE raising (or
+     * equal) stores then calls {@link #pcAddExperienceWithOptions}.
+     *
+     * <p>Experience seams ({@code pcAddExperienceWithOptions} /
+     * {@code pcSetExperience}, game phase: level-up UI, HP recalc, party
+     * hooks) are dormant stubs below; the {@code [pcstat]} vectors avoid
+     * EXPERIENCE, so they never fire.
+     */
+    public static int pcSetStat(int pcStat, int value) {
+        if (!StatDefs.pcStatIsValid(pcStat)) {
+            return -5;
+        }
+
+        if (value < PC_STAT_MINIMUM_VALUES[pcStat]) {
+            return -2;
+        }
+
+        int maximumValue = pcStat == StatDefs.PcStat.PC_STAT_LEVEL.id()
+                ? pcGetMaxLevel()
+                : PC_STAT_MAXIMUM_VALUES[pcStat];
+        if (value > maximumValue) {
+            return -3;
+        }
+
+        if (pcStat != StatDefs.PcStat.PC_STAT_EXPERIENCE.id()
+                || value >= PC_STAT_VALUES[StatDefs.PcStat.PC_STAT_EXPERIENCE.id()]) {
+            PC_STAT_VALUES[pcStat] = value;
+            if (pcStat == StatDefs.PcStat.PC_STAT_EXPERIENCE.id()) {
+                return pcAddExperienceWithOptions(0, true);
+            }
+            return 0;
+        }
+        return pcSetExperience(value);
+    }
+
+    // Seam for `pcAddExperienceWithOptions(int, bool)` (src/stat.cc,
+    // 0x4AFAB8): game phase (gDude perks, level-up loop, monitor/sound/
+    // interface/party hooks). Dormant stub: the vectors never set
+    // EXPERIENCE, so this never fires.
+    private static int pcAddExperienceWithOptions(int xp, boolean doParty) {
+        return 0;
+    }
+
+    // Seam for `pcSetExperience(int)` (src/stat.cc, 0x4AFC38): game phase
+    // (level recalc via pcGetLevelForExperience, level-up grants, HP delta).
+    // Dormant stub: only reachable by lowering EXPERIENCE, which the
+    // vectors never do.
+    private static int pcSetExperience(int xp) {
+        return 0;
+    }
+
     /** Test seam: zero the bounds tables + reset the AP bonus seams. */
     static void resetForTests() {
         java.util.Arrays.fill(PC_STAT_MAXIMUMS, 0);
@@ -753,5 +851,7 @@ public final class Stat {
         java.util.Arrays.fill(NPC_STAT_MINIMUMS, 0);
         unspentApBonus = 4;
         unspentApPerkBonus = 4;
+        java.util.Arrays.fill(PC_STAT_VALUES, 0);
+        xpTableThresholds = 0;
     }
 }
