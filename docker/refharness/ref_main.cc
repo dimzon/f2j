@@ -98,6 +98,7 @@ void progressHandler()
 #include "geometry.h"
 #include "platform_compat.h"
 #include "text_font.h"
+#include "tile.h"
 #include "win32.h"
 #include "random.h"
 #include "string_parsers.h"
@@ -4937,6 +4938,69 @@ void sectionProtoDb()
     std::printf("empty-rc=%d huge-rc=%d badptr=%d\n", emptyRc, hugeRc, badProto == nullptr ? 1 : 0);
 }
 
+static void noopTileRefresh(fallout::Rect* rect)
+{
+    (void)rect;
+}
+
+static unsigned char tileBuf[640 * 480];
+
+void sectionTileMath()
+{
+    std::puts("[tilemath]");
+
+    // Headless tile init: grids 200x200 hex / 100x100 square, no map.
+    int initRc = fallout::tileInit(nullptr, 100, 100, 200, 200, tileBuf, 640, 480, 640, noopTileRefresh);
+    int centerAfterInit = fallout::gCenterTile;
+    int setRc = fallout::tileSetCenter(17488, TILE_SET_CENTER_FLAG_IGNORE_SCROLL_RESTRICTIONS);
+    int centerAfterSet = fallout::gCenterTile;
+    std::printf("init=%d init-center=%d setcenter=%d center=%d\n",
+        initRc, centerAfterInit, setRc, centerAfterSet);
+
+    // Rotation offset tables (static data).
+    std::printf("off=%d,%d,%d,%d,%d,%d d5=%d,%d,%d,%d,%d,%d\n",
+        fallout::_off_tile[0], fallout::_off_tile[1], fallout::_off_tile[2],
+        fallout::_off_tile[3], fallout::_off_tile[4], fallout::_off_tile[5],
+        fallout::dword_51D984[0], fallout::dword_51D984[1], fallout::dword_51D984[2],
+        fallout::dword_51D984[3], fallout::dword_51D984[4], fallout::dword_51D984[5]);
+
+    // The pair from the to-right-of comment (0x4450 vs 0x3BB8).
+    int dist = fallout::tileDistanceBetween(17488, 15288);
+    int distSame = fallout::tileDistanceBetween(17488, 17488);
+    int distBad = fallout::tileDistanceBetween(-1, 17488);
+    int inFront = fallout::tileIsInFrontOf(17488, 15288) ? 1 : 0;
+    int toRight = fallout::tileIsToRightOf(17488, 15288) ? 1 : 0;
+    int rot = (int)fallout::tileGetRotationTo(17488, 15288);
+    std::printf("dist=%d dist-same=%d dist-bad=%d infront=%d toright=%d rot=%d\n",
+        dist, distSame, distBad, inFront, toRight, rot);
+
+    int step1 = fallout::tileGetTileInDirection(17488, fallout::ROTATION_NE, 1);
+    int step3 = fallout::tileGetTileInDirection(17488, fallout::ROTATION_NE, 3);
+    int beyond = fallout::_tile_num_beyond(17488, 15288, 2);
+    int beyond0 = fallout::_tile_num_beyond(17488, 15288, 0);
+    std::printf("step1=%d step3=%d beyond=%d beyond0=%d\n", step1, step3, beyond, beyond0);
+
+    int edge0 = fallout::tileIsEdge(0) ? 1 : 0;
+    int edge199 = fallout::tileIsEdge(199) ? 1 : 0;
+    int edgeMid = fallout::tileIsEdge(20100) ? 1 : 0;
+    int edgeBad = fallout::tileIsEdge(-1) ? 1 : 0;
+    int sq = fallout::squareTileFromTile(20100);
+    int sqBad = fallout::squareTileFromTile(-1);
+    std::printf("edge0=%d edge199=%d edgemid=%d edgebad=%d sq=%d sqbad=%d\n",
+        edge0, edge199, edgeMid, edgeBad, sq, sqBad);
+
+    // Screen roundtrip through the current center.
+    int sx = -1;
+    int sy = -1;
+    int toScrRc = fallout::tileToScreenXY(17488, &sx, &sy);
+    int backTile = fallout::tileFromScreenXY(sx, sy);
+    int badScr = fallout::tileToScreenXY(-1, &sx, &sy);
+    int outsideTile = fallout::tileFromScreenXY(-1000, -1000);
+    std::printf("toscr=%d back=%d badscr=%d outside=%d\n", toScrRc, backTile, badScr, outsideTile);
+
+    fallout::tileExit();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5015,5 +5079,6 @@ int main()
     sectionWinDbox();
     sectionWinFile();
     sectionProtoDb();
+    sectionTileMath();
     return 0;
 }
