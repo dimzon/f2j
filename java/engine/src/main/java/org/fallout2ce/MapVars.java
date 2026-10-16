@@ -24,13 +24,14 @@ import java.util.Arrays;
  *
  * <p>NOTES / mapping decisions (all documented at the use site too):
  * <ul>
- * <li>{@code ProgramValue} home: no reusable Java script value exists.
- * {@code Program} ({@code src/interpreter.h} {@code Program}) is still an
- * opaque stub, and {@code ProtoDefs.ProtoDataMemberValue} is the unrelated
- * {@code ProtoDataMemberValue} int/string union. So the minimal harness
- * surface ({@code opcode} + {@code integerValue} / {@code pointerValue})
- * lives here as the nested {@link ProgramValue} class; the interpreter
- * phase will promote it.</li>
+ * <li>{@code ProgramValue} home: the minimal harness surface used to live
+ * here as the nested {@link ProgramValue} class because no reusable Java
+ * script value existed. The interpreter loading slice has since promoted
+ * the full {@code ProgramValue} (int/float/pointer union plus all C++
+ * ctors) to {@link Program.ProgramValue}; this nested class is now a thin
+ * compat subclass preserving the map-var surface, so there is exactly one
+ * value home and no duplication. The interpreter phase will unify the
+ * remaining call sites.</li>
  * <li>Pointer mapping: C {@code void* pointerValue} ({@code nullptr} =
  * no pointer) becomes a Java {@code Object} reference ({@code null} = no
  * pointer). The vectors use INT only, but both PTR branches are ported
@@ -57,38 +58,29 @@ public final class MapVars {
     private MapVars() {
     }
 
-    /** Port of {@code VALUE_TYPE_INT} (0xC001, {@code src/interpreter.h}). */
-    public static final int VALUE_TYPE_INT = 0xC001;
+    /** Port of {@code VALUE_TYPE_INT} (0xC001, {@code src/interpreter.h}); delegates to {@link Program}. */
+    public static final int VALUE_TYPE_INT = Program.VALUE_TYPE_INT;
 
-    /** Port of {@code VALUE_TYPE_PTR} (0xE001, {@code src/interpreter.h}). */
-    public static final int VALUE_TYPE_PTR = 0xE001;
+    /** Port of {@code VALUE_TYPE_PTR} (0xE001, {@code src/interpreter.h}); delegates to {@link Program}. */
+    public static final int VALUE_TYPE_PTR = Program.VALUE_TYPE_PTR;
 
     /**
-     * Minimal port of {@code ProgramValue} ({@code src/interpreter.h}:
-     * {@code opcode} enum + {@code integerValue}/{@code pointerValue}
-     * union). See class notes for why it lives here.
+     * Map-var view of {@code ProgramValue}: compat subclass of
+     * {@link Program.ProgramValue} exposing the int/pointer ctors the
+     * var domain uses (float lives only in the parent).
      */
-    public static final class ProgramValue {
-        public int opcode;
-        public int integerValue;
-        public Object pointerValue;
+    public static final class ProgramValue extends Program.ProgramValue {
 
         public ProgramValue() {
-            this.opcode = VALUE_TYPE_INT;
-            this.integerValue = 0;
-            this.pointerValue = null;
+            super();
         }
 
         public ProgramValue(int value) {
-            this.opcode = VALUE_TYPE_INT;
-            this.integerValue = value;
-            this.pointerValue = null;
+            super(value);
         }
 
         public ProgramValue(Object value) {
-            this.opcode = VALUE_TYPE_PTR;
-            this.integerValue = 0;
-            this.pointerValue = value;
+            super(value);
         }
     }
 

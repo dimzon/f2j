@@ -6500,6 +6500,30 @@ void sectionMoreDesc()
         gotSneakDesc ? 1 : 0, sneakDesc, gotStrDesc ? 1 : 0, strDesc);
 }
 
+void sectionScriptProg()
+{
+    std::puts("[scriptprog]");
+
+    // No window system needed. Bytecode loads straight from VFS;
+    // execution needs the game and stays out of reach.
+    fallout::Program* prog = fallout::programCreateByPath((char*)"scripts\\ABEL.int");
+    int startIdx = prog != nullptr ? fallout::programFindProcedure(prog, (char*)"start") : -999;
+    int missIdx = prog != nullptr ? fallout::programFindProcedure(prog, (char*)"nope") : -999;
+    int pop1 = -999;
+    int pop2 = -999;
+    if (prog != nullptr) {
+        fallout::programStackPushInteger(prog, 42);
+        fallout::programStackPushInteger(prog, 7);
+        pop1 = fallout::programStackPopInteger(prog);
+        pop2 = fallout::programStackPopInteger(prog);
+        fallout::programFree(prog);
+    }
+    // NOTE: missing files are fatal by design (noreturn error with no
+    // interpreter context), so only the successful load is pinned here.
+    std::printf("loaded=%d start=%d miss=%d pop=%d,%d\n",
+        prog != nullptr ? 1 : 0, startIdx, missIdx, pop1, pop2);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6621,5 +6645,6 @@ int main()
     sectionNames();
     sectionMoreNames();
     sectionMoreDesc();
+    sectionScriptProg();
     return 0;
 }
