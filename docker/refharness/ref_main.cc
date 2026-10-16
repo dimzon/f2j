@@ -55,6 +55,7 @@
 #include "stat.h"
 #include "skill.h"
 #include "combat.h"
+#include "critter.h"
 #include "scripts.h"
 #include "trait.h"
 #include "object.h"
@@ -5686,6 +5687,50 @@ void sectionAmmoCont()
         maxSize, total1, total2, total3, gunSize, nullMax, nullTotal);
 }
 
+void sectionExplosives()
+{
+    std::puts("[explosives]");
+
+    // No window system needed. Damage globals start zeroed (explosions
+    // init is static); custom entries live in a small registry.
+    int dynMin = -999;
+    int dynMax = -999;
+    bool dynGot = fallout::explosiveGetDamage(fallout::ItemProtoTypeId::Dynamite, &dynMin, &dynMax);
+    bool dynIs = fallout::explosiveIsExplosive(fallout::ItemProtoTypeId::Dynamite);
+    bool armedIs = fallout::explosiveIsActiveExplosive(fallout::ItemProtoTypeId::ArmedDynamite);
+    bool stimIs = fallout::explosiveIsExplosive(fallout::ProtoId(40));
+    fallout::explosiveAdd(fallout::ProtoId(40), fallout::ProtoId(41), 5, 9);
+    bool customIs = fallout::explosiveIsExplosive(fallout::ProtoId(40));
+    int custMin = -999;
+    int custMax = -999;
+    bool custGot = fallout::explosiveGetDamage(fallout::ProtoId(40), &custMin, &custMax);
+    fallout::ProtoId activated(40);
+    bool actRc = fallout::explosiveActivate(activated);
+    bool setDyn = fallout::explosiveSetDamage(fallout::ItemProtoTypeId::Dynamite, 10, 20);
+    int dynMin2 = -999;
+    int dynMax2 = -999;
+    fallout::explosiveGetDamage(fallout::ItemProtoTypeId::Dynamite, &dynMin2, &dynMax2);
+    std::printf("dyn=%d:%d,%d dynis=%d armedis=%d stimis=%d customis=%d custom=%d:%d,%d activated=%d:%d setdyn=%d dyn2=%d,%d\n",
+        dynGot ? 1 : 0, dynMin, dynMax, dynIs ? 1 : 0, armedIs ? 1 : 0, stimIs ? 1 : 0,
+        customIs ? 1 : 0, custGot ? 1 : 0, custMin, custMax,
+        actRc ? 1 : 0, activated.pid(), setDyn ? 1 : 0, dynMin2, dynMax2);
+
+    // Book lookup on the empty registry + critter body/kill reads.
+    int bookMsg = -999;
+    fallout::Skill bookSkill = (fallout::Skill)-99;
+    bool bookFound = fallout::booksGetInfo(fallout::ProtoId(40), &bookMsg, &bookSkill);
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    int dogBody = (int)fallout::critterGetBodyType(dog);
+    int stimBody = (int)fallout::critterGetBodyType(stim);
+    int dogKill = (int)fallout::critterGetKillType(dog);
+    int stimKill = (int)fallout::critterGetKillType(stim);
+    std::printf("book=%d body=%d,%d kill=%d,%d\n",
+        bookFound ? 1 : 0, dogBody, stimBody, dogKill, stimKill);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5781,5 +5826,6 @@ int main()
     sectionItemMove();
     sectionItemDrop();
     sectionAmmoCont();
+    sectionExplosives();
     return 0;
 }

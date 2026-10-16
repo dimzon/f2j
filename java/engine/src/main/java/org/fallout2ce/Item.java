@@ -1,5 +1,6 @@
 package org.fallout2ce;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +61,12 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code containerGetMaxSize}, {@code containerGetTotalSize}.
  * {@code [ammocont]} vectors live in
  * {@code docker/refharness/golden/v64.txt} (produced by
- * {@code sectionAmmoCont} in {@code docker/refharness/ref_main.cc}).
+ * {@code sectionAmmoCont} in {@code docker/refharness/ref_main.cc}), plus
+ * the explosives/books slice: {@code explosiveAdd/IsExplosive/
+ * IsActiveExplosive/Activate/SetDamage/GetDamage} and {@code booksGetInfo}.
+ * {@code [explosives]} vectors live in
+ * {@code docker/refharness/golden/v65.txt} (produced by
+ * {@code sectionExplosives} in {@code docker/refharness/ref_main.cc}).
  *
  * <p>NOTE (caliber scope): {@code ammoGetCaliber} ({@code src/item.cc}
  * {@code 0x4786C8}) is intentionally unported. It is not a one-liner pure
@@ -1744,5 +1750,203 @@ public final class Item {
 
     private static boolean isCritter(GameObject obj) {
         return FrmId.ofFid(obj.fid).objectType() == ObjectType.CRITTER;
+    }
+
+    // Port of BookDescription (src/item.cc): the static books registry.
+    // booksInit (vanilla + sfall custom) is game phase (config/message
+    // stack); the harness never runs it, so headless the list stays empty
+    // and booksGetInfo always misses. The registry + lookup are ported
+    // faithfully anyway.
+    private static final class BookDescription {
+        int bookPid;
+        int messageId;
+        SkillDefs.Skill skill;
+    }
+
+    private static final List<BookDescription> G_BOOKS = new ArrayList<>();
+
+    // books_get_info (src/item.cc): pid scan over the registry; the out
+    // params use the single-element-array convention (see
+    // weaponGetDamageMinMax). A null/short array is skipped, like the C++
+    // nullptr checks.
+    public static boolean booksGetInfo(
+            ProtoId protoId, int[] messageIdPtr, SkillDefs.Skill[] skillPtr) {
+        for (BookDescription book : G_BOOKS) {
+            if (ProtoId.ofPid(book.bookPid).equals(protoId)) {
+                if (messageIdPtr != null && messageIdPtr.length > 0) {
+                    messageIdPtr[0] = book.messageId;
+                }
+                if (skillPtr != null && skillPtr.length > 0) {
+                    skillPtr[0] = book.skill;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Port of ExplosiveDescription (src/item.cc).
+    private static final class ExplosiveDescription {
+        int pid;
+        int activePid;
+        int minDamage;
+        int maxDamage;
+    }
+
+    // gExplosives + the dynamite/plastic damage globals (src/item.cc).
+    // BSS mirror: the harness never runs explosionsInit/explosionsReset
+    // (game phase: content config), so headless all four damage globals
+    // stay zeroed and the registry stays empty (fresh-process state, see
+    // resetForTests).
+    private static final List<ExplosiveDescription> G_EXPLOSIVES = new ArrayList<>();
+    private static int gDynamiteMinDamage;
+    private static int gDynamiteMaxDamage;
+    private static int gPlasticExplosiveMinDamage;
+    private static int gPlasticExplosiveMaxDamage;
+
+    /** Test seam: empty registry + zeroed damage globals (fresh-process mirror). */
+    static void resetForTests() {
+        G_BOOKS.clear();
+        G_EXPLOSIVES.clear();
+        gDynamiteMinDamage = 0;
+        gDynamiteMaxDamage = 0;
+        gPlasticExplosiveMinDamage = 0;
+        gPlasticExplosiveMaxDamage = 0;
+    }
+
+    // explosive_add (src/item.cc).
+    public static void explosiveAdd(
+            ProtoId protoId, ProtoId activeProtoId, int minDamage, int maxDamage) {
+        ExplosiveDescription explosive = new ExplosiveDescription();
+        explosive.pid = protoId.pid();
+        explosive.activePid = activeProtoId.pid();
+        explosive.minDamage = minDamage;
+        explosive.maxDamage = maxDamage;
+        G_EXPLOSIVES.add(explosive);
+    }
+
+    // explosive_is_explosive (src/item.cc): hardcoded Dynamite/Plastic
+    // ids first, then the custom registry pid scan.
+    public static boolean explosiveIsExplosive(ProtoId protoId) {
+        if (protoId.matchesItemType(ItemProtoTypeId.Dynamite)) {
+            return true;
+        }
+        if (protoId.matchesItemType(ItemProtoTypeId.PlasticExplosives)) {
+            return true;
+        }
+
+        for (ExplosiveDescription explosive : G_EXPLOSIVES) {
+            if (ProtoId.ofPid(explosive.pid).equals(protoId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // explosive_is_active_explosive (src/item.cc): hardcoded armed ids
+    // first, then the custom registry active-pid scan.
+    public static boolean explosiveIsActiveExplosive(ProtoId protoId) {
+        if (protoId.matchesItemType(ItemProtoTypeId.ArmedDynamite)) {
+            return true;
+        }
+        if (protoId.matchesItemType(ItemProtoTypeId.ArmedPlasticExplosives)) {
+            return true;
+        }
+
+        for (ExplosiveDescription explosive : G_EXPLOSIVES) {
+            if (ProtoId.ofPid(explosive.activePid).equals(protoId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // explosive_activate (src/item.cc): C++ takes ProtoId& and mutates it
+    // in place. Java ProtoId is immutable, so the out-param rides in a
+    // single-element array (repo convention, see weaponGetDamageMinMax and
+    // ObjectSystem#objectCreateWithProtoId).
+    public static boolean explosiveActivate(ProtoId[] protoIdSlot) {
+        ProtoId protoId = protoIdSlot[0];
+        if (protoId.matchesItemType(ItemProtoTypeId.Dynamite)) {
+            protoIdSlot[0] = ProtoId.ofItemType(ItemProtoTypeId.ArmedDynamite);
+            return true;
+        }
+
+        if (protoId.matchesItemType(ItemProtoTypeId.PlasticExplosives)) {
+            protoIdSlot[0] = ProtoId.ofItemType(ItemProtoTypeId.ArmedPlasticExplosives);
+            return true;
+        }
+
+        for (ExplosiveDescription explosive : G_EXPLOSIVES) {
+            if (ProtoId.ofPid(explosive.pid).equals(protoId)) {
+                protoIdSlot[0] = ProtoId.ofPid(explosive.activePid);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // explosive_set_damage (src/item.cc): hardcoded Dynamite/Plastic
+    // globals only. NOTE the custom quirk: custom-registry damage is NOT
+    // updated (returns false), preserved for compatibility.
+    public static boolean explosiveSetDamage(ProtoId protoId, int minDamage, int maxDamage) {
+        if (protoId.matchesItemType(ItemProtoTypeId.Dynamite)) {
+            gDynamiteMinDamage = minDamage;
+            gDynamiteMaxDamage = maxDamage;
+            return true;
+        }
+
+        if (protoId.matchesItemType(ItemProtoTypeId.PlasticExplosives)) {
+            gPlasticExplosiveMinDamage = minDamage;
+            gPlasticExplosiveMaxDamage = maxDamage;
+            return true;
+        }
+
+        return false;
+    }
+
+    // explosive_get_damage (src/item.cc): Dynamite (+ArmedDynamite) and
+    // Plastic (+ArmedPlastic) read the globals, then the custom registry
+    // pid scan. Miss leaves the out-params untouched and returns false.
+    public static boolean explosiveGetDamage(
+            ProtoId protoId, int[] minDamagePtr, int[] maxDamagePtr) {
+        if (protoId.matchesItemType(ItemProtoTypeId.Dynamite)
+                || protoId.matchesItemType(ItemProtoTypeId.ArmedDynamite)) {
+            if (minDamagePtr != null && minDamagePtr.length > 0) {
+                minDamagePtr[0] = gDynamiteMinDamage;
+            }
+            if (maxDamagePtr != null && maxDamagePtr.length > 0) {
+                maxDamagePtr[0] = gDynamiteMaxDamage;
+            }
+            return true;
+        }
+
+        if (protoId.matchesItemType(ItemProtoTypeId.PlasticExplosives)
+                || protoId.matchesItemType(ItemProtoTypeId.ArmedPlasticExplosives)) {
+            if (minDamagePtr != null && minDamagePtr.length > 0) {
+                minDamagePtr[0] = gPlasticExplosiveMinDamage;
+            }
+            if (maxDamagePtr != null && maxDamagePtr.length > 0) {
+                maxDamagePtr[0] = gPlasticExplosiveMaxDamage;
+            }
+            return true;
+        }
+
+        for (ExplosiveDescription explosive : G_EXPLOSIVES) {
+            if (ProtoId.ofPid(explosive.pid).equals(protoId)) {
+                if (minDamagePtr != null && minDamagePtr.length > 0) {
+                    minDamagePtr[0] = explosive.minDamage;
+                }
+                if (maxDamagePtr != null && maxDamagePtr.length > 0) {
+                    maxDamagePtr[0] = explosive.maxDamage;
+                }
+                return true;
+            }
+        }
+
+        return false;
     }
 }
