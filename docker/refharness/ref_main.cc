@@ -6549,6 +6549,30 @@ void sectionProgramStack()
     fallout::programFree(prog);
 }
 
+void sectionProgRetStack()
+{
+    std::puts("[progretstack]");
+
+    // No window system needed. Return stack pops are type-blind (unlike
+    // the value stack); the program list itself has no observable state.
+    fallout::Program* prog = fallout::programCreateByPath((char*)"scripts\\ABEL.int");
+    int procCount = prog != nullptr ? prog->procedureCount() : -999;
+    int retPop1 = -999;
+    int retPop2 = -999;
+    int retPtrNull = -999;
+    if (prog != nullptr) {
+        fallout::programReturnStackPushInteger(prog, 11);
+        fallout::programReturnStackPushPointer(prog, nullptr);
+        retPtrNull = fallout::programReturnStackPopPointer(prog) == nullptr ? 1 : 0;
+        retPop1 = fallout::programReturnStackPopInteger(prog);
+        fallout::programReturnStackPushInteger(prog, 22);
+        retPop2 = fallout::programReturnStackPopInteger(prog);
+        fallout::programFree(prog);
+    }
+    std::printf("procs=%d retptrnull=%d retpop=%d,%d\n",
+        procCount, retPtrNull, retPop1, retPop2);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6672,5 +6696,6 @@ int main()
     sectionMoreDesc();
     sectionScriptProg();
     sectionProgramStack();
+    sectionProgRetStack();
     return 0;
 }

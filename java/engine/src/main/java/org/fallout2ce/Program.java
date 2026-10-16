@@ -23,7 +23,11 @@ import java.util.Deque;
  * {@code docker/refharness/golden/v92.txt} ({@code sectionProgramStack}):
  * {@code float=40961:2.500000 str=[hi] ptrnull=1 int=9} (float round-trip
  * pins {@code VALUE_TYPE_FLOAT} 40961 = 0xA001; dynamic-string push/pop;
- * null-pointer push/pop; raw {@code ProgramValue} push + integer pop).
+ * null-pointer push/pop; raw {@code ProgramValue} push + integer pop);
+ * plus {@code [progretstack]} in
+ * {@code docker/refharness/golden/v93.txt} ({@code sectionProgRetStack}):
+ * {@code procs=29 retptrnull=1 retpop=11,22} ({@code scripts\ABEL.int}
+ * has 29 procedures; return-stack integer/pointer push/pop).
  *
  * <p>NOTES / mapping decisions (all documented at the use site too):
  * <ul>
@@ -265,7 +269,7 @@ public class Program {
     /** Port of {@code stackValues} (ArrayDeque LIFO from the tail, like vector push_back/pop_back). */
     public final Deque<ProgramValue> stackValues = new ArrayDeque<>();
 
-    /** Port of {@code returnStackValues} (same discipline; unused in this slice). */
+    /** Port of {@code returnStackValues} (ArrayDeque LIFO from the tail; return-stack ops below). */
     public final Deque<ProgramValue> returnStackValues = new ArrayDeque<>();
 
     protected Program() {
@@ -440,6 +444,56 @@ public class Program {
         if (value.opcode != VALUE_TYPE_PTR) {
             throw new IllegalStateException("pointer expected, got " + Integer.toHexString(value.opcode));
         }
+        return value.pointerValue;
+    }
+
+    // programReturnStackPushValue (same overflow/refcount discipline as the
+    // value stack, but on returnStackValues).
+    public static void programReturnStackPushValue(Program program, ProgramValue value) {
+        if (program.returnStackValues.size() >= 0x1000) {
+            throw new IllegalStateException("programReturnStackPushValue: Stack overflow.");
+        }
+        program.returnStackValues.addLast(new ProgramValue(value));
+        if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
+            interpreterStringRefCountIncrease(program, VALUE_TYPE_DYNAMIC_STRING, value.integerValue);
+        }
+    }
+
+    // programReturnStackPushInteger.
+    public static void programReturnStackPushInteger(Program program, int value) {
+        programReturnStackPushValue(program, new ProgramValue(value));
+    }
+
+    // programReturnStackPushPointer (opcode VALUE_TYPE_PTR).
+    public static void programReturnStackPushPointer(Program program, Object value) {
+        programReturnStackPushValue(program, new ProgramValue(value));
+    }
+
+    // programReturnStackPopValue (underflow is a C fatal; Java throws, same text).
+    public static ProgramValue programReturnStackPopValue(Program program) {
+        if (program.returnStackValues.isEmpty()) {
+            throw new IllegalStateException("programReturnStackPopValue: Stack underflow.");
+        }
+        ProgramValue value = program.returnStackValues.removeLast();
+        if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
+            interpreterStringRefCountDecrease(program, value.opcode, value.integerValue);
+        }
+        return value;
+    }
+
+    // programReturnStackPopInteger: TYPE-BLIND, unlike programStackPopInteger
+    // (which fatals on a non-INT opcode). C just returns integerValue with no
+    // opcode check; mirrored here exactly.
+    public static int programReturnStackPopInteger(Program program) {
+        ProgramValue value = programReturnStackPopValue(program);
+        return value.integerValue;
+    }
+
+    // programReturnStackPopPointer: TYPE-BLIND, unlike programStackPopPointer
+    // (which maps INT 0 to null and fatals on other non-PTR cells). C just
+    // returns pointerValue with no opcode check; mirrored here exactly.
+    public static Object programReturnStackPopPointer(Program program) {
+        ProgramValue value = programReturnStackPopValue(program);
         return value.pointerValue;
     }
 

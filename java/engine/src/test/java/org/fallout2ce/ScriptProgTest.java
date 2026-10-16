@@ -22,6 +22,10 @@ import org.junit.jupiter.api.Test;
  * {@code docker/refharness/golden/v92.txt} ({@code sectionProgramStack}):
  * {@code float=40961:2.500000 str=[hi] ptrnull=1 int=9}.
  *
+ * <p>Plus {@code [progretstack]} from
+ * {@code docker/refharness/golden/v93.txt} ({@code sectionProgRetStack}):
+ * {@code procs=29 retptrnull=1 retpop=11,22}.
+ *
  * <p>Flow mirrors the harness exactly: load {@code scripts\ABEL.int}
  * through the VFS ({@code F2J_GAMEDATA} + {@code master.dat}, like the
  * other VFS tests), find {@code "start"} (procedure index 1) and
@@ -118,6 +122,25 @@ class ScriptProgTest {
                         + String.format(java.util.Locale.ROOT, "%f", (double) floatVal.floatValue)
                         + " str=[" + str + "]"
                         + " ptrnull=" + (ptrVal == null ? 1 : 0)
-                        + " int=" + poppedInt);
+                         + " int=" + poppedInt);
+    }
+
+    @Test
+    void retStackVectors() {
+        Program prog = Program.programCreateByPath("scripts\\ABEL.int");
+        assertTrue(prog != null, "ABEL.int must load through the VFS");
+        int procCount = prog.procedureCount();
+        Program.programReturnStackPushInteger(prog, 11);
+        Program.programReturnStackPushPointer(prog, null);
+        Object retPtr = Program.programReturnStackPopPointer(prog);
+        int retPop1 = Program.programReturnStackPopInteger(prog);
+        Program.programReturnStackPushInteger(prog, 22);
+        int retPop2 = Program.programReturnStackPopInteger(prog);
+        Program.programFree(prog);
+
+        assertEquals("procs=29 retptrnull=1 retpop=11,22",
+                "procs=" + procCount
+                        + " retptrnull=" + (retPtr == null ? 1 : 0)
+                        + " retpop=" + retPop1 + "," + retPop2);
     }
 }
