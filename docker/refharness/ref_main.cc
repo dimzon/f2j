@@ -5754,6 +5754,53 @@ void sectionVitals()
         hp0, poison0, rad0, stimHp, adjRc, hp1, poisonRc, radRc);
 }
 
+void sectionObjFind()
+{
+    std::puts("[objfind]");
+
+    // No window system needed. Only tile-placed objects are visible to
+    // the find chain; floating objects are skipped.
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* cash = nullptr;
+    fallout::objectCreateWithProtoId(&cash, fallout::ProtoId(41));
+    fallout::Object* pre = fallout::objectFindFirst();
+    fallout::itemAdd(dog, stim, 1);
+    fallout::itemAdd(dog, cash, 2);
+    fallout::itemDropAll(dog, 20100);
+
+    // Walk the tile chain, collecting pids in order.
+    int pids[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+    int count = 0;
+    for (fallout::Object* obj = fallout::objectFindFirst();
+            obj != nullptr && count < 8;
+            obj = fallout::objectFindNext()) {
+        pids[count++] = obj->pid;
+    }
+    std::printf("pre-null=%d count=%d pids=%d,%d,%d\n",
+        pre == nullptr ? 1 : 0, count, pids[0], pids[1], pids[2]);
+
+    // Destroying the (floating, empty) dog changes nothing visible;
+    // destroying the tile-bound stim shrinks the chain.
+    int destroyDog = fallout::objectDestroy(dog, nullptr);
+    int countAfterDog = 0;
+    for (fallout::Object* obj = fallout::objectFindFirst();
+            obj != nullptr;
+            obj = fallout::objectFindNext()) {
+        countAfterDog++;
+    }
+    int destroyStim = fallout::objectDestroy(stim, nullptr);
+    int firstAfter = -999;
+    fallout::Object* firstObj = fallout::objectFindFirst();
+    if (firstObj != nullptr) {
+        firstAfter = firstObj->pid;
+    }
+    std::printf("destroydog=%d count-after-dog=%d destroystim=%d first-after=%d\n",
+        destroyDog, countAfterDog, destroyStim, firstAfter);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5851,5 +5898,6 @@ int main()
     sectionAmmoCont();
     sectionExplosives();
     sectionVitals();
+    sectionObjFind();
     return 0;
 }

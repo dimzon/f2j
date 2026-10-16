@@ -65,13 +65,17 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * keep arrival order there. C++ would index out of bounds for an
  * invalid non-{@code -1} tile; Java guards it back to the floating
  * head (unreachable: every writer validates the tile first).</li>
- * <li>{@code objectFindFirst}/{@code objectFindNext} iterate the floating
- * head only (the harness never places objects on tiles, so the C
- * tile-array scan sees the same empty set); the hidden-type filter
- * ({@link Art#artIsObjectTypeHidden}) is kept. Elevation/location
- * variants come with the map port.</li>
+ * <li>{@code objectFindFirst}/{@code objectFindNext} scan the tile
+ * heads ({@code gObjectListHeadByTile}, tiles {@code 0..39999} in
+ * order), exactly like C ({@code objectFindFirst}/{@code objectFindNext}
+ * in {@code src/object.cc}): floating (tile {@code -1}) objects are
+ * invisible to find. The hidden-type filter
+ * ({@link Art#artIsObjectTypeHidden}) is kept. Cursor state mirrors
+ * {@code gObjectFindTile}/{@code gObjectFindElevation}/
+ * {@code gObjectFindLastObjectListNode}.</li>
  * <li>{@code scriptsNewObjectId}: counter init 4, collision scan over the
- * object list, silent {@code >= 18000} guard (C {@code debugPrint} is
+ * tile heads via {@code objectFindFirst}/{@code objectFindNext} (floating
+ * objects are skipped, exactly like C), silent {@code >= 18000} guard (C {@code debugPrint} is
  * silent in Java, like {@link Reaction}), and the double-increment quirk
  * ({@code ++counter} before the scan and again before return), giving
  * ids 6, 8, 10, ...</li>
@@ -116,8 +120,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * like C. {@code _obj_connect} allocates a second node for the tile
  * list and leaves the floating node in place (C++ never unlinks the
  * old node there); both lists then reference the object, so
- * {@code objectFindFirst}/{@code objectFindNext} (still the
- * floating-head slice, like before) keep seeing dropped objects.</li>
+ * {@code objectFindFirst}/{@code objectFindNext} (now the tile-head
+ * slice, like C++) keep seeing dropped objects only via the tile
+ * heads; the floating nodes stay invisible to find.</li>
   * </ul>
   */
 public final class ObjectSystem {
@@ -135,8 +140,14 @@ public final class ObjectSystem {
      */
     private static GameObjectListNode[] tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
 
-    /** Port of {@code gObjectFindLastObjectListNode} (single-list cursor). */
+    /** Port of {@code gObjectFindLastObjectListNode} (tile-scan cursor). */
     private static GameObjectListNode findCursor = null;
+
+    /** Port of {@code gObjectFindTile} (tile-scan cursor). */
+    private static int findTile = 0;
+
+    /** Port of {@code gObjectFindElevation} (tile-scan cursor). */
+    private static int findElevation = 0;
 
     /** Port of {@code gObjectIdCounter} ({@code src/scripts.cc}, init 4). */
     private static int objectIdCounter = 4;
@@ -271,11 +282,25 @@ public final class ObjectSystem {
         return objectIdCounter;
     }
 
-    // 0x48B3C0 obj_find_first (floating-head slice; elevation/location
-    // variants come with the map port).
+    // 0x48B3A8 obj_find_first: tile-head scan (floating objects are
+    // invisible), exactly like C.
     public static GameObject objectFindFirst() {
-        findCursor = head;
-        return advanceFind();
+        findElevation = 0;
+
+        for (findTile = 0; findTile < MapDefs.HEX_GRID_SIZE; findTile++) {
+            GameObjectListNode node = tileHeads[findTile];
+            while (node != null) {
+                GameObject obj = node.obj;
+                if (!isFindHidden(obj)) {
+                    findCursor = node;
+                    return obj;
+                }
+                node = node.next;
+            }
+        }
+
+        findCursor = null;
+        return null;
     }
 
     // 0x48B41C obj_find_next.
@@ -284,8 +309,84 @@ public final class ObjectSystem {
             return null;
         }
 
-        findCursor = findCursor.next;
-        return advanceFind();
+        GameObjectListNode node = findCursor.next;
+
+        while (true) {
+            if (node == null) {
+                findTile++;
+                if (findTile >= MapDefs.HEX_GRID_SIZE) {
+                    break;
+                }
+
+                node = tileHeads[findTile];
+            }
+
+            while (node != null) {
+                GameObject obj = node.obj;
+                if (!isFindHidden(obj)) {
+                    findCursor = node;
+                    return obj;
+                }
+                node = node.next;
+            }
+        }
+
+        findCursor = null;
+        return null;
+    }
+
+    // 0x48B48C obj_find_first_at: same tile-head scan with the elevation
+    // filter, exactly like C.
+    public static GameObject objectFindFirstAtElevation(int elevation) {
+        findElevation = elevation;
+        findTile = 0;
+
+        for (findTile = 0; findTile < MapDefs.HEX_GRID_SIZE; findTile++) {
+            GameObjectListNode node = tileHeads[findTile];
+            while (node != null) {
+                GameObject obj = node.obj;
+                if (obj != null && obj.elevation == elevation && !isFindHidden(obj)) {
+                    findCursor = node;
+                    return obj;
+                }
+                node = node.next;
+            }
+        }
+
+        findCursor = null;
+        return null;
+    }
+
+    // 0x48B510 obj_find_next_at.
+    public static GameObject objectFindNextAtElevation() {
+        if (findCursor == null) {
+            return null;
+        }
+
+        GameObjectListNode node = findCursor.next;
+
+        while (true) {
+            if (node == null) {
+                findTile++;
+                if (findTile >= MapDefs.HEX_GRID_SIZE) {
+                    break;
+                }
+
+                node = tileHeads[findTile];
+            }
+
+            while (node != null) {
+                GameObject obj = node.obj;
+                if (obj != null && obj.elevation == findElevation && !isFindHidden(obj)) {
+                    findCursor = node;
+                    return obj;
+                }
+                node = node.next;
+            }
+        }
+
+        findCursor = null;
+        return null;
     }
 
     // 0x48AD50 obj_set_light (rect overload deferred: the slice always
@@ -749,16 +850,11 @@ public final class ObjectSystem {
     private static void removeItemOutline(GameObject object) {
     }
 
-    private static GameObject advanceFind() {
-        while (findCursor != null) {
-            GameObject obj = findCursor.obj;
-            if (obj != null
-                    && Art.artIsObjectTypeHidden(FrmId.ofFid(obj.fid).objectType().value()) == 0) {
-                return obj;
-            }
-            findCursor = findCursor.next;
+    private static boolean isFindHidden(GameObject obj) {
+        if (obj == null) {
+            return true;
         }
-        return null;
+        return Art.artIsObjectTypeHidden(FrmId.ofFid(obj.fid).objectType().value()) != 0;
     }
 
     // Guards-only slice of 0x48D8E8-adjacent _obj_adjust_light: the tile
@@ -803,11 +899,13 @@ public final class ObjectSystem {
         return object;
     }
 
-    /** Test seam: clear the lists + counter (fresh-process mirror). */
+    /** Test seam: clear the lists + find cursor state + counter (fresh-process mirror). */
     static void resetForTests() {
         head = null;
         tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
         findCursor = null;
+        findTile = 0;
+        findElevation = 0;
         objectIdCounter = 4;
         protosInitialized = false;
     }
