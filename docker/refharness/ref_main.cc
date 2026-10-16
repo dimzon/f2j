@@ -27,6 +27,7 @@
 #include "fps_limiter.h"
 #include "dictionary.h"
 #include "art.h"
+#include "animation.h"
 #include "cache.h"
 #include "color.h"
 #include "config.h"
@@ -6661,12 +6662,165 @@ void sectionIsoRest()
     std::printf("iface=%d enter=%d\n", ifaceRc, enterRc);
 }
 
+// A fresh process for the map sections. The main run's object churn leaves
+// freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
+// _obj_remove_all inside mapNewMap would walk freed memory; the child boots
+// its own engine, which is what the game does anyway.
+void sectionMapChild()
+{
+    std::puts("[mapnewmap]");
+
+    setenv("SDL_VIDEODRIVER", "dummy", 1);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER);
+
+    char prog[] = "prog";
+    char* argv0[] = { prog };
+    fallout::settingsInit(false, 1, argv0);
+    fallout::settings.screen.resolution_x = 640;
+    fallout::settings.screen.resolution_y = 480;
+    fallout::settings.screen.scale = 1;
+    fallout::settings.screen.windowed = fallout::WindowMode::Windowed;
+    fallout::settings.ui.iface_bar_mode = false;
+    fallout::gProgramIsActive = true;
+
+    fallout::gSdlWindow = SDL_CreateWindow("f2j",
+        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480,
+        SDL_WINDOW_ALLOW_HIGHDPI);
+    fallout::gSdlRenderer = SDL_CreateRenderer(fallout::gSdlWindow, -1, 0);
+    SDL_RenderSetLogicalSize(fallout::gSdlRenderer, 640, 480);
+    fallout::gSdlTexture = SDL_CreateTexture(fallout::gSdlRenderer,
+        SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
+    Uint32 format = 0;
+    SDL_QueryTexture(fallout::gSdlTexture, &format, nullptr, nullptr, nullptr);
+    fallout::gSdlTextureSurface = SDL_CreateRGBSurfaceWithFormat(0, 640, 480,
+        SDL_BITSPERPIXEL(format), format);
+    int mode = fallout::_init_mode_640_480();
+    fallout::directDrawSetPalette(fallout::_cmap);
+
+    // The art lists and data\party.txt come out of the game database. Mirror
+    // the main run: [db] opens master+patch, [art] mounts all three archives
+    // as xbase (critter lists/FRMs live in critter.dat).
+    int dbRc = fallout::dbOpen("/game-en/master.dat", "/game-en/patch000.dat");
+    int xbMasterRc = fallout::xbaseOpen("/game-en/master.dat");
+    int xbPatchRc = fallout::xbaseOpen("/game-en/patch000.dat");
+    int xbCritterRc = fallout::xbaseOpen("/game-en/critter.dat");
+
+    fallout::_scr_blit = testScrBlit;
+    fallout::_mouse_blit = testScrBlit;
+    int wmInit = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    int inputInitRc = fallout::inputInit();
+
+    // isoInit's head, in a 64x64 window so the dude refresh inside
+    // mapSetElevation finds an empty intersection and renders nothing.
+    static fallout::TileData squareData[ELEVATION_COUNT];
+    for (int index = 0; index < ELEVATION_COUNT; index++) {
+        fallout::_square[index] = &squareData[index];
+    }
+
+    int isoWin = fallout::windowCreate(0, 0, 64, 64, static_cast<fallout::ColorWithFlags>(256), 10);
+    fallout::gIsoWindow = isoWin;
+    unsigned char* isoBuf = fallout::windowGetBuffer(isoWin);
+    int artRc = fallout::artInit();
+    int tileRc = fallout::tileInit(fallout::_square, SQUARE_GRID_WIDTH, SQUARE_GRID_HEIGHT,
+        HEX_GRID_WIDTH, HEX_GRID_HEIGHT, isoBuf, 64, 64, 64, noopTileRefresh);
+    int partyRc = fallout::partyMembersInit();
+    unsigned char objBuf[640 * 480];
+    int objectsRc = fallout::objectsInit(objBuf, 640, 480, 640);
+    int gameMouseRc = fallout::gameMouseInit();
+    std::printf("boot mode=%d wminit=%d input=%d win=%d buf=%d art=%d tile=%d party=%d objects=%d db=%d xb=%d,%d,%d mouse=%d\n",
+        mode, wmInit, inputInitRc, isoWin, isoBuf != nullptr ? 1 : 0, artRc, tileRc,
+        partyRc, objectsRc, dbRc, xbMasterRc, xbPatchRc, xbCritterRc, gameMouseRc);
+
+    // mapNewMap: mapEdgeFree, elevation 0, center 20100, transition/header
+    // reset, _obj_remove_all (NO_REMOVE objects survive: dude, egg, both
+    // mouse cursors), map var frees, _square_reset (every grid fid becomes
+    // the grid frame), _map_place_dude_and_mouse (dude + egg land on the
+    // center tile via the objectSetLocation dude-tail), tileWindowRefresh.
+    fallout::mapNewMap();
+    std::printf("newmap elev=%d center=%d hdr=%d,%d,%d,%d local=%d global=%d gvarlen=%d,%d\n",
+        fallout::gElevation,
+        fallout::gCenterTile,
+        fallout::gMapHeader.version,
+        fallout::gMapHeader.enteringTile,
+        fallout::gMapHeader.enteringElevation,
+        (int)fallout::gMapHeader.enteringRotation,
+        fallout::gMapHeader.localVariablesCount,
+        fallout::gMapHeader.globalVariablesCount,
+        fallout::gMapGlobalVarsLength,
+        fallout::gMapLocalVarsLength);
+
+    // _square_reset rewrote every grid fid to the grid frame with old flags.
+    const int* fids = fallout::_square[0]->tileFid;
+    std::printf("square=%08X,%08X,%08X,%08X\n", fids[0], fids[1], fids[50], fids[99]);
+
+    int objectCount = 0;
+    for (fallout::Object* object = fallout::objectFindFirst(); object != nullptr;
+         object = fallout::objectFindNext()) {
+        objectCount++;
+        std::printf("obj pid=%d tile=%d elev=%d rot=%d flags=%08X\n",
+            object->pid,
+            object->tile,
+            object->elevation,
+            object->rotation,
+            (unsigned int)object->flags);
+    }
+    fallout::Object* dude = fallout::gDude;
+    std::printf("objects=%d dude=%d,%d,%d light=%d flags=%08X\n",
+        objectCount,
+        dude != nullptr ? dude->tile : -999,
+        dude != nullptr ? dude->elevation : -999,
+        dude != nullptr ? dude->rotation : -999,
+        dude != nullptr ? fallout::objectGetLightIntensity(dude) : -999,
+        dude != nullptr ? (unsigned int)dude->flags : 0u);
+}
+
+// Some sections feed the engine deliberately over-long runs (the v26 graph
+// stress, the v40 mouse blit), which trip ASan in an instrumented build.
+// REFHARNESS_SKIP=WinMenu,Graph skips those so a trace can reach the later
+// sections.
+static bool sectionSkipped(const char* name)
+{
+    static const char* list = getenv("REFHARNESS_SKIP");
+
+    if (list == nullptr) {
+        return false;
+    }
+
+    size_t nameLength = strlen(name);
+
+    for (const char* entry = list; *entry != '\0';) {
+        const char* comma = strchr(entry, ',');
+        size_t entryLength = comma != nullptr ? (size_t)(comma - entry) : strlen(entry);
+        if (entryLength == nameLength && strncmp(entry, name, nameLength) == 0) {
+            return true;
+        }
+        entry = comma != nullptr ? comma + 1 : entry + entryLength;
+    }
+
+    return false;
+}
+
+#define RUN_SECTION(name)             \
+    do {                              \
+        if (!sectionSkipped(#name)) { \
+            section##name();          \
+        }                             \
+    } while (0)
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
     // so without this the merged capture would group all stderr first.
     // v1.txt predates this fix (its INFO line sits on top).
     setvbuf(stdout, nullptr, _IONBF, 0);
+
+    // The map sections boot their own engine in a child process (exec keeps
+    // stdout on the same stream, so the vectors still append to this run).
+    if (getenv("REFHARNESS_MAP_ONLY") != nullptr) {
+        sectionMapChild();
+        return 0;
+    }
 
     // The harness depends on fixtures.sh outputs. Never run the binary
     // directly: degraded /tmp state silently corrupts vectors, and the CWD
@@ -6677,117 +6831,122 @@ int main()
         return 2;
     }
 
-    sectionRgb555();
-    sectionRectUnion();
-    sectionRectIntersection();
-    sectionRectClip();
-    sectionRandom();
-    sectionStrParsers();
-    sectionStrParseFunc();
-    sectionWordWrap();
-    sectionDict();
-    sectionDictFile();
-    sectionPaths();
-    sectionFileUtils();
-    sectionPattern();
-    sectionDbase();
-    sectionZip();
-    sectionFixtureDat();
-    sectionXbase();
-    sectionXfile();
-    sectionDb();
-    sectionConfig();
-    sectionMessage();
-    sectionArt();
-    sectionCache();
-    sectionCacheEvict();
-    sectionArtLoad();
-    sectionColor();
-    sectionSettings();
-    sectionColorCycle();
-    sectionFps();
-    sectionSvga();
-    sectionDraw();
-    sectionFont();
-    sectionIfaceFont();
-    sectionRegion();
-    sectionDatafile();
-    sectionCfgMig();
-    sectionInput();
-    sectionKb();
-    sectionDInput();
-    sectionGraph();
-    sectionOptions();
-    sectionPtrReg();
-    sectionGameDefs();
-    sectionArtDefs();
-    sectionKbFull();
-    sectionCombatDefs();
-    sectionObjTypes();
-    sectionPrototypes();
-    sectionGameTypes();
-    sectionAbility();
-    sectionUiTypes();
-    sectionMouseWin();
-    sectionWinBtn();
-    sectionWinMenu();
-    sectionWinFrm();
-    sectionWinDlg();
-    sectionWinMenu2();
-    sectionWinText();
-    sectionWinDbg();
-    sectionWinDbox();
-    sectionWinFile();
-    sectionProtoDb();
-    sectionTileMath();
-    sectionSquareMath();
-    sectionEventQueue();
-    sectionLightReact();
-    sectionGameMouseUtil();
-    sectionStatSkill();
-    sectionCombatSkill();
-    sectionGameTime();
-    sectionTraitSelect();
-    sectionObjCreate();
-    sectionCritterStats();
-    sectionInventory();
-    sectionEquip();
-    sectionBallistics();
-    sectionItemMove();
-    sectionItemDrop();
-    sectionAmmoCont();
-    sectionExplosives();
-    sectionVitals();
-    sectionObjFind();
-    sectionObjAttrs();
-    sectionObjVis();
-    sectionObjOutline();
-    sectionGameMouse();
-    sectionGmouseEn();
-    sectionArtHide();
-    sectionProtoNew();
-    sectionProtoCopy();
-    sectionMapVars();
-    sectionSkillTag();
-    sectionPcStat();
-    sectionXpRoll();
-    sectionSkillRoll();
-    sectionMiscGetters();
-    sectionFindCid();
-    sectionNevsEvents();
-    sectionSfallVars();
-    sectionSfallIni();
-    sectionObjPlace();
-    sectionItemNames();
-    sectionNames();
-    sectionMoreNames();
-    sectionMoreDesc();
-    sectionScriptProg();
-    sectionProgramStack();
-    sectionProgRetStack();
-    sectionStatsSave();
-    sectionFrmIds();
-    sectionPartyObjects();
-    sectionIsoRest();
-    return 0;
+    RUN_SECTION(Rgb555);
+    RUN_SECTION(RectUnion);
+    RUN_SECTION(RectIntersection);
+    RUN_SECTION(RectClip);
+    RUN_SECTION(Random);
+    RUN_SECTION(StrParsers);
+    RUN_SECTION(StrParseFunc);
+    RUN_SECTION(WordWrap);
+    RUN_SECTION(Dict);
+    RUN_SECTION(DictFile);
+    RUN_SECTION(Paths);
+    RUN_SECTION(FileUtils);
+    RUN_SECTION(Pattern);
+    RUN_SECTION(Dbase);
+    RUN_SECTION(Zip);
+    RUN_SECTION(FixtureDat);
+    RUN_SECTION(Xbase);
+    RUN_SECTION(Xfile);
+    RUN_SECTION(Db);
+    RUN_SECTION(Config);
+    RUN_SECTION(Message);
+    RUN_SECTION(Art);
+    RUN_SECTION(Cache);
+    RUN_SECTION(CacheEvict);
+    RUN_SECTION(ArtLoad);
+    RUN_SECTION(Color);
+    RUN_SECTION(Settings);
+    RUN_SECTION(ColorCycle);
+    RUN_SECTION(Fps);
+    RUN_SECTION(Svga);
+    RUN_SECTION(Draw);
+    RUN_SECTION(Font);
+    RUN_SECTION(IfaceFont);
+    RUN_SECTION(Region);
+    RUN_SECTION(Datafile);
+    RUN_SECTION(CfgMig);
+    RUN_SECTION(Input);
+    RUN_SECTION(Kb);
+    RUN_SECTION(DInput);
+    RUN_SECTION(Graph);
+    RUN_SECTION(Options);
+    RUN_SECTION(PtrReg);
+    RUN_SECTION(GameDefs);
+    RUN_SECTION(ArtDefs);
+    RUN_SECTION(KbFull);
+    RUN_SECTION(CombatDefs);
+    RUN_SECTION(ObjTypes);
+    RUN_SECTION(Prototypes);
+    RUN_SECTION(GameTypes);
+    RUN_SECTION(Ability);
+    RUN_SECTION(UiTypes);
+    RUN_SECTION(MouseWin);
+    RUN_SECTION(WinBtn);
+    RUN_SECTION(WinMenu);
+    RUN_SECTION(WinFrm);
+    RUN_SECTION(WinDlg);
+    RUN_SECTION(WinMenu2);
+    RUN_SECTION(WinText);
+    RUN_SECTION(WinDbg);
+    RUN_SECTION(WinDbox);
+    RUN_SECTION(WinFile);
+    RUN_SECTION(ProtoDb);
+    RUN_SECTION(TileMath);
+    RUN_SECTION(SquareMath);
+    RUN_SECTION(EventQueue);
+    RUN_SECTION(LightReact);
+    RUN_SECTION(GameMouseUtil);
+    RUN_SECTION(StatSkill);
+    RUN_SECTION(CombatSkill);
+    RUN_SECTION(GameTime);
+    RUN_SECTION(TraitSelect);
+    RUN_SECTION(ObjCreate);
+    RUN_SECTION(CritterStats);
+    RUN_SECTION(Inventory);
+    RUN_SECTION(Equip);
+    RUN_SECTION(Ballistics);
+    RUN_SECTION(ItemMove);
+    RUN_SECTION(ItemDrop);
+    RUN_SECTION(AmmoCont);
+    RUN_SECTION(Explosives);
+    RUN_SECTION(Vitals);
+    RUN_SECTION(ObjFind);
+    RUN_SECTION(ObjAttrs);
+    RUN_SECTION(ObjVis);
+    RUN_SECTION(ObjOutline);
+    RUN_SECTION(GameMouse);
+    RUN_SECTION(GmouseEn);
+    RUN_SECTION(ArtHide);
+    RUN_SECTION(ProtoNew);
+    RUN_SECTION(ProtoCopy);
+    RUN_SECTION(MapVars);
+    RUN_SECTION(SkillTag);
+    RUN_SECTION(PcStat);
+    RUN_SECTION(XpRoll);
+    RUN_SECTION(SkillRoll);
+    RUN_SECTION(MiscGetters);
+    RUN_SECTION(FindCid);
+    RUN_SECTION(NevsEvents);
+    RUN_SECTION(SfallVars);
+    RUN_SECTION(SfallIni);
+    RUN_SECTION(ObjPlace);
+    RUN_SECTION(ItemNames);
+    RUN_SECTION(Names);
+    RUN_SECTION(MoreNames);
+    RUN_SECTION(MoreDesc);
+    RUN_SECTION(ScriptProg);
+    RUN_SECTION(ProgramStack);
+    RUN_SECTION(ProgRetStack);
+    RUN_SECTION(StatsSave);
+    RUN_SECTION(FrmIds);
+    RUN_SECTION(PartyObjects);
+    RUN_SECTION(IsoRest);
+    // Re-exec for the map sections: a fresh engine avoids the freed-object
+    // links the object sections leave behind.
+    setenv("REFHARNESS_MAP_ONLY", "1", 1);
+    execl("/proc/self/exe", "refharness", (char*)nullptr);
+    std::fprintf(stderr, "refharness: exec failed\n");
+    return 3;
 }

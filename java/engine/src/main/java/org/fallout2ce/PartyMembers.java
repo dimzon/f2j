@@ -379,6 +379,47 @@ public final class PartyMembers {
         levelUpInfos.clear();
     }
 
+    // 0x494E9C partyMemberSyncPosition: rotation pair off the dude, then
+    // per-member placement at distance/2 tiles away (index 0 is the dude
+    // itself, so the loop starts at 1). The attempt helper lives in
+    // ObjectSystem (worldmap/pathfinder phase behind its seam); the vectors
+    // never enter the loop (party is the dude alone).
+    public static int partyMemberSyncPosition() {
+        GameObject dude = ObjectSystem.getDude();
+        if (dude == null) {
+            return 0;
+        }
+
+        int clockwise = (dude.rotation.id() + 2) % ObjTypes.ROTATION_COUNT;
+        int counterClockwise = (dude.rotation.id() + 4) % ObjTypes.ROTATION_COUNT;
+
+        int n = 0;
+        int distance = 2;
+        for (int index = 1; index < partyMembersLength; index++) {
+            PartyMemberListItem member = partyMembers.get(index);
+            GameObject memberObj = member.object;
+            if (memberObj.flags.and(ObjectFlags.HIDDEN).equals(ObjectFlags.NONE)
+                    && ProtoId.ofGameObject(memberObj).objectType()
+                            == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+                int rotation;
+                if ((n % 2) != 0) {
+                    rotation = clockwise;
+                } else {
+                    rotation = counterClockwise;
+                }
+
+                int tile = TileMath.tileGetTileInDirection(dude.tile,
+                        Rotation.fromInt(rotation), distance / 2);
+                ObjectSystem.objectAttemptPlacementPartyMember(memberObj, tile, dude.elevation);
+
+                distance++;
+                n++;
+            }
+        }
+
+        return 0;
+    }
+
     // 0x494378 partyMemberAdd.
     public static int partyMemberAdd(GameObject object) {
         if (partyMembersLength >= descriptionsLength + 20) {

@@ -3,6 +3,10 @@ package org.fallout2ce;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.fallout2ce.ObjTypes.GameObject;
+import org.fallout2ce.ObjTypes.ObjectFlags;
+import org.fallout2ce.ObjTypes.OutlineType;
+
 /**
  * Game-mouse id tables plus the headless-safe engine slice, mirroring
  * {@code src/game_mouse.h} / {@code src/game_mouse.cc}.
@@ -47,15 +51,12 @@ import java.util.Map;
  * the vectors never call reset. Java defaults the flag to true too.</li>
  * <li>3d objects: C creates real game objects via
  * {@code objectCreateWithFrmIdProtoId(Blank / HexMouseCursor, Empty pid)}
- * plus outline/flat flags, a tile move, and five locked action-menu FRMs.
- * Java models only the state machine ({@code objectsInitialized} /
- * {@code objectsVisible} / item highlight); real creation, the tile move,
- * and the menu FRM locks come with the map/game phase (the vectors only
- * observe {@code vis=1}).</li>
- * <li>{@code gameMouseObjectsShow/Hide} repaint through the tile refresher,
- * which is null headless (same reason the harness only reads visibility);
- * Java flips the visibility flag, and the repaint/outline/fid tails are
- * omitted with this NOTE.</li>
+ * plus outline/flat flags, a tile move ({@code _gmouse_3d_move_to}), and
+ * five locked action-menu FRMs; Java ports all of it (v98). The tile move
+ * needs live tile/art/mouse state, which the map-phase tests set up.</li>
+ * <li>{@code gameMouseObjectsShow/Hide} repaint through the tile refresher;
+ * rect unions need the render engine, so the refresh call keeps a null
+ * rect, like the other deferred rect seams in {@link ObjectSystem}.</li>
  * <li>{@code gameMouseSetMode}/{@code gameMouseCycleMode} need live map
  * objects ({@code _gmouse_3d_move_to} segfaults headless, per the harness
  * NOTE). Java ports the guard clauses (init / modes-enabled / equality)
@@ -309,6 +310,14 @@ public final class GameMouse {
     private static long animatedLastTimestamp; // gGameMouseAnimatedCursorLastUpdateTimestamp
     private static boolean itemHighlightEnabled = true; // gGameMouseItemHighlightEnabled
     private static Art.FrmImage cursorFrm; // gGameMouseCursorFrmHandle
+    private static GameObject bouncingCursor; // gGameMouseBouncingCursor
+    private static GameObject hexCursor; // gGameMouseHexCursor
+    private static boolean mapperMode; // _gmouse_mapper_mode (mapper UI sets it)
+    private static Art.ArtLock actionMenuFrm; // gGameMouseActionMenuFrmHandle
+    private static Art.ArtLock actionPickFrm; // gGameMouseActionPickFrmHandle
+    private static Art.ArtLock actionToHitFrm; // gGameMouseActionHitFrmHandle
+    private static Art.ArtLock bouncingCursorFrm; // gGameMouseBouncingCursorFrmHandle
+    private static Art.ArtLock hexCursorFrm; // gGameMouseHexCursorFrmHandle
 
     /**
      * Map seam for the mode/object tails: C executes them over live map
@@ -350,27 +359,148 @@ public final class GameMouse {
     }
 
     /**
-     * Port of {@code gameMouseObjectsInit} (0x44D984) state machine. Real
-     * object creation ({@code objectCreateWithFrmIdProtoId} with
-     * Blank/HexMouseCursor + Empty pid), outline/flat flags, the tile move,
-     * and the action-menu FRM locks are deferred (map/game phase seam);
-     * the initialized/visible/highlight state is kept.
+     * Port of {@code gameMouseObjectsInit} (0x44D984): creates the bouncing
+     * (Blank fid) and hex (HexMouseCursor fid) cursor objects with the
+     * Empty pid, sets the hex outline ({@code SAME_TEAM | PALETTED}), toggles
+     * it flat, locks the action-menu FRMs, sets the cursor flags
+     * ({@code LIGHT_THRU | NO_SAVE | NO_REMOVE | SHOOT_THRU | NO_BLOCK}),
+     * moves both to the mouse tile ({@link #gmouse3dMoveTo}) and keeps the
+     * visible/highlight state.
      */
     static int gameMouseObjectsInit() {
         if (objectsInitialized) {
             return -1;
         }
+
+        GameObject[] bouncingSlot = new GameObject[1];
+        if (ObjectSystem.objectCreateWithFrmIdProtoId(bouncingSlot,
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.Blank.id()),
+                ProtoTypes.ProtoId.empty()) != 0) {
+            return -1;
+        }
+        bouncingCursor = bouncingSlot[0];
+
+        GameObject[] hexSlot = new GameObject[1];
+        if (ObjectSystem.objectCreateWithFrmIdProtoId(hexSlot,
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.HexMouseCursor.id()),
+                ProtoTypes.ProtoId.empty()) != 0) {
+            return -1;
+        }
+        hexCursor = hexSlot[0];
+
+        if (ObjectSystem.objectSetOutline(hexCursor,
+                OutlineType.SAME_TEAM.or(ObjTypes.OUTLINE_PALETTED)) != 0) {
+            return -1;
+        }
+
+        if (gameMouseActionMenuInit() != 0) {
+            return -1;
+        }
+
+        bouncingCursor.flags = bouncingCursor.flags.or(ObjectFlags.LIGHT_THRU);
+        bouncingCursor.flags = bouncingCursor.flags.or(ObjectFlags.NO_SAVE);
+        bouncingCursor.flags = bouncingCursor.flags.or(ObjectFlags.NO_REMOVE);
+        bouncingCursor.flags = bouncingCursor.flags.or(ObjectFlags.SHOOT_THRU);
+        bouncingCursor.flags = bouncingCursor.flags.or(ObjectFlags.NO_BLOCK);
+
+        hexCursor.flags = hexCursor.flags.or(ObjectFlags.NO_REMOVE);
+        hexCursor.flags = hexCursor.flags.or(ObjectFlags.NO_SAVE);
+        hexCursor.flags = hexCursor.flags.or(ObjectFlags.LIGHT_THRU);
+        hexCursor.flags = hexCursor.flags.or(ObjectFlags.SHOOT_THRU);
+        hexCursor.flags = hexCursor.flags.or(ObjectFlags.NO_BLOCK);
+
+        ObjectSystem.toggleFlat(hexCursor);
+
+        int[] mouse = new int[2];
+        Mouse.mouseGetPosition(mouse);
+        gmouse3dMoveTo(mouse[0], mouse[1], org.fallout2ce.Map.gElevation);
+
         objectsInitialized = true;
         objectsVisible = true;
         gameMouseLoadItemHighlight();
         return 0;
     }
 
-    /** Port of {@code gameMouseObjectsFree} (0x44DB34) state machine. */
+    /** Port of {@code gameMouseObjectsFree} (0x44DB34, inlined upstream). */
     static void gameMouseObjectsFree() {
         if (objectsInitialized) {
+            gameMouseActionMenuFree();
+
+            bouncingCursor.flags = bouncingCursor.flags.and(ObjectFlags.NO_SAVE.not());
+            hexCursor.flags = hexCursor.flags.and(ObjectFlags.NO_SAVE.not());
+
+            ObjectSystem.objectDestroy(bouncingCursor);
+            ObjectSystem.objectDestroy(hexCursor);
+
             objectsInitialized = false;
-            objectsVisible = false;
+        }
+    }
+
+    /**
+     * Port of {@code gameMouseActionMenuInit} (0x44DB78): locks the five
+     * action-menu FRMs (any miss unwinds the acquired ones and returns -1).
+     * Width/height/data caching is render engine (game phase, deferred).
+     */
+    private static int gameMouseActionMenuInit() {
+        actionMenuFrm = Art.artLock(
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.ActionMenu.id()));
+        if (actionMenuFrm == null) {
+            gameMouseActionMenuFree();
+            return -1;
+        }
+
+        actionPickFrm = Art.artLock(
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.ActionPick.id()));
+        if (actionPickFrm == null) {
+            gameMouseActionMenuFree();
+            return -1;
+        }
+
+        actionToHitFrm = Art.artLock(
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.ActionToHit.id()));
+        if (actionToHitFrm == null) {
+            gameMouseActionMenuFree();
+            return -1;
+        }
+
+        bouncingCursorFrm = Art.artLock(
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.Blank.id()));
+        if (bouncingCursorFrm == null) {
+            gameMouseActionMenuFree();
+            return -1;
+        }
+
+        hexCursorFrm = Art.artLock(
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.HexMouseCursor.id()));
+        if (hexCursorFrm == null) {
+            gameMouseActionMenuFree();
+            return -1;
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code gameMouseActionMenuFree} (0x44DB34, inlined upstream). */
+    private static void gameMouseActionMenuFree() {
+        if (actionMenuFrm != null) {
+            actionMenuFrm.close();
+            actionMenuFrm = null;
+        }
+        if (actionPickFrm != null) {
+            actionPickFrm.close();
+            actionPickFrm = null;
+        }
+        if (actionToHitFrm != null) {
+            actionToHitFrm.close();
+            actionToHitFrm = null;
+        }
+        if (bouncingCursorFrm != null) {
+            bouncingCursorFrm.close();
+            bouncingCursorFrm = null;
+        }
+        if (hexCursorFrm != null) {
+            hexCursorFrm.close();
+            hexCursorFrm = null;
         }
     }
 
@@ -542,26 +672,250 @@ public final class GameMouse {
     }
 
     /**
-     * Visibility half of {@code gameMouseObjectsShow} (0x44CD2C): the tile
-     * repaint / outline / fid tails need the map and are omitted (harness
-     * NOTE); the flag flip is kept.
+     * Port of {@code gameMouseObjectsShow} (0x44CD2C): shows both cursors,
+     * clears the hex outline outside MOVE mode, refreshes the hex fid and
+     * repaints when anything changed (rect unions need the render engine,
+     * so the refresh call keeps a null rect, like the other deferred rect
+     * seams). The hover-test tail is render pump (game phase, deferred).
      */
     public static void gameMouseObjectsShow() {
         if (!initialized) {
             return;
         }
+
+        int refreshFlags = 0;
+
+        if (ObjectSystem.objectShow(bouncingCursor) == 0) {
+            refreshFlags |= REFRESH_BOUNCING_CURSOR;
+        }
+
+        if (ObjectSystem.objectShow(hexCursor) == 0) {
+            refreshFlags |= REFRESH_HEX_CURSOR;
+        }
+
+        if (mode != GameMouseMode.GAME_MOUSE_MODE_MOVE.id()) {
+            if (ObjectSystem.objectDisableOutline(hexCursor) == 0) {
+                refreshFlags |= REFRESH_HEX_CURSOR;
+            }
+        }
+
+        if (gameMouseUpdateHexCursorFid() == 0) {
+            refreshFlags |= REFRESH_HEX_CURSOR;
+        }
+
+        if (refreshFlags != 0) {
+            TileMath.tileWindowRefreshRect(null, org.fallout2ce.Map.gElevation);
+        }
+
         objectsVisible = true;
     }
 
     /**
-     * Visibility half of {@code gameMouseObjectsHide} (0x44CE34): see
-     * {@link #gameMouseObjectsShow} for the omitted repaint tail.
+     * Port of {@code gameMouseObjectsHide} (0x44CE34): hides both cursors
+     * and repaints when anything changed (rects deferred, like
+     * {@link #gameMouseObjectsShow}).
      */
     public static void gameMouseObjectsHide() {
         if (!initialized) {
             return;
         }
+
+        int refreshFlags = 0;
+
+        if (ObjectSystem.objectHide(bouncingCursor) == 0) {
+            refreshFlags |= REFRESH_BOUNCING_CURSOR;
+        }
+
+        if (ObjectSystem.objectHide(hexCursor) == 0) {
+            refreshFlags |= REFRESH_HEX_CURSOR;
+        }
+
+        if (refreshFlags != 0) {
+            TileMath.tileWindowRefreshRect(null, org.fallout2ce.Map.gElevation);
+        }
+
         objectsVisible = false;
+    }
+
+    /** Port of {@code REFRESH_BOUNCING_CURSOR} (0x01, src/game_mouse.cc). */
+    private static final int REFRESH_BOUNCING_CURSOR = 0x01;
+
+    /** Port of {@code REFRESH_HEX_CURSOR} (0x02, src/game_mouse.cc). */
+    private static final int REFRESH_HEX_CURSOR = 0x02;
+
+    /**
+     * Port of {@code gameMouseSetBouncingCursorFrmId} (0x44CC98): init gate,
+     * list-hit gate (the C {@code exist()} check; the vectored fids always
+     * hit loaded art), dup-fid guard, then the fid store (the mapper-mode
+     * repaint tail needs the render engine, so the refresh call keeps a
+     * null rect, like the other deferred rect seams).
+     */
+    static int gameMouseSetBouncingCursorFrmId(FrmId frmId) {
+        if (!initialized) {
+            return -1;
+        }
+
+        if (frmId == null || !frmId.valid()) {
+            return -1;
+        }
+
+        if (bouncingCursor.fid == frmId.fid()) {
+            return -1;
+        }
+
+        if (!mapperMode) {
+            return ObjectSystem.objectSetFrmId(bouncingCursor, frmId);
+        }
+
+        int refreshFlags = 0;
+
+        if (bouncingCursor.fid != FrmId.EMPTY_FID) {
+            refreshFlags |= REFRESH_BOUNCING_CURSOR;
+        }
+
+        int rc = -1;
+        if (ObjectSystem.objectSetFrmId(bouncingCursor, frmId) == 0) {
+            rc = 0;
+            refreshFlags |= REFRESH_HEX_CURSOR;
+        }
+
+        if ((hexCursor.flags.and(ObjectFlags.HIDDEN)).equals(ObjectFlags.NONE)) {
+            TileMath.tileWindowRefreshRect(null, org.fallout2ce.Map.gElevation);
+        }
+
+        return rc;
+    }
+
+    /** Port of {@code gameMouseResetBouncingCursorFrmId} (0x44CD0C). */
+    static void gameMouseResetBouncingCursorFrmId() {
+        gameMouseSetBouncingCursorFrmId(
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.Blank.id()));
+    }
+
+    /**
+     * Port of {@code gameMouse3dSetFlatFrmId} (0x44DF1C, static in C):
+     * stores the hex fid (rect deferred, like the other setters).
+     */
+    static int gameMouse3dSetFlatFrmId(FrmId frmId) {
+        if (ObjectSystem.objectSetFrmId(hexCursor, frmId) == 0) {
+            return 0;
+        }
+
+        return -1;
+    }
+
+    /**
+     * Port of {@code gameMouseUpdateHexCursorFid} (0x44DF40, static in C):
+     * no-op when the hex already shows the mode fid, else the flat set.
+     */
+    static int gameMouseUpdateHexCursorFid() {
+        int frmId = MODE_FRM_IDS[mode];
+        if (FrmId.ofFid(hexCursor.fid).frameId() == frmId) {
+            return -1;
+        }
+
+        return gameMouse3dSetFlatFrmId(FrmId.ofType(ObjectType.INTERFACE, frmId));
+    }
+
+    /**
+     * Port of {@code _gmouse_3d_move_to} (0x44DF94, static in C): game
+     * (non-mapper) branch moves the hex by pixel offsets outside MOVE mode
+     * and re-places both cursors from the mouse tile in MOVE mode (out-rect
+     * unions deferred, like the other render tails); the mapper branch
+     * mirrors C (square-tile math, executable/roof/dude guards, offsets).
+     */
+    static int gmouse3dMoveTo(int x, int y, int elevation) {
+        if (!mapperMode) {
+            if (mode != GameMouseMode.GAME_MOUSE_MODE_MOVE.id()) {
+                int offsetX = 0;
+                int offsetY = 0;
+                try (Art.ArtLock lock = Art.artLock(FrmId.ofFid(hexCursor.fid))) {
+                    if (lock != null && lock.art() != null) {
+                        int[] rotationX = new int[1];
+                        int[] rotationY = new int[1];
+                        Art.artGetRotationOffsets(lock.art(), Rotation.NE.value(), rotationX, rotationY);
+
+                        int[] frameX = new int[1];
+                        int[] frameY = new int[1];
+                        Art.artGetFrameOffsets(lock.art(), 0, Rotation.NE.value(), frameX, frameY);
+
+                        offsetX += frameX[0];
+                        offsetY += frameY[0];
+                    }
+                }
+
+                ObjectSystem.objMove(hexCursor, x + offsetX, y + offsetY, elevation);
+            } else {
+                int tile = TileMath.tileFromScreenXY(x, y);
+                if (tile != -1) {
+                    int[] screenX = new int[1];
+                    int[] screenY = new int[1];
+                    if (TileMath.tileToScreenXY(tile, screenX, screenY) == 0) {
+                        ObjectSystem.objMove(bouncingCursor, screenX[0] + 16, screenY[0] + 15, 0);
+                    }
+
+                    ObjectSystem.objectSetLocation(hexCursor, tile, elevation);
+                }
+            }
+            return 0;
+        }
+
+        int tile;
+        int x1 = 0;
+        int y1 = 0;
+
+        int fid = bouncingCursor.fid;
+        if (FrmId.ofFid(fid).objectType() == ObjectType.TILE) {
+            int squareTile = TileMath.squareTileFromScreenXY(x, y, elevation);
+            if (squareTile != -1) {
+                tile = MapDefs.HEX_GRID_WIDTH * (2 * (squareTile / MapDefs.SQUARE_GRID_WIDTH) + 1)
+                        + 2 * (squareTile % MapDefs.SQUARE_GRID_WIDTH) + 1;
+                x1 = -8;
+                y1 = 13;
+
+                GameObject dude = ObjectSystem.getDude();
+                if (Settings.settings.system.executableIsMapper() && TileMath.tileRoofIsVisible
+                        && dude != null
+                        && dude.flags.and(ObjectFlags.HIDDEN).equals(ObjectFlags.NONE)) {
+                    y1 = -83;
+                }
+            } else {
+                tile = -1;
+            }
+        } else {
+            tile = TileMath.tileFromScreenXY(x, y);
+        }
+
+        if (tile != -1) {
+            if (ObjectSystem.objectSetLocation(bouncingCursor, tile, elevation) == 0) {
+                if (x1 != 0 || y1 != 0) {
+                    ObjectSystem.objOffset(bouncingCursor, x1, y1);
+                }
+            }
+
+            if (mode != GameMouseMode.GAME_MOUSE_MODE_MOVE.id()) {
+                int offsetX = 0;
+                int offsetY = 0;
+                try (Art.ArtLock lock = Art.artLock(FrmId.ofFid(hexCursor.fid))) {
+                    if (lock != null && lock.art() != null) {
+                        int[] rotationX = new int[1];
+                        int[] rotationY = new int[1];
+                        Art.artGetRotationOffsets(lock.art(), Rotation.NE.value(), rotationX, rotationY);
+
+                        int[] frameX = new int[1];
+                        int[] frameY = new int[1];
+                        Art.artGetFrameOffsets(lock.art(), 0, Rotation.NE.value(), frameX, frameY);
+
+                        offsetX += frameX[0];
+                        offsetY += frameY[0];
+                    }
+                }
+
+                ObjectSystem.objMove(hexCursor, x + offsetX, y + offsetY, elevation);
+            }
+        }
+
+        return 0;
     }
 
     /** Port of {@code gameMouseObjectsIsVisible} (0x44CEB0) over the flag. */
@@ -578,12 +932,16 @@ public final class GameMouse {
         return itemHighlightEnabled;
     }
 
-    /** Test seam: full state reset plus cursor-FRM unlock. */
+    /** Test seam: full state reset plus FRM unlocks. */
     static void resetForTests() {
         if (cursorFrm != null) {
             cursorFrm.close();
             cursorFrm = null;
         }
+        gameMouseActionMenuFree();
+        bouncingCursor = null;
+        hexCursor = null;
+        mapperMode = false;
         initialized = false;
         enabled = false;
         objectsInitialized = false;
@@ -599,5 +957,6 @@ public final class GameMouse {
         animatedLastTimestamp = 0;
         itemHighlightEnabled = true;
         mapObjectsAvailable = false;
+        ObjectSystem.resetForTests();
     }
 }

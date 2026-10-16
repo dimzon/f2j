@@ -102,6 +102,30 @@ public final class MapVars {
     /** Port of {@code gMapLocalPointers} (init empty). */
     private static Object[] localPointers = new Object[0];
 
+    /** Length read for the map header/global vectors. */
+    static int globalVarsLength() {
+        return globalVarsLength;
+    }
+
+    /** Length read for the map header/local vectors. */
+    static int localVarsLength() {
+        return localVarsLength;
+    }
+
+    // 0x484038 mapGlobalVariablesFree (NOTE: Uninline in C).
+    public static void mapGlobalVariablesFree() {
+        globalVars = null;
+        globalVarsLength = 0;
+        globalPointers = new Object[0];
+    }
+
+    // 0x4840D4 mapLocalVariablesFree (NOTE: Uninline in C).
+    public static void mapLocalVariablesFree() {
+        localVars = null;
+        localVarsLength = 0;
+        localPointers = new Object[0];
+    }
+
     // 0x482220 mapSetGlobalVar (silent: no debugPrint).
     public static int mapSetGlobalVar(int var, ProgramValue value) {
         if (var < 0 || var >= globalVarsLength) {
@@ -176,7 +200,11 @@ public final class MapVars {
         int oldLength = localVarsLength;
         localVarsLength += numNewVars;
         try {
-            localVars = Arrays.copyOf(localVars, localVarsLength);
+            // internal_realloc(null, size) is malloc: a freed (null) base
+            // starts a fresh array, like C.
+            localVars = localVars == null
+                    ? new int[localVarsLength]
+                    : Arrays.copyOf(localVars, localVarsLength);
             localPointers = Arrays.copyOf(localPointers, localVarsLength);
         } catch (OutOfMemoryError e) {
             localVarsLength = oldLength;

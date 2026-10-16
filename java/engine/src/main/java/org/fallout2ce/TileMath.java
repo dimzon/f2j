@@ -914,6 +914,26 @@ public final class TileMath {
         stencilEnabled = false;
     }
 
+    // 0x4B1234 tileWindowRefresh: the window rect goes to the registered
+    // refresher when tiles are enabled (the elevation arg is dropped from
+    // the Java proc, like the other render-phase trims).
+    public static void tileWindowRefresh() {
+        if (tileEnabled) {
+            gTileWindowRefreshProc.refresh(gTileWindowRect);
+        }
+    }
+
+    // 0x4B1214 tileWindowRefreshRect (rect overload kept: callers with
+    // render-derived rects pass null, like the other deferred rect seams;
+    // the test refresher ignores its argument).
+    public static void tileWindowRefreshRect(Geometry.Rect rect, int elevation) {
+        if (tileEnabled) {
+            if (elevation == Map.gElevation) {
+                gTileWindowRefreshProc.refresh(rect);
+            }
+        }
+    }
+
     /** Test seam: full state reset (fresh-process mirror). */
     static void resetForTests() {
         clearState();

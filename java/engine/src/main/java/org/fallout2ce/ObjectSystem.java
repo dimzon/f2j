@@ -344,6 +344,159 @@ public final class ObjectSystem {
     /** Port of {@code _obj_seen} (0x662445, zeroed by init/reset). */
     private static byte[] objSeen = new byte[OBJ_SEEN_SIZE];
 
+    /** Ports of {@code _obj_last_roof_x} / {@code _obj_last_roof_y} (BSS -1). */
+    private static int objLastRoofX = -1;
+    private static int objLastRoofY = -1;
+
+    /** Port of {@code _obj_last_elev} (BSS -1). */
+    private static int objLastRoofElev = -1;
+
+    /** Port of {@code _obj_last_is_empty} (BSS true). */
+    private static boolean objLastIsEmpty = true;
+
+    /** Seam for {@code isInCombat()} (combat state unported; cf. {@link Stat}). */
+    private static boolean isInCombat() {
+        return false;
+    }
+
+    // 0x48C76C obj_set_seen (NOTE: Uninline in C).
+    static void objSetSeen(int tile) {
+        objSeen[tile >> 3] |= (byte) (1 << (tile & 7));
+    }
+
+    // 0x48C754 _obj_clear_seen.
+    static void objClearSeen() {
+        java.util.Arrays.fill(objSeen, (byte) 0);
+    }
+
+    // 0x489F90 _obj_move (rect overload deferred: the slice always passes
+    // null, so the rect fill/union tails are dropped, like C++). Null -> -1.
+    // A listed tile detaches to floating (tile -1, elevation stored) and
+    // re-inserts; an unlisted tile only changes elevation, like C. The art
+    // size sets the screen offset; the dude tail moves the egg along.
+    static int objMove(GameObject a1, int x, int y, int elevation) {
+        if (a1 == null) {
+            return -1;
+        }
+
+        GameObjectListNode[] prevSlot = new GameObjectListNode[1];
+        GameObjectListNode node = null;
+        boolean reinsert = false;
+
+        int tile = a1.tile;
+        if (MapDefs.hexGridTileIsValid(tile)) {
+            node = findListNode(a1, prevSlot);
+            if (node == null) {
+                return -1;
+            }
+
+            adjustLight(a1, true);
+            unlinkNode(node, prevSlot[0]);
+
+            a1.tile = -1;
+            a1.elevation = elevation;
+            reinsert = true;
+        } else {
+            if (elevation == a1.elevation) {
+                // Rect-only path (deferred, see class notes).
+            } else {
+                node = findListNode(a1, prevSlot);
+                if (node == null) {
+                    return -1;
+                }
+
+                unlinkNode(node, prevSlot[0]);
+
+                a1.elevation = elevation;
+                reinsert = true;
+            }
+        }
+
+        try (Art.ArtLock lock = Art.artLock(FrmId.ofFid(a1.fid))) {
+            if (lock != null && lock.art() != null) {
+                int[] width = new int[1];
+                int[] height = new int[1];
+                Art.artGetSize(lock.art(), a1.frame, a1.rotation.id(), width, height);
+                a1.sx = x - width[0] / 2;
+                a1.sy = y - (height[0] - 1);
+            }
+        }
+
+        if (reinsert) {
+            insertNode(node);
+        }
+
+        if (a1 == dude) {
+            objMove(egg, x, y, elevation);
+        }
+
+        return 0;
+    }
+
+    // 0x48B338 _obj_remove_all: tile heads then floating head via _obj_remove
+    // (NO_REMOVE survives, prev advances, like C). The _scr_remove_all
+    // script tail is game phase (no script registry headless; harness sids
+    // are -1); the roof-cache stores run for real below.
+    static void objRemoveAll() {
+        removeAllObjects();
+    }
+
+    // constexpr isExitGridProtoId (src/proto.h:143): MISC pid inside
+    // [FirstExitGrid, LastExitGrid].
+    private static boolean isExitGridProtoId(GameObject obj) {
+        return obj.pid >= ProtoTypes.MiscProtoTypeId.FirstExitGrid.id()
+                && obj.pid <= ProtoTypes.MiscProtoTypeId.LastExitGrid.id();
+    }
+
+    // objectAttemptPlacementPartyMember (src/proto_instance.cc:2319): null /
+    // tile guards, the wmEval search loop (worldmap/pathfinder phase behind
+    // the seam below; the vectors never reach it with a one-dude party),
+    // then show + place.
+    static int objectAttemptPlacementPartyMember(GameObject obj, int tile, int elevation) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (tile == -1) {
+            return -1;
+        }
+
+        int destinationTile = tile;
+        int rotation = org.fallout2ce.Rotation.NW.value();
+        if (!wmEvalTileNumForPlacement(tile)) {
+            GameObject dude = getDude();
+            destinationTile = dude != null ? dude.tile : tile;
+            for (int i = 1; i <= 100; i++) {
+                rotation++;
+                destinationTile = TileMath.tileGetTileInDirection(destinationTile,
+                        org.fallout2ce.Rotation.fromInt(rotation % org.fallout2ce.Rotation.COUNT), 1);
+                if (wmEvalTileNumForPlacement(destinationTile)) {
+                    break;
+                }
+
+                if (dude != null && TileMath.tileDistanceBetween(dude.tile, destinationTile) > 8) {
+                    destinationTile = tile;
+                    break;
+                }
+            }
+        }
+
+        objectShow(obj);
+        objectSetLocation(obj, destinationTile, elevation);
+
+        return 0;
+    }
+
+    /**
+     * Seam for {@code wmEvalTileNumForPlacement} (worldmap blocking +
+     * pathfinder, game phase, unported). The vectors never reach the search
+     * (party is the dude alone), so the seam assumes placeable until the
+     * worldmap slice lands.
+     */
+    private static boolean wmEvalTileNumForPlacement(int tile) {
+        return true;
+    }
+
     /** Port of {@code _centerToUpperLeft} (0x51962C). */
     private static int centerToUpperLeft;
 
@@ -797,6 +950,10 @@ public final class ObjectSystem {
         int ambientIntensity = Light.lightGetAmbientIntensity();
         int tileIntensity = Light.lightGetTrueTileIntensity(obj.elevation, obj.tile);
 
+        if (obj == dude) {
+            tileIntensity -= dude.lightIntensity;
+        }
+
         if (tileIntensity >= ambientIntensity) {
             if (tileIntensity > Light.LIGHT_INTENSITY_MAX) {
                 tileIntensity = Light.LIGHT_INTENSITY_MAX;
@@ -859,9 +1016,12 @@ public final class ObjectSystem {
     // adjust-light results are ignored, like C++). Null -> -1, bad
     // tile/elev -> -1, list-node miss -> -1, else unlink + the
     // _obj_connect_to_tile body on the SAME node (field set, insert,
-    // add-light). The isInCombat outline tail, the gDude
-    // exit-grid/roof/egg/elevation tails and the non-null-rect unions
-    // need combat/map/render (game phase); dormant headless.
+    // add-light), the combat outline tail (dormant: isInCombat seam), the
+    // dude exit-grid scan (body kept; the worldmap mark is a documented
+    // seam), seen-bit store, roof-cache store (fill calls deferred, see
+    // class notes), the egg follow and the elevation-change tail
+    // (textObjectsReset/mapSetElevation/tileSetCenter kept; the combat quit
+    // flag is deferred, like the non-dude _combat_delete_critter tail).
     public static int objectSetLocation(GameObject obj, int tile, int elevation) {
         if (obj == null) {
             return -1;
@@ -884,6 +1044,8 @@ public final class ObjectSystem {
         // _obj_adjust_light(obj, 1, null): null-rect shape, result ignored.
         adjustLight(obj, true);
 
+        int oldElevation = obj.elevation;
+
         unlinkNode(node, prevSlot[0]);
 
         // _obj_connect_to_tile body (same node, not a second node like
@@ -898,6 +1060,89 @@ public final class ObjectSystem {
 
         // _obj_adjust_light(obj, 0, null): null-rect shape, result ignored.
         adjustLight(node.obj, false);
+
+        if (isInCombat()) {
+            if (FrmId.ofFid(obj.fid).objectType() == ObjectType.CRITTER) {
+                // _combat_update_critter_outline_for_los(obj, enableOutline):
+                // combat engine (game phase). The seam is false, so this
+                // stays dormant, exactly like C headless.
+            }
+        }
+
+        if (obj == dude) {
+            GameObjectListNode listNode = tileHeads[tile];
+            while (listNode != null) {
+                GameObject other = listNode.obj;
+                if (elevation == other.elevation) {
+                    if (FrmId.ofFid(other.fid).objectType() == ObjectType.MISC && isExitGridProtoId(other)) {
+                        if (other.flags.and(ObjectFlags.HIDDEN).equals(ObjectFlags.NONE)) {
+                            ObjTypes.MiscObjectData data = other.data.misc;
+                            Map.MapTransition transition = new Map.MapTransition();
+                            transition.map = data.map;
+                            transition.tile = data.tile;
+                            transition.elevation = data.elevation;
+                            transition.rotation = org.fallout2ce.Rotation.fromInt(data.rotation.id());
+                            Map.mapSetTransition(transition);
+                            Map.wmMapMarkMapEntranceState(
+                                    transition.map != null ? transition.map.id() : -1,
+                                    transition.elevation, 1);
+                        }
+                    }
+                }
+
+                listNode = listNode.next;
+            }
+
+            // NOTE: Uninline (obj_set_seen).
+            objSetSeen(tile);
+
+            int roofX = tile % MapDefs.HEX_GRID_WIDTH / 2;
+            int roofY = tile / MapDefs.HEX_GRID_WIDTH / 2;
+            if (roofX != objLastRoofX || roofY != objLastRoofY || elevation != objLastRoofElev) {
+                int currentSquare = Map.squareGrids()[elevation].tileFid[
+                        roofX + MapDefs.SQUARE_GRID_WIDTH * roofY];
+                int previousSquare = objLastRoofX != -1 && objLastRoofY != -1
+                        ? Map.squareGrids()[elevation].tileFid[
+                                objLastRoofX + MapDefs.SQUARE_GRID_WIDTH * objLastRoofY]
+                        : 0;
+                int currentRoofFrame = (currentSquare >> Map.ROOF_HALF_FID_SHIFT) & Map.HALF_FID_FRAME_MASK;
+                int currentRoofFlags = ((currentSquare >> Map.ROOF_HALF_FID_SHIFT) & Map.HALF_FID_FLAGS_MASK)
+                        >> Map.HALF_FID_FLAGS_POSITION;
+                int previousRoofFlags = ((previousSquare >> Map.ROOF_HALF_FID_SHIFT) & Map.HALF_FID_FLAGS_MASK)
+                        >> Map.HALF_FID_FLAGS_POSITION;
+                boolean isEmpty = currentRoofFrame == ArtDefs.TileFrameId.Grid.id();
+                if (isEmpty != objLastIsEmpty || currentRoofFlags != previousRoofFlags) {
+                    // tile_fill_roof(last/current, elevation, true/false):
+                    // roof render (game phase, deferred, see class notes).
+                    // The vectors never reach it (empty squares).
+                }
+
+                objLastRoofX = roofX;
+                objLastRoofY = roofY;
+                objLastRoofElev = elevation;
+                objLastIsEmpty = isEmpty;
+            }
+
+            objectSetLocation(egg, tile, elevation);
+
+            if (elevation != oldElevation) {
+                // SFALL: Remove text floaters after moving to another elevation.
+                TextObjects.textObjectsReset();
+
+                Map.mapSetElevation(elevation);
+                TileMath.tileSetCenter(tile, TileMath.TILE_SET_CENTER_REFRESH_WINDOW
+                        | TileMath.TILE_SET_CENTER_FLAG_IGNORE_SCROLL_RESTRICTIONS);
+                // _game_user_wants_to_quit = GAME_QUIT_REQUEST_END_COMBAT:
+                // combat phase, deferred (see class notes).
+            }
+        } else {
+            if (elevation != objLastRoofElev
+                    && ProtoTypes.ProtoId.ofGameObject(obj).objectType()
+                            == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+                // _combat_delete_critter(obj): combat engine (game phase,
+                // deferred, see class notes).
+            }
+        }
 
         return 0;
     }
@@ -1147,6 +1392,13 @@ public final class ObjectSystem {
 
         insertNode(node);
 
+        // Dude tail (rect unions need the render engine, deferred like the
+        // other rect seams): the egg follows the same offset, which keeps
+        // the tile-list order 1:1 (the vectors observe it).
+        if (obj == dude) {
+            objOffset(egg, x, y);
+        }
+
         return 0;
     }
 
@@ -1169,9 +1421,9 @@ public final class ObjectSystem {
         // -1, so the guards-only slice runs bare.
         adjustLight(obj, false);
 
-        // obj == gDude tail (src/object.cc): gDude/gEgg are unported
-        // game-phase globals (null headless), so the branch can never fire
-        // here; dormant by construction (see class notes).
+        // obj == gDude tail (src/object.cc): rect-only (egg rect union for
+        // the refresh), deferred with the other rect seams (the vectors
+        // never observe it).
 
         return 0;
     }
@@ -1196,7 +1448,7 @@ public final class ObjectSystem {
             object.outline = object.outline.or(ObjTypes.OUTLINE_DISABLED);
         }
 
-        // obj == gDude tail: dormant by construction (see objectShow).
+        // obj == gDude tail (rect-only egg union): deferred, like objectShow.
 
         return 0;
     }
@@ -2012,6 +2264,11 @@ public final class ObjectSystem {
             }
             node = next;
         }
+
+        objLastRoofY = -1;
+        objLastRoofElev = -1;
+        objLastIsEmpty = true;
+        objLastRoofX = -1;
     }
 
     /** Test seam: clear the lists + find cursor state + counter (fresh-process mirror). */
@@ -2049,6 +2306,10 @@ public final class ObjectSystem {
         egg = null;
         objSeenCheck = new byte[OBJ_SEEN_SIZE];
         objSeen = new byte[OBJ_SEEN_SIZE];
+        objLastRoofX = -1;
+        objLastRoofY = -1;
+        objLastRoofElev = -1;
+        objLastIsEmpty = true;
         centerToUpperLeft = 0;
         wallBlendTable = null;
         glassBlendTable = null;
