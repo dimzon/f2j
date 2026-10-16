@@ -4635,6 +4635,111 @@ void sectionWinMenu2()
         (fallout::ColorWithFlags)3, 0);
     std::printf("listcb-idx=%d listcb-ret=%d listat=%d listletter=%d\n",
         gListCbIndex, listCbRet, listAt, listLetter);
+}
+
+static uLong rawBufCrc(unsigned char* buf, size_t size)
+{
+    uLong crc = crc32(0L, Z_NULL, 0);
+    if (buf != nullptr && size != 0) {
+        crc = crc32(crc, buf, (uInt)size);
+    }
+    return crc;
+}
+
+void sectionWinText()
+{
+    std::puts("[wintext]");
+
+    // Reuses the live system (re-init is impossible, see [winbtn]).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+
+    // Widget font/text attributes (script window state, no window needed).
+    int fontBefore = fallout::windowGetFont();
+    int setFontRc = fallout::windowSetFont(1);
+    int fontAfter = fallout::windowGetFont();
+    int setFlagsRc = fallout::scriptWindowSetTextFlags(
+        (fallout::DrawTextFlags)(fallout::DRAW_TEXT_FLAG_NO_BG | fallout::DRAW_TEXT_FLAG_UNDERLINED));
+    int flagsAfter = (int)fallout::scriptWindowGetTextFlags();
+    int setColorRc = fallout::scriptWindowSetTextColor(1.0, 0.0, 0.0);
+    int textColor = (int)fallout::scriptWindowGetTextColor();
+    int setHiRc = fallout::scriptWindowSetHighlightColor(0.0, 1.0, 0.0);
+    int hiColor = (int)fallout::scriptWindowGetHighlightColor();
+    fallout::scriptWindowResetTextAttributes();
+    int resetFlags = (int)fallout::scriptWindowGetTextFlags();
+    int resetColor = (int)fallout::scriptWindowGetTextColor();
+    fallout::windowSetFont(fontBefore);
+    std::printf("font=%d setfont=%d font-after=%d setflags=%d flags=%d setcolor=%d color=%d sethi=%d hi=%d resetflags=%d resetcolor=%d\n",
+        fontBefore, setFontRc, fontAfter, setFlagsRc, flagsAfter, setColorRc, textColor,
+        setHiRc, hiColor, resetFlags, resetColor);
+
+    int win = fallout::windowCreate(10, 370, 200, 100, (fallout::ColorWithFlags)5, 0);
+    fallout::windowShow(win);
+
+    // Alignment variants paint at different x offsets; maxY guard is a no-op.
+    fallout::windowPrintBuf(win, (char*)"Hi", 2, 100, 1000, 2, 2, (fallout::ColorWithFlags)3,
+        fallout::TEXT_ALIGNMENT_LEFT);
+    uLong leftCrc = winBufCrc(win);
+    fallout::windowPrintBuf(win, (char*)"Hi", 2, 100, 1000, 2, 20, (fallout::ColorWithFlags)3,
+        fallout::TEXT_ALIGNMENT_CENTER);
+    uLong centerCrc = winBufCrc(win);
+    fallout::windowPrintBuf(win, (char*)"Hi", 2, 100, 1000, 2, 40, (fallout::ColorWithFlags)3,
+        fallout::TEXT_ALIGNMENT_RIGHT);
+    uLong rightCrc = winBufCrc(win);
+    fallout::windowPrintBuf(win, (char*)"Hi", 2, 100, 10, 2, 60, (fallout::ColorWithFlags)3,
+        fallout::TEXT_ALIGNMENT_LEFT);
+    uLong guardCrc = winBufCrc(win);
+    std::printf("left=%08lX center=%08lX right=%08lX guard=%08lX\n",
+        leftCrc, centerCrc, rightCrc, guardCrc);
+
+    // Word wrap splits on width; null yields an empty list.
+    int wrapCount = -1;
+    char** wrapped = fallout::windowWordWrap((char*)"aa bb cc dd ee", 40, 0, &wrapCount);
+    std::printf("wrap-n=%d wrap=[", wrapCount);
+    for (int i = 0; i < wrapCount; i++) {
+        std::printf("%s%s", i != 0 ? "|" : "", wrapped[i]);
+    }
+    std::printf("]\n");
+    fallout::windowFreeWordList(wrapped, wrapCount);
+    int nullCount = -1;
+    char** nullWrapped = fallout::windowWordWrap(nullptr, 40, 0, &nullCount);
+    std::printf("wrapnull-n=%d wrapnull=%d\n", nullCount, nullWrapped == nullptr ? 1 : 0);
+
+    // Multiline render, plain and spaced.
+    fallout::windowWrapLine(win, (char*)"aa bb cc dd ee", 60, 60, 100, 2,
+        (fallout::ColorWithFlags)3, fallout::TEXT_ALIGNMENT_LEFT);
+    uLong wrapCrc = winBufCrc(win);
+    fallout::windowWrapLineWithSpacing(win, (char*)"aa bb cc dd ee", 60, 60, 100, 2,
+        (fallout::ColorWithFlags)3, fallout::TEXT_ALIGNMENT_LEFT, 2);
+    uLong spacingCrc = winBufCrc(win);
+    fallout::windowDestroy(win);
+    std::printf("wrapline=%08lX spacing=%08lX\n", wrapCrc, spacingCrc);
+
+    // Pure buffer scalers on fixed patterns.
+    unsigned char src4[4 * 4];
+    for (int i = 0; i < 16; i++) {
+        src4[i] = (unsigned char)(i * 17);
+    }
+    unsigned char dstUp[8 * 8] = {};
+    fallout::_drawScaled(dstUp, 8, 8, 8, src4, 4, 4, 4);
+    unsigned char dstSame[4 * 4] = {};
+    fallout::_drawScaledBuf(dstSame, 4, 4, src4, 4, 4);
+    unsigned char dstDown[2 * 2] = {};
+    fallout::_drawScaled(dstDown, 2, 2, 2, src4, 4, 4, 4);
+    std::printf("scaled-up=%08lX scaled-same=%08lX scaled-down=%08lX\n",
+        rawBufCrc(dstUp, sizeof(dstUp)), rawBufCrc(dstSame, sizeof(dstSame)),
+        rawBufCrc(dstDown, sizeof(dstDown)));
+
+    unsigned char tile3[9 * 9];
+    for (int i = 0; i < 81; i++) {
+        tile3[i] = (unsigned char)(i + 1);
+    }
+    unsigned char tileDst[12 * 12] = {};
+    fallout::_fillBuf3x3(tile3, 9, 9, tileDst, 12, 12);
+    std::printf("fill3x3=%08lX\n", rawBufCrc(tileDst, sizeof(tileDst)));
 
     fallout::windowManagerExit();
 }
@@ -4712,5 +4817,6 @@ int main()
     sectionWinFrm();
     sectionWinDlg();
     sectionWinMenu2();
+    sectionWinText();
     return 0;
 }
