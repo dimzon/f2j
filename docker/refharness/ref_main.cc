@@ -5914,6 +5914,46 @@ void sectionObjOutline()
     std::printf("charges=%d max=%d uses=%d set7=%d\n", charges0, maxCharges, usesCharges, charges7);
 }
 
+void sectionGameMouse()
+{
+    std::puts("[gamemouse]");
+
+    int initRc = fallout::gameMouseInit();
+    int initAgain = fallout::gameMouseInit();
+    int cursorAfterInit = (int)fallout::gameMouseGetCursor();
+    int setCross = fallout::gameMouseSetCursor(fallout::MOUSE_CURSOR_CROSSHAIR);
+    int cursorCross = (int)fallout::gameMouseGetCursor();
+    int setCrossAgain = fallout::gameMouseSetCursor(fallout::MOUSE_CURSOR_CROSSHAIR);
+    int setArrow = fallout::gameMouseSetCursor(fallout::MOUSE_CURSOR_ARROW);
+    int cursorArrow = (int)fallout::gameMouseGetCursor();
+    std::printf("init=%d again=%d cursor=%d setcross=%d cross=%d crossagain=%d setarrow=%d arrow=%d\n",
+        initRc, initAgain, cursorAfterInit, setCross, cursorCross,
+        setCrossAgain, setArrow, cursorArrow);
+
+    // NOTE: gameMouseSetMode/CycleMode need the 3d/map machinery
+    // (_gmouse_3d_move_to over live objects) and segfault headless,
+    // so only the (zero) mode state is observed here.
+    int modeInit = (int)fallout::gameMouseGetMode();
+    std::printf("mode=%d\n", modeInit);
+
+    int scrollInit = fallout::gmouse_scrolling_is_enabled() ? 1 : 0;
+    fallout::_gmouse_enable_scrolling();
+    int scrollOn = fallout::gmouse_scrolling_is_enabled() ? 1 : 0;
+    fallout::_gmouse_disable_scrolling();
+    int scrollOff = fallout::gmouse_scrolling_is_enabled() ? 1 : 0;
+    int clickInit = fallout::_gmouse_get_click_to_scroll() ? 1 : 0;
+    fallout::_gmouse_set_click_to_scroll(true);
+    int clickOn = fallout::_gmouse_get_click_to_scroll() ? 1 : 0;
+    std::printf("scroll=%d,%d,%d click=%d,%d\n", scrollInit, scrollOn, scrollOff, clickInit, clickOn);
+
+    // NOTE: ObjectsHide/Show repaint through the tile refresher, which
+    // is null headless (see [itemdrop] note) — only visibility is read.
+    int visInit = fallout::gameMouseObjectsIsVisible() ? 1 : 0;
+    std::printf("vis=%d\n", visInit);
+
+    fallout::gameMouseExit();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6015,5 +6055,6 @@ int main()
     sectionObjAttrs();
     sectionObjVis();
     sectionObjOutline();
+    sectionGameMouse();
     return 0;
 }
