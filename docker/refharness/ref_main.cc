@@ -4827,6 +4827,62 @@ void sectionWinDbox()
     const char* inpEsc = fallout::showInputDialog((char*)"ab", 200, 150, (char*)"Done");
     std::printf("inp-ab=[%s] inp-ac=[%s] inp-escnull=%d\n",
         inpAbBuf, inpAcBuf, inpEsc == nullptr ? 1 : 0);
+}
+
+void sectionWinFile()
+{
+    std::puts("[winfile]");
+
+    // Reuses the live system (re-init is impossible, see [winbtn]).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+    fallout::mouseSetFrame(nullptr, 0, 0, 0, 0, 0, 0);
+    fallout::mouseManagerShowMouse();
+    fallout::keyboardSetLayout(fallout::KEYBOARD_LAYOUT_QWERTY);
+
+    // Park the mouse away from every button: the modal pumps below read
+    // keys from _kb_getch, mouse input would corrupt the sequences.
+    fallout::_mouse_set_position(639, 479);
+    fallout::_mouse_simulate_input(0, 0, 0);
+
+    // Load dialog: arrows move, Done (500) copies the selected entry.
+    // Dialog codes have no SDL scancodes, and _process_bk appends kb keys
+    // after queued events, so everything is enqueued in consumption order.
+    char* slots[] = { (char*)"slot1", (char*)"slot2", (char*)"slot3" };
+    char loadEscDest[32] = "?";
+    fallout::enqueueInputEvent(fallout::KEY_ESCAPE);
+    int loadEscRc = fallout::showLoadFileDialog((char*)"Load", slots, loadEscDest, 3, 200, 100, 0);
+    char loadDest[32] = "?";
+    fallout::enqueueInputEvent(fallout::KEY_ARROW_DOWN);
+    fallout::enqueueInputEvent(fallout::KEY_ARROW_DOWN);
+    fallout::enqueueInputEvent(500);
+    int loadRc = fallout::showLoadFileDialog((char*)"Load", slots, loadDest, 3, 200, 100, 0);
+    std::printf("load-rc=%d load-dest=[%s] loadesc-rc=%d loadesc-dest=[%s]\n",
+        loadRc, loadDest, loadEscRc, loadEscDest);
+
+    // Empty list: Done gives rc=1 without touching dest.
+    char emptyDest[32] = "?";
+    fallout::enqueueInputEvent(500);
+    int loadEmptyRc = fallout::showLoadFileDialog((char*)"Load", nullptr, emptyDest, 0, 200, 100, 0);
+    std::printf("loadempty-rc=%d loadempty-dest=[%s]\n", loadEmptyRc, emptyDest);
+
+    // Save dialog: typing + Done commits the name; empty + Done is rc=1.
+    char saveDest[32] = "";
+    fallout::enqueueInputEvent('x');
+    fallout::enqueueInputEvent('y');
+    fallout::enqueueInputEvent(500);
+    int saveRc = fallout::showSaveFileDialog((char*)"Save", slots, saveDest, 3, 200, 100, 0);
+    char saveEmptyDest[32] = "";
+    fallout::enqueueInputEvent(500);
+    int saveEmptyRc = fallout::showSaveFileDialog((char*)"Save", slots, saveEmptyDest, 3, 200, 100, 0);
+    char saveEscDest[32] = "?";
+    fallout::enqueueInputEvent(fallout::KEY_ESCAPE);
+    int saveEscRc = fallout::showSaveFileDialog((char*)"Save", slots, saveEscDest, 3, 200, 100, 0);
+    std::printf("save-rc=%d save-dest=[%s] saveempty-rc=%d saveesc-rc=%d saveesc-dest=[%s]\n",
+        saveRc, saveDest, saveEmptyRc, saveEscRc, saveEscDest);
 
     fallout::windowManagerExit();
 }
@@ -4907,5 +4963,6 @@ int main()
     sectionWinText();
     sectionWinDbg();
     sectionWinDbox();
+    sectionWinFile();
     return 0;
 }

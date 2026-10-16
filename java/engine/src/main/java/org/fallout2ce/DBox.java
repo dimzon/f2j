@@ -7,12 +7,12 @@ import java.util.function.Function;
  * ({@code showDialogBox}) and the text-input dialog ({@code showInputDialog}
  * over the {@code _get_input_str} pump).
  *
- * <p>Only the slices exercised by {@code [windbox]} are ported
- * ({@code _get_input_str}, {@code showInputDialog}, {@code showDialogBox}
- * with the {@code input::} red-button/box helpers and the {@code alert::}
- * background/config tables). The file-dialog slices
- * ({@code showLoadFileDialog}/{@code showSaveFileDialog} and the
- * {@code file::} namespace) come with a later slice.
+ * <p>Only the slices exercised by {@code [windbox]} and {@code [winfile]}
+ * are ported ({@code _get_input_str}, {@code showInputDialog},
+ * {@code showDialogBox} with the {@code input::} red-button/box helpers and
+ * the {@code alert::} background/config tables, plus
+ * {@code showLoadFileDialog}/{@code showSaveFileDialog} with the
+ * {@code file::} namespace).
  *
  * <p>C {@code unsigned char*} buffers become {@code byte[]} with explicit
  * offsets wherever C used pointer arithmetic. Colors arrive as raw ints
@@ -671,5 +671,881 @@ public final class DBox {
 
         TextFont.fontDrawText(windowBuf, bgWidth * currentY + xOffset, text, bgWidth, bgWidth,
             textColor);
+    }
+
+    // ===== file dialogs (file:: namespace) =====
+    //
+    // Port of showLoadFileDialog / showSaveFileDialog with the file::
+    // helpers (DialogFrms/loadImages, createScrollButton, ModeConfig,
+    // Context/initInterface, fileDialogRenderFileList).
+    //
+    // C char** + length becomes String[] + int length (same convention as
+    // showDialogBox's body/bodyLength). C char[32] dest + strncpy-16 becomes
+    // a StringBuilder with explicit truncation. The quit-request checks
+    // (_game_user_wants_to_quit != GAME_QUIT_REQUEST_NONE, game.cc, not
+    // ported: never set) read as "no request". Mouse wheel conversion
+    // reuses the v38 port (Mouse.convertMouseWheelToArrowKey). Delays use
+    // Delay.delayMs + Ticks.getTicks like the v42/v45 pumps.
+
+    private static final int FILE_DIALOG_FRM_COUNT = 7;
+    private static final int FILE_LINE_COUNT = 12;
+    private static final int FILE_DOUBLE_CLICK_DELAY = 32;
+
+    private static final int FILE_TITLE_X = 49;
+    private static final int FILE_TITLE_Y = 16;
+    private static final int FILE_SCROLL_BUTTON_X = 36;
+    private static final int FILE_SCROLL_BUTTON_Y = 44;
+    private static final int FILE_LIST_X = 55;
+    private static final int FILE_LIST_Y = 49;
+    private static final int FILE_LIST_WIDTH = 190;
+    private static final int FILE_LIST_HEIGHT = 124;
+
+    private static final int FILE_LOAD_DONE_BUTTON_X = 58;
+    private static final int FILE_LOAD_DONE_BUTTON_Y = 187;
+    private static final int FILE_LOAD_DONE_LABEL_X = 79;
+    private static final int FILE_LOAD_DONE_LABEL_Y = 187;
+    private static final int FILE_LOAD_CANCEL_BUTTON_X = 163;
+    private static final int FILE_LOAD_CANCEL_BUTTON_Y = 187;
+    private static final int FILE_LOAD_CANCEL_LABEL_X = 182;
+    private static final int FILE_LOAD_CANCEL_LABEL_Y = 187;
+
+    private static final int FILE_SAVE_DONE_BUTTON_X = 58;
+    private static final int FILE_SAVE_DONE_BUTTON_Y = 214;
+    private static final int FILE_SAVE_DONE_LABEL_X = 79;
+    private static final int FILE_SAVE_DONE_LABEL_Y = 213;
+    private static final int FILE_SAVE_CANCEL_BUTTON_X = 163;
+    private static final int FILE_SAVE_CANCEL_BUTTON_Y = 214;
+    private static final int FILE_SAVE_CANCEL_LABEL_X = 182;
+    private static final int FILE_SAVE_CANCEL_LABEL_Y = 213;
+
+    private static final int FILE_SAVE_NAME_X = 57;
+    private static final int FILE_SAVE_NAME_Y = 190;
+
+    private static final int FILE_DIALOG_SCROLL_DIRECTION_NONE = 0;
+    private static final int FILE_DIALOG_SCROLL_DIRECTION_UP = 1;
+    private static final int FILE_DIALOG_SCROLL_DIRECTION_DOWN = 2;
+
+    private static final int[] LOAD_FILE_DIALOG_FRM_IDS = {
+        ArtDefs.InterfaceFrameId.LoadBox.id(),
+        ArtDefs.InterfaceFrameId.LittleRedButtonUp.id(),
+        ArtDefs.InterfaceFrameId.LittleRedButtonDown.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorDownArrowOff.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorDownArrowOn.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorUpArrowOff.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorUpArrowOn.id(),
+    };
+
+    private static final int[] SAVE_FILE_DIALOG_FRM_IDS = {
+        ArtDefs.InterfaceFrameId.SaveBox.id(),
+        ArtDefs.InterfaceFrameId.LittleRedButtonUp.id(),
+        ArtDefs.InterfaceFrameId.LittleRedButtonDown.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorDownArrowOff.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorDownArrowOn.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorUpArrowOff.id(),
+        ArtDefs.InterfaceFrameId.CharacterEditorUpArrowOn.id(),
+    };
+
+    /** Port of {@code file::DialogFrms}. */
+    private static final class FileDialogFrms {
+        final Art.FrmImage background = new Art.FrmImage();
+        final Art.FrmImage buttonNormal = new Art.FrmImage();
+        final Art.FrmImage buttonPressed = new Art.FrmImage();
+        final Art.FrmImage scrollDownNormal = new Art.FrmImage();
+        final Art.FrmImage scrollDownPressed = new Art.FrmImage();
+        final Art.FrmImage scrollUpNormal = new Art.FrmImage();
+        final Art.FrmImage scrollUpPressed = new Art.FrmImage();
+
+        void close() {
+            background.close();
+            buttonNormal.close();
+            buttonPressed.close();
+            scrollDownNormal.close();
+            scrollDownPressed.close();
+            scrollUpNormal.close();
+            scrollUpPressed.close();
+        }
+    }
+
+    /** Port of {@code file::loadImages}. */
+    private static boolean fileLoadImages(FileDialogFrms images, int[] frmIds) {
+        Art.FrmImage[] frms = {
+            images.background,
+            images.buttonNormal,
+            images.buttonPressed,
+            images.scrollDownNormal,
+            images.scrollDownPressed,
+            images.scrollUpNormal,
+            images.scrollUpPressed,
+        };
+        for (int index = 0; index < FILE_DIALOG_FRM_COUNT; index++) {
+            if (!frms[index].lock(ifaceFrm(frmIds[index]))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Port of {@code file::Context} (window + message list). */
+    private static final class FileContext implements AutoCloseable {
+        final WindowManager.UniqueHandle window =
+            new WindowManager.UniqueHandle(WindowManager::windowDestroy);
+        final Message.MessageList messageList = new Message.MessageList();
+
+        @Override
+        public void close() {
+            Message.messageListFree(messageList);
+            window.close();
+        }
+    }
+
+    /** Port of {@code file::createScrollButton}. */
+    private static int createScrollButton(int windowId, int x, int y, int buttonId,
+            int shortKey, int arrowKey, int hoverKey,
+            Art.FrmImage upFrm, Art.FrmImage downFrm) {
+        int btn = WindowManager.buttonCreate(windowId, x, y,
+            downFrm.getWidth(), downFrm.getHeight(),
+            shortKey, arrowKey, hoverKey, buttonId,
+            upFrm.getData(), downFrm.getData(), null,
+            WindowManager.ButtonFlags.BUTTON_FLAG_TRANSPARENT.id());
+
+        if (btn != -1) {
+            WindowManager.buttonSetCallbacks(btn, DBox::redButtonPress, DBox::redButtonRelease);
+        }
+        return btn;
+    }
+
+    /**
+     * Port of {@code file::initInterface}.
+     *
+     * @param xy in/out screen position (C takes {@code int& x, int& y}).
+     */
+    private static boolean fileInitInterface(FileContext ctx, FileDialogFrms frms, int[] frmIds,
+            int doneButtonX, int doneButtonY, int doneLabelX, int doneLabelY,
+            int cancelButtonX, int cancelButtonY, int cancelLabelX, int cancelLabelY,
+            String title, int[] xy) {
+        if (!fileLoadImages(frms, frmIds)) {
+            return false;
+        }
+
+        int bgWidth = frms.background.getWidth();
+        int bgHeight = frms.background.getHeight();
+        xy[0] += (Svga.screenGetWidth() - 640) / 2;
+        xy[1] += (Svga.screenGetHeight() - 480) / 2;
+
+        int win = WindowManager.windowCreate(xy[0], xy[1], bgWidth, bgHeight, 256,
+            WindowManager.WindowFlags.WINDOW_MODAL.id()
+                | WindowManager.WindowFlags.WINDOW_MOVE_ON_TOP.id());
+        if (win == -1) {
+            return false;
+        }
+        ctx.window.reset(win);
+
+        byte[] windowBuffer = WindowManager.windowGetBuffer(ctx.window.get());
+        System.arraycopy(frms.background.getData(), 0, windowBuffer, 0,
+            bgWidth * bgHeight);
+
+        Message.Item messageListItem = new Message.Item();
+        if (!Message.messageListInit(ctx.messageList)) {
+            return false;
+        }
+
+        // asc_5186C8 ("game\\") + "DBOX.MSG".
+        if (!Message.messageListLoad(ctx.messageList, "game\\" + "DBOX.MSG")) {
+            return false;
+        }
+
+        TextFont.fontSetCurrent(103);
+
+        String doneText = Message.getmsg(ctx.messageList, messageListItem, 100);
+        TextFont.fontDrawText(windowBuffer, bgWidth * doneLabelY + doneLabelX,
+            doneText, bgWidth, bgWidth, Color.darkYellow());
+
+        // Item 103 is the Cancel label (100/101/102 are Done/Yes/No).
+        String cancelText = Message.getmsg(ctx.messageList, messageListItem, 103);
+        TextFont.fontDrawText(windowBuffer, bgWidth * cancelLabelY + cancelLabelX,
+            cancelText, bgWidth, bgWidth, Color.darkYellow());
+
+        createRedButton(ctx.window.get(), doneButtonX, doneButtonY, 500,
+            frms.buttonNormal, frms.buttonPressed);
+        createRedButton(ctx.window.get(), cancelButtonX, cancelButtonY, 501,
+            frms.buttonNormal, frms.buttonPressed);
+
+        createScrollButton(ctx.window.get(),
+            FILE_SCROLL_BUTTON_X, FILE_SCROLL_BUTTON_Y, 505, -1, 505, 506,
+            frms.scrollUpNormal, frms.scrollUpPressed);
+
+        int scrollDownY = FILE_SCROLL_BUTTON_Y + frms.scrollUpPressed.getHeight();
+        createScrollButton(ctx.window.get(),
+            FILE_SCROLL_BUTTON_X, scrollDownY, 503, -1, 503, 504,
+            frms.scrollDownNormal, frms.scrollDownPressed);
+
+        WindowManager.buttonCreate(ctx.window.get(),
+            FILE_LIST_X, FILE_LIST_Y, FILE_LIST_WIDTH, FILE_LIST_HEIGHT,
+            -1, -1, -1, 502, null, null, null, 0);
+
+        if (title != null) {
+            TextFont.fontDrawText(windowBuffer, bgWidth * FILE_TITLE_Y + FILE_TITLE_X,
+                title, bgWidth, bgWidth, Color.darkYellow());
+        }
+
+        return true;
+    }
+
+    /** Port of {@code strncpy(dest, entry, 16)} (C string semantics). */
+    private static void copyEntry16(StringBuilder dest, String entry) {
+        dest.setLength(0);
+        dest.append(entry.substring(0, Math.min(16, entry.length())));
+    }
+
+    /** Save-dialog name trim: cut at {@code '.'} or 12 chars (C loop). */
+    private static String trimSaveName(String name) {
+        int cut = Math.min(name.length(), 12);
+        int dot = name.indexOf('.');
+        if (dot != -1 && dot < cut) {
+            cut = dot;
+        }
+        return name.substring(0, cut);
+    }
+
+    /**
+     * Port of {@code fileDialogRenderFileList} (0x41FBDC PrntFlist).
+     *
+     * <p>The {@code fileListLength} shadowing ({@code fileListLength =
+     * lineCount} clamp via a local) is ported with an explicit
+     * {@code shown} local.
+     */
+    static void fileDialogRenderFileList(byte[] buffer, String[] fileList, int pageOffset,
+            int fileListLength, int selectedIndex, int pitch) {
+        int lineHeight = TextFont.fontGetLineHeight();
+        int y = FILE_LIST_Y;
+        Draw.bufferFill(buffer, y * pitch + FILE_LIST_X,
+            FILE_LIST_WIDTH, FILE_LIST_HEIGHT, pitch, 100);
+        if (fileListLength != 0) {
+            int shown = fileListLength;
+            if (fileListLength - pageOffset > FILE_LINE_COUNT) {
+                shown = FILE_LINE_COUNT;
+            }
+
+            for (int index = 0; index < shown; index++) {
+                int color = index == selectedIndex ? Color.lightYellow() : Color.green();
+                TextFont.fontDrawText(buffer, pitch * y + FILE_LIST_X,
+                    fileList[pageOffset + index], FILE_LIST_WIDTH, pitch, color);
+                y += lineHeight;
+            }
+        }
+    }
+
+    /**
+     * Port of {@code showLoadFileDialog} (0x41E2D0).
+     *
+     * @param dest edited in place like the C {@code char[32]} buffer.
+     */
+    public static int showLoadFileDialog(String title, String[] fileList, StringBuilder dest,
+            int fileListLength, int x, int y, int flags) {
+        try (TextFont.ScopedFont mainFontGuard = new TextFont.ScopedFont(103)) {
+            boolean isScrollable = fileListLength > FILE_LINE_COUNT;
+
+            int selectedFileIndex = 0;
+            int pageOffset = 0;
+            // Quirk: length - (lineCount + 1), floored at max(0, length - 1).
+            int maxPageOffset = fileListLength - (FILE_LINE_COUNT + 1);
+            if (maxPageOffset < 0) {
+                maxPageOffset = Math.max(0, fileListLength - 1);
+            }
+
+            FileDialogFrms frms = new FileDialogFrms();
+            try (FileContext ctx = new FileContext()) {
+                int[] xy = { x, y };
+                if (!fileInitInterface(ctx, frms, LOAD_FILE_DIALOG_FRM_IDS,
+                        FILE_LOAD_DONE_BUTTON_X, FILE_LOAD_DONE_BUTTON_Y,
+                        FILE_LOAD_DONE_LABEL_X, FILE_LOAD_DONE_LABEL_Y,
+                        FILE_LOAD_CANCEL_BUTTON_X, FILE_LOAD_CANCEL_BUTTON_Y,
+                        FILE_LOAD_CANCEL_LABEL_X, FILE_LOAD_CANCEL_LABEL_Y,
+                        title, xy)) {
+                    return -1;
+                }
+                int adjY = xy[1];
+
+                TextFont.fontSetCurrent(101);
+
+                int bgWidth = frms.background.getWidth();
+                byte[] windowBuffer = WindowManager.windowGetBuffer(ctx.window.get());
+
+                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                    fileListLength, selectedFileIndex, bgWidth);
+                WindowManager.windowRefresh(ctx.window.get());
+
+                int doubleClickSelectedFileIndex = -2;
+                int doubleClickTimer = FILE_DOUBLE_CLICK_DELAY;
+
+                int rc = -1;
+                while (rc == -1) {
+                    Color.fpsLimiter.mark();
+
+                    long tick = Ticks.getTicks();
+                    int keyCode = Input.inputGetInput();
+                    int scrollDirection = FILE_DIALOG_SCROLL_DIRECTION_NONE;
+                    int scrollCounter = 0;
+                    boolean isScrolling = false;
+
+                    int[] wheelKey = { keyCode };
+                    Mouse.convertMouseWheelToArrowKey(wheelKey);
+                    keyCode = wheelKey[0];
+
+                    if (keyCode == 500) {
+                        if (fileListLength != 0) {
+                            copyEntry16(dest, fileList[selectedFileIndex + pageOffset]);
+                            rc = 0;
+                        } else {
+                            rc = 1;
+                        }
+                    } else if (keyCode == 501 || keyCode == Kb.KEY_ESCAPE) {
+                        rc = 1;
+                    } else if (keyCode == 502 && fileListLength != 0) {
+                        int[] pos = new int[2];
+                        Mouse.mouseGetPosition(pos);
+
+                        int selectedLine =
+                            (pos[1] - adjY - FILE_LIST_Y) / TextFont.fontGetLineHeight();
+                        if (selectedLine - 1 < 0) {
+                            selectedLine = 0;
+                        }
+
+                        if (isScrollable || selectedLine < fileListLength) {
+                            if (selectedLine >= FILE_LINE_COUNT) {
+                                selectedLine = FILE_LINE_COUNT - 1;
+                            }
+                        } else {
+                            selectedLine = fileListLength - 1;
+                        }
+
+                        selectedFileIndex = selectedLine;
+                        if (selectedFileIndex == doubleClickSelectedFileIndex) {
+                            soundPlayFile.apply("ib1p1xx1");
+                            copyEntry16(dest, fileList[selectedFileIndex + pageOffset]);
+                            rc = 0;
+                        }
+
+                        doubleClickSelectedFileIndex = selectedFileIndex;
+                        fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                            fileListLength, selectedFileIndex, bgWidth);
+                    } else if (keyCode == 506) {
+                        scrollDirection = FILE_DIALOG_SCROLL_DIRECTION_UP;
+                    } else if (keyCode == 504) {
+                        scrollDirection = FILE_DIALOG_SCROLL_DIRECTION_DOWN;
+                    } else {
+                        switch (keyCode) {
+                        case Kb.KEY_ARROW_UP:
+                            pageOffset--;
+                            if (pageOffset < 0) {
+                                selectedFileIndex--;
+                                if (selectedFileIndex < 0) {
+                                    selectedFileIndex = 0;
+                                }
+                                pageOffset = 0;
+                            }
+                            fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                fileListLength, selectedFileIndex, bgWidth);
+                            doubleClickSelectedFileIndex = -2;
+                            break;
+                        case Kb.KEY_ARROW_DOWN:
+                            if (isScrollable) {
+                                pageOffset++;
+                                // FIXME quirk (load): C uses > maxPageOffset
+                                // here where the save dialog uses >=, so an
+                                // out-of-bounds index reads as selected.
+                                if (pageOffset > maxPageOffset) {
+                                    selectedFileIndex++;
+                                    // FIXME quirk (load): C uses >
+                                    // FILE_LINE_COUNT where the save dialog
+                                    // uses >=.
+                                    if (selectedFileIndex > FILE_LINE_COUNT) {
+                                        selectedFileIndex = FILE_LINE_COUNT - 1;
+                                    }
+                                    pageOffset = maxPageOffset;
+                                }
+                            } else {
+                                selectedFileIndex++;
+                                if (selectedFileIndex > maxPageOffset) {
+                                    selectedFileIndex = maxPageOffset;
+                                }
+                            }
+                            fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                fileListLength, selectedFileIndex, bgWidth);
+                            doubleClickSelectedFileIndex = -2;
+                            break;
+                        case Kb.KEY_HOME:
+                            selectedFileIndex = 0;
+                            pageOffset = 0;
+                            fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                fileListLength, selectedFileIndex, bgWidth);
+                            doubleClickSelectedFileIndex = -2;
+                            break;
+                        case Kb.KEY_END:
+                            if (isScrollable) {
+                                selectedFileIndex = FILE_LINE_COUNT - 1;
+                                pageOffset = maxPageOffset;
+                            } else {
+                                selectedFileIndex = maxPageOffset;
+                                pageOffset = 0;
+                            }
+                            fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                fileListLength, selectedFileIndex, bgWidth);
+                            doubleClickSelectedFileIndex = -2;
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+
+                    if (scrollDirection != FILE_DIALOG_SCROLL_DIRECTION_NONE) {
+                        int scrollDelay = 4;
+                        doubleClickSelectedFileIndex = -2;
+                        while (true) {
+                            long scrollTick = Ticks.getTicks();
+                            scrollCounter += 1;
+                            if ((!isScrolling && scrollCounter == 1)
+                                    || (isScrolling && scrollCounter > 14.4)) {
+                                isScrolling = true;
+
+                                if (scrollCounter > 14.4) {
+                                    scrollDelay += 1;
+                                    if (scrollDelay > 24) {
+                                        scrollDelay = 24;
+                                    }
+                                }
+
+                                if (scrollDirection == FILE_DIALOG_SCROLL_DIRECTION_UP) {
+                                    pageOffset--;
+                                    if (pageOffset < 0) {
+                                        selectedFileIndex--;
+                                        if (selectedFileIndex < 0) {
+                                            selectedFileIndex = 0;
+                                        }
+                                        pageOffset = 0;
+                                    }
+                                } else {
+                                    if (isScrollable) {
+                                        pageOffset++;
+                                        if (pageOffset > maxPageOffset) {
+                                            selectedFileIndex++;
+                                            if (selectedFileIndex >= FILE_LINE_COUNT) {
+                                                selectedFileIndex = FILE_LINE_COUNT - 1;
+                                            }
+                                            pageOffset = maxPageOffset;
+                                        }
+                                    } else {
+                                        selectedFileIndex++;
+                                        if (selectedFileIndex > maxPageOffset) {
+                                            selectedFileIndex = maxPageOffset;
+                                        }
+                                    }
+                                }
+
+                                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                    fileListLength, selectedFileIndex, bgWidth);
+                                WindowManager.windowRefresh(ctx.window.get());
+                            }
+
+                            int delay =
+                                (scrollCounter > 14.4) ? 1000 / scrollDelay : 1000 / 24;
+
+                            Delay.delayMs(delay - (int) (Ticks.getTicks() - scrollTick));
+
+                            // C also forces rc = 1 when _game_user_wants_to_quit
+                            // != GAME_QUIT_REQUEST_NONE (game.cc, not ported:
+                            // treated as NONE).
+
+                            int scrollKey = Input.inputGetInput();
+                            if (scrollKey == 505 || scrollKey == 503) {
+                                break;
+                            }
+
+                            Svga.renderPresent();
+                        }
+                    } else {
+                        WindowManager.windowRefresh(ctx.window.get());
+
+                        doubleClickTimer--;
+                        if (doubleClickTimer == 0) {
+                            doubleClickTimer = FILE_DOUBLE_CLICK_DELAY;
+                            doubleClickSelectedFileIndex = -2;
+                        }
+
+                        Delay.delayMs(1000 / 24 - (int) (Ticks.getTicks() - tick));
+                    }
+
+                    // C also forces rc = 1 when _game_user_wants_to_quit !=
+                    // GAME_QUIT_REQUEST_NONE (game.cc, not ported: never set).
+
+                    Svga.renderPresent();
+                    Color.fpsLimiter.throttle();
+                }
+
+                return rc;
+            } finally {
+                frms.close();
+            }
+        }
+    }
+
+    /**
+     * Port of {@code showSaveFileDialog} (0x41EA78 save_file_dialog).
+     *
+     * @param dest edited in place like the C {@code char[32]} buffer.
+     */
+    public static int showSaveFileDialog(String title, String[] fileList, StringBuilder dest,
+            int fileListLength, int x, int y, int flags) {
+        try (TextFont.ScopedFont mainFontGuard = new TextFont.ScopedFont(103)) {
+            boolean isScrollable = fileListLength > FILE_LINE_COUNT;
+
+            int selectedFileIndex = 0;
+            int pageOffset = 0;
+            // Same maxPageOffset quirk as the load dialog.
+            int maxPageOffset = fileListLength - (FILE_LINE_COUNT + 1);
+            if (maxPageOffset < 0) {
+                maxPageOffset = Math.max(0, fileListLength - 1);
+            }
+
+            FileDialogFrms frms = new FileDialogFrms();
+            try (FileContext ctx = new FileContext()) {
+                int[] xy = { x, y };
+                if (!fileInitInterface(ctx, frms, SAVE_FILE_DIALOG_FRM_IDS,
+                        FILE_SAVE_DONE_BUTTON_X, FILE_SAVE_DONE_BUTTON_Y,
+                        FILE_SAVE_DONE_LABEL_X, FILE_SAVE_DONE_LABEL_Y,
+                        FILE_SAVE_CANCEL_BUTTON_X, FILE_SAVE_CANCEL_BUTTON_Y,
+                        FILE_SAVE_CANCEL_LABEL_X, FILE_SAVE_CANCEL_LABEL_Y,
+                        title, xy)) {
+                    return -1;
+                }
+                int adjY = xy[1];
+
+                int bgWidth = frms.background.getWidth();
+                byte[] windowBuffer = WindowManager.windowGetBuffer(ctx.window.get());
+
+                TextFont.fontSetCurrent(101);
+
+                int cursorHeight = TextFont.fontGetLineHeight();
+                int cursorWidth = TextFont.fontGetStringWidth("_") - 4;
+                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                    fileListLength, selectedFileIndex, bgWidth);
+
+                // Truncate the incoming dest at '.' or 12 chars (C writes the
+                // NUL straight into the caller buffer).
+                StringBuilder fileName =
+                    new StringBuilder(trimSaveName(dest.toString()));
+                dest.setLength(0);
+                dest.append(fileName);
+                int fileNameLength = fileName.length();
+
+                int fileNameBase = bgWidth * FILE_SAVE_NAME_Y + FILE_SAVE_NAME_X;
+
+                Draw.bufferFill(windowBuffer, fileNameBase,
+                    TextFont.fontGetStringWidth(fileName + " "),
+                    cursorHeight, bgWidth, 100);
+                TextFont.fontDrawText(windowBuffer, fileNameBase, fileName + " ",
+                    bgWidth, bgWidth, Color.green());
+
+                WindowManager.windowRefresh(ctx.window.get());
+
+                Input.beginTextInput();
+
+                int blinkingCounter = 3;
+                boolean blink = false;
+
+                int doubleClickSelectedFileIndex = -2;
+                int doubleClickTimer = FILE_DOUBLE_CLICK_DELAY;
+
+                int rc = -1;
+                while (rc == -1) {
+                    Color.fpsLimiter.mark();
+
+                    long tick = Ticks.getTicks();
+                    int keyCode = Input.inputGetInput();
+                    int scrollDirection = FILE_DIALOG_SCROLL_DIRECTION_NONE;
+                    int scrollCounter = 0;
+                    boolean isScrolling = false;
+
+                    int[] wheelKey = { keyCode };
+                    Mouse.convertMouseWheelToArrowKey(wheelKey);
+                    keyCode = wheelKey[0];
+
+                    if (keyCode == 500) {
+                        rc = 0;
+                    } else if (keyCode == Kb.KEY_RETURN) {
+                        soundPlayFile.apply("ib1p1xx1");
+                        rc = 0;
+                    } else if (keyCode == 501 || keyCode == Kb.KEY_ESCAPE) {
+                        rc = 1;
+                    } else if ((keyCode == Kb.KEY_DELETE || keyCode == Kb.KEY_BACKSPACE)
+                            && fileNameLength > 0) {
+                        Draw.bufferFill(windowBuffer, fileNameBase,
+                            TextFont.fontGetStringWidth(fileName + " "),
+                            cursorHeight, bgWidth, 100);
+                        fileName.setLength(fileNameLength - 1);
+                        fileNameLength--;
+                        TextFont.fontDrawText(windowBuffer, fileNameBase, fileName + " ",
+                            bgWidth, bgWidth, Color.green());
+                        WindowManager.windowRefresh(ctx.window.get());
+                    } else if (keyCode < Kb.KEY_FIRST_INPUT_CHARACTER
+                            || keyCode > Kb.KEY_LAST_INPUT_CHARACTER
+                            || fileNameLength >= 8) {
+                        if (keyCode == 502 && fileListLength != 0) {
+                            int[] pos = new int[2];
+                            Mouse.mouseGetPosition(pos);
+
+                            int selectedLine = (pos[1] - adjY - FILE_LIST_Y)
+                                / TextFont.fontGetLineHeight();
+                            if (selectedLine - 1 < 0) {
+                                selectedLine = 0;
+                            }
+
+                            if (isScrollable || selectedLine < fileListLength) {
+                                if (selectedLine >= FILE_LINE_COUNT) {
+                                    selectedLine = FILE_LINE_COUNT - 1;
+                                }
+                            } else {
+                                selectedLine = fileListLength - 1;
+                            }
+
+                            selectedFileIndex = selectedLine;
+                            if (selectedFileIndex == doubleClickSelectedFileIndex) {
+                                soundPlayFile.apply("ib1p1xx1");
+                                dest.setLength(0);
+                                dest.append(trimSaveName(
+                                    fileList[selectedFileIndex + pageOffset]
+                                        .substring(0, Math.min(16,
+                                            fileList[selectedFileIndex + pageOffset]
+                                                .length()))));
+                                rc = 2;
+                            } else {
+                                doubleClickSelectedFileIndex = selectedFileIndex;
+                                Draw.bufferFill(windowBuffer, fileNameBase,
+                                    TextFont.fontGetStringWidth(fileName + " "),
+                                    cursorHeight, bgWidth, 100);
+                                fileName.setLength(0);
+                                fileName.append(trimSaveName(
+                                    fileList[selectedFileIndex + pageOffset]
+                                        .substring(0, Math.min(16,
+                                            fileList[selectedFileIndex + pageOffset]
+                                                .length()))));
+                                fileNameLength = fileName.length();
+
+                                TextFont.fontDrawText(windowBuffer, fileNameBase,
+                                    fileName + " ", bgWidth, bgWidth, Color.green());
+                                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                    fileListLength, selectedFileIndex, bgWidth);
+                            }
+                        } else if (keyCode == 506) {
+                            scrollDirection = FILE_DIALOG_SCROLL_DIRECTION_UP;
+                        } else if (keyCode == 504) {
+                            scrollDirection = FILE_DIALOG_SCROLL_DIRECTION_DOWN;
+                        } else {
+                            switch (keyCode) {
+                            case Kb.KEY_ARROW_UP:
+                                pageOffset--;
+                                if (pageOffset < 0) {
+                                    selectedFileIndex--;
+                                    if (selectedFileIndex < 0) {
+                                        selectedFileIndex = 0;
+                                    }
+                                    pageOffset = 0;
+                                }
+                                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                    fileListLength, selectedFileIndex, bgWidth);
+                                doubleClickSelectedFileIndex = -2;
+                                break;
+                            case Kb.KEY_ARROW_DOWN:
+                                if (isScrollable) {
+                                    pageOffset++;
+                                    if (pageOffset >= maxPageOffset) {
+                                        selectedFileIndex++;
+                                        if (selectedFileIndex >= FILE_LINE_COUNT) {
+                                            selectedFileIndex = FILE_LINE_COUNT - 1;
+                                        }
+                                        pageOffset = maxPageOffset;
+                                    }
+                                } else {
+                                    selectedFileIndex++;
+                                    if (selectedFileIndex > maxPageOffset) {
+                                        selectedFileIndex = maxPageOffset;
+                                    }
+                                }
+                                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                    fileListLength, selectedFileIndex, bgWidth);
+                                doubleClickSelectedFileIndex = -2;
+                                break;
+                            case Kb.KEY_HOME:
+                                selectedFileIndex = 0;
+                                pageOffset = 0;
+                                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                    fileListLength, selectedFileIndex, bgWidth);
+                                doubleClickSelectedFileIndex = -2;
+                                break;
+                            case Kb.KEY_END:
+                                if (isScrollable) {
+                                    // Quirk: literal 11 instead of
+                                    // FILE_LINE_COUNT - 1 (same value).
+                                    selectedFileIndex = 11;
+                                    pageOffset = maxPageOffset;
+                                } else {
+                                    selectedFileIndex = maxPageOffset;
+                                    pageOffset = 0;
+                                }
+                                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                    fileListLength, selectedFileIndex, bgWidth);
+                                doubleClickSelectedFileIndex = -2;
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                    } else if (isDosChar(keyCode)) {
+                        Draw.bufferFill(windowBuffer, fileNameBase,
+                            TextFont.fontGetStringWidth(fileName + " "),
+                            cursorHeight, bgWidth, 100);
+
+                        fileName.append((char) (keyCode & 0xFF));
+                        fileNameLength++;
+                        TextFont.fontDrawText(windowBuffer, fileNameBase, fileName + " ",
+                            bgWidth, bgWidth, Color.green());
+
+                        WindowManager.windowRefresh(ctx.window.get());
+                    }
+
+                    if (scrollDirection != FILE_DIALOG_SCROLL_DIRECTION_NONE) {
+                        int scrollDelay = 4;
+                        doubleClickSelectedFileIndex = -2;
+                        while (true) {
+                            long scrollTick = Ticks.getTicks();
+                            scrollCounter += 1;
+                            if ((!isScrolling && scrollCounter == 1)
+                                    || (isScrolling && scrollCounter > 14.4)) {
+                                isScrolling = true;
+
+                                if (scrollCounter > 14.4) {
+                                    scrollDelay += 1;
+                                    if (scrollDelay > 24) {
+                                        scrollDelay = 24;
+                                    }
+                                }
+
+                                if (scrollDirection == FILE_DIALOG_SCROLL_DIRECTION_UP) {
+                                    pageOffset--;
+                                    if (pageOffset < 0) {
+                                        selectedFileIndex--;
+                                        if (selectedFileIndex < 0) {
+                                            selectedFileIndex = 0;
+                                        }
+                                        pageOffset = 0;
+                                    }
+                                } else {
+                                    if (isScrollable) {
+                                        pageOffset++;
+                                        if (pageOffset > maxPageOffset) {
+                                            selectedFileIndex++;
+                                            if (selectedFileIndex >= FILE_LINE_COUNT) {
+                                                selectedFileIndex = FILE_LINE_COUNT - 1;
+                                            }
+                                            pageOffset = maxPageOffset;
+                                        }
+                                    } else {
+                                        selectedFileIndex++;
+                                        if (selectedFileIndex > maxPageOffset) {
+                                            selectedFileIndex = maxPageOffset;
+                                        }
+                                    }
+                                }
+
+                                fileDialogRenderFileList(windowBuffer, fileList, pageOffset,
+                                    fileListLength, selectedFileIndex, bgWidth);
+                                WindowManager.windowRefresh(ctx.window.get());
+                            }
+
+                            blinkingCounter -= 1;
+                            if (blinkingCounter == 0) {
+                                blinkingCounter = 3;
+
+                                int color = blink ? 100 : Color.green();
+                                blink = !blink;
+
+                                Draw.bufferFill(windowBuffer,
+                                    fileNameBase
+                                        + TextFont.fontGetStringWidth(fileName + " ")
+                                        - cursorWidth,
+                                    cursorWidth, cursorHeight - 2, bgWidth, color);
+                            }
+
+                            // FIXME quirk: no windowRefresh here, so the
+                            // blinking above never shows (ported as-is).
+
+                            int delay =
+                                (scrollCounter > 14.4) ? 1000 / scrollDelay : 1000 / 24;
+                            Delay.delayMs(delay - (int) (Ticks.getTicks() - scrollTick));
+
+                            // C also forces rc = 1 when _game_user_wants_to_quit
+                            // != GAME_QUIT_REQUEST_NONE (game.cc, not ported:
+                            // treated as NONE).
+
+                            int scrollKey = Input.inputGetInput();
+                            if (scrollKey == 505 || scrollKey == 503) {
+                                break;
+                            }
+
+                            Svga.renderPresent();
+                        }
+                    } else {
+                        blinkingCounter -= 1;
+                        if (blinkingCounter == 0) {
+                            blinkingCounter = 3;
+
+                            int color = blink ? 100 : Color.green();
+                            blink = !blink;
+
+                            Draw.bufferFill(windowBuffer,
+                                fileNameBase
+                                    + TextFont.fontGetStringWidth(fileName + " ")
+                                    - cursorWidth,
+                                cursorWidth, cursorHeight - 2, bgWidth, color);
+                        }
+
+                        WindowManager.windowRefresh(ctx.window.get());
+
+                        doubleClickTimer--;
+                        if (doubleClickTimer == 0) {
+                            doubleClickTimer = FILE_DOUBLE_CLICK_DELAY;
+                            doubleClickSelectedFileIndex = -2;
+                        }
+
+                        Delay.delayMs(1000 / 24 - (int) (Ticks.getTicks() - tick));
+                    }
+
+                    // C also forces rc = 1 when _game_user_wants_to_quit !=
+                    // GAME_QUIT_REQUEST_NONE (game.cc, not ported: never set).
+
+                    Svga.renderPresent();
+                    Color.fpsLimiter.throttle();
+                }
+
+                Input.endTextInput();
+
+                if (rc == 0) {
+                    if (fileNameLength != 0) {
+                        dest.setLength(0);
+                        dest.append(fileName);
+                    } else {
+                        rc = 1;
+                    }
+                } else {
+                    if (rc == 2) {
+                        rc = 0;
+                    }
+                }
+
+                return rc;
+            } finally {
+                frms.close();
+            }
+        }
     }
 }
