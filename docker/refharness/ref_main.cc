@@ -5981,6 +5981,27 @@ void sectionGmouseEn()
     fallout::gameMouseExit();
 }
 
+void sectionArtHide()
+{
+    std::puts("[arthide]");
+
+    // No window system needed. Hiding the item art type blinds the tile
+    // find chain (all tile-placed leftovers are items); toggle back after.
+    int hide0 = fallout::artIsObjectTypeHidden(fallout::OBJ_TYPE_ITEM);
+    int hideBad = fallout::artIsObjectTypeHidden(fallout::OBJ_TYPE_INVALID);
+    fallout::artToggleObjectTypeHidden(fallout::OBJ_TYPE_ITEM);
+    int hide1 = fallout::artIsObjectTypeHidden(fallout::OBJ_TYPE_ITEM);
+    fallout::Object* blindFind = fallout::objectFindFirst();
+    int blindPid = blindFind != nullptr ? blindFind->pid : -999;
+    fallout::artToggleObjectTypeHidden(fallout::OBJ_TYPE_ITEM);
+    int hideRestored = fallout::artIsObjectTypeHidden(fallout::OBJ_TYPE_ITEM);
+    fallout::Object* sightedFind = fallout::objectFindFirst();
+    std::printf("hide=%d bad=%d on=%d blindnull=%d blindpid=%d restored=%d sighted=%d\n",
+        hide0, hideBad, hide1,
+        blindFind == nullptr ? 1 : 0, blindPid, hideRestored,
+        sightedFind != nullptr ? 1 : 0);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6084,5 +6105,6 @@ int main()
     sectionObjOutline();
     sectionGameMouse();
     sectionGmouseEn();
+    sectionArtHide();
     return 0;
 }
