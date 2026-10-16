@@ -52,6 +52,7 @@
 #include "select_file_list.h"
 #include "nevs.h"
 #include "sfall_global_vars.h"
+#include "sfall_ini.h"
 #include "autorun.h"
 #include "game_mouse.h"
 #include "stat.h"
@@ -6311,6 +6312,33 @@ void sectionSfallVars()
     fallout::sfall_gl_vars_exit();
 }
 
+void sectionSfallIni()
+{
+    std::puts("[sfallini]");
+
+    // No window system needed. ddraw.ini comes from the [cfgmig] fixture.
+    int critTable = -999;
+    bool gotCrit = fallout::sfall_ini_get_int("ddraw.ini|Misc|OverrideCriticalTable", &critTable);
+    char books[64] = {};
+    bool gotBooks = fallout::sfall_ini_get_string("ddraw.ini|Misc|BooksFile", books, sizeof(books));
+    int missVal = -999;
+    bool gotMiss = fallout::sfall_ini_get_int("ddraw.ini|Misc|Nope", &missVal);
+    int badVal = -999;
+    bool gotBad = fallout::sfall_ini_get_int("nope", &badVal);
+    std::printf("crit=%d:%d books=%d:[%s] miss=%d:%d bad=%d\n",
+        gotCrit ? 1 : 0, critTable, gotBooks ? 1 : 0, books,
+        gotMiss ? 1 : 0, missVal, gotBad ? 1 : 0);
+
+    bool setOk = fallout::sfall_ini_set_int("ddraw.ini|Misc|OverrideCriticalTable", 7);
+    int critAfter = -999;
+    fallout::sfall_ini_get_int("ddraw.ini|Misc|OverrideCriticalTable", &critAfter);
+    fallout::sfall_ini_cache_clear();
+    int critCleared = -999;
+    fallout::sfall_ini_get_int("ddraw.ini|Misc|OverrideCriticalTable", &critCleared);
+    std::printf("set=%d after=%d cleared=%d\n",
+        setOk ? 1 : 0, critAfter, critCleared);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6426,5 +6454,6 @@ int main()
     sectionFindCid();
     sectionNevsEvents();
     sectionSfallVars();
+    sectionSfallIni();
     return 0;
 }
