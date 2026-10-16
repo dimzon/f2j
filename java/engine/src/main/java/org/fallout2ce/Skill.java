@@ -232,6 +232,45 @@ public final class Skill {
     }
 
     /**
+     * Port of {@code skillsSetTagged}: copies {@code count} slots verbatim.
+     *
+     * <p>NOTE: C loops {@code index < count} with no bounds check (count
+     * &gt; 4 is UB, overflowing {@code gTaggedSkills}). Java clamps
+     * defensively to {@code min(count, NUM_TAGGED_SKILLS, skills.length)};
+     * the harness passes 2 and bulk callers pass 4, so both behave
+     * identically on all in-range uses.
+     */
+    public static void setTagged(int[] skills, int count) {
+        int n = Math.min(count, TAGGED_SKILLS.length);
+        if (skills != null) {
+            n = Math.min(n, skills.length);
+        } else {
+            return;
+        }
+        for (int index = 0; index < n; index++) {
+            TAGGED_SKILLS[index] = skills[index];
+        }
+    }
+
+    /**
+     * Port of {@code skillsGetTagged}: reads {@code count} slots verbatim.
+     *
+     * <p>NOTE: same defensive clamp as {@link #setTagged}; C would
+     * overflow on out-of-range counts.
+     */
+    public static void getTagged(int[] skills, int count) {
+        int n = Math.min(count, TAGGED_SKILLS.length);
+        if (skills != null) {
+            n = Math.min(n, skills.length);
+        } else {
+            return;
+        }
+        for (int index = 0; index < n; index++) {
+            skills[index] = TAGGED_SKILLS[index];
+        }
+    }
+
+    /**
      * Port of {@code skillGetGameDifficultyModifier}. Reads
      * {@code Settings.settings.preferences.game_difficulty} live.
      */

@@ -6100,6 +6100,30 @@ void sectionMapVars()
     std::printf("pre=%d post=%d\n", preRebuild, postRebuild);
 }
 
+void sectionSkillTag()
+{
+    std::puts("[skilltag]");
+
+    // No window system needed. Tag slots start zeroed (which already
+    // matches SMALL_GUNS id 0); dude-only bonuses stay dormant (no dude).
+    int taggedSneak0 = fallout::skillIsTagged(fallout::SKILL_SNEAK) ? 1 : 0;
+    int taggedGuns0 = fallout::skillIsTagged(fallout::SKILL_SMALL_GUNS) ? 1 : 0;
+    fallout::Skill tags[2] = { fallout::SKILL_SNEAK, fallout::SKILL_SMALL_GUNS };
+    fallout::skillsSetTagged(tags, 2);
+    fallout::Skill back[4] = { (fallout::Skill)-99, (fallout::Skill)-99, (fallout::Skill)-99, (fallout::Skill)-99 };
+    fallout::skillsGetTagged(back, 4);
+    int taggedSneak1 = fallout::skillIsTagged(fallout::SKILL_SNEAK) ? 1 : 0;
+    std::printf("tagged0=%d,%d back=%d,%d,%d,%d tagged1=%d\n",
+        taggedSneak0, taggedGuns0,
+        (int)back[0], (int)back[1], (int)back[2], (int)back[3], taggedSneak1);
+
+    // Tagging changes nothing for non-dude critters (dude branch gated).
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    int sneakVal = fallout::skillGetValue(dog, fallout::SKILL_SNEAK);
+    std::printf("sneak=%d\n", sneakVal);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6207,5 +6231,6 @@ int main()
     sectionProtoNew();
     sectionProtoCopy();
     sectionMapVars();
+    sectionSkillTag();
     return 0;
 }
