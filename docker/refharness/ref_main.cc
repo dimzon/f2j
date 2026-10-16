@@ -57,6 +57,7 @@
 #include "combat.h"
 #include "scripts.h"
 #include "trait.h"
+#include "object.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5387,6 +5388,37 @@ void sectionTraitSelect()
     std::printf("save=%d load=%d back=%d,%d\n", saveRc, loadRc, (int)back1, (int)back2);
 }
 
+void sectionObjCreate()
+{
+    std::puts("[objcreate]");
+
+    // No window system needed. Objects live unplaced (no map required).
+    fallout::Object* stim = nullptr;
+    int stimRc = fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    std::printf("stim-rc=%d stim-null=%d pid=%d fid=%d flags=%d sid=%d id=%d\n",
+        stimRc, stim == nullptr ? 1 : 0,
+        stim != nullptr ? stim->pid : -999,
+        stim != nullptr ? stim->fid : -999,
+        stim != nullptr ? stim->flags : -999,
+        stim != nullptr ? stim->sid : -999,
+        stim != nullptr ? stim->id : -999);
+
+    fallout::Object* bad = nullptr;
+    int badRc = fallout::objectCreateWithProtoId(&bad, fallout::ProtoId());
+    std::printf("bad-rc=%d bad-null=%d\n", badRc, bad == nullptr ? 1 : 0);
+
+    fallout::Object* cash = nullptr;
+    int cashRc = fallout::objectCreateWithProtoId(&cash, fallout::ProtoId(41));
+    fallout::Object* dog = nullptr;
+    int dogRc = fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    std::printf("cash-rc=%d cash-id=%d dog-rc=%d dog-null=%d\n",
+        cashRc, cash != nullptr ? cash->id : -999,
+        dogRc, dog == nullptr ? 1 : 0);
+    if (dog != nullptr) {
+        std::printf("dog-pid=%d dog-fid=%d dog-flags=%d\n", dog->pid, dog->fid, dog->flags);
+    }
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5474,5 +5506,6 @@ int main()
     sectionCombatSkill();
     sectionGameTime();
     sectionTraitSelect();
+    sectionObjCreate();
     return 0;
 }
