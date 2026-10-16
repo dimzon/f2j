@@ -3056,6 +3056,608 @@ public final class WindowManager {
         }
     }
 
+    /** Port of {@code _win_get_str} (0x4DB478). */
+    public static int winGetStr(StringBuilder dest, int length, String title, int x, int y) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        int titleWidth = TextFont.fontGetStringWidth(title) + 12;
+        if (titleWidth < TextFont.fontGetMonospacedCharacterWidth() * length) {
+            titleWidth = TextFont.fontGetMonospacedCharacterWidth() * length;
+        }
+
+        int windowWidth = titleWidth + 16;
+        if (windowWidth < 160) {
+            windowWidth = 160;
+        }
+
+        int windowHeight = 5 * TextFont.fontGetLineHeight() + 16;
+
+        int win = windowCreate(x, y, windowWidth, windowHeight, Color.COLOR_COUNT,
+            WindowFlags.WINDOW_MODAL.id() | WindowFlags.WINDOW_MOVE_ON_TOP.id());
+        if (win == -1) {
+            return -1;
+        }
+
+        windowDrawBorder(win);
+
+        byte[] windowBuffer = windowGetBuffer(win);
+
+        Draw.bufferFill(windowBuffer, windowWidth * (TextFont.fontGetLineHeight() + 14) + 14,
+            windowWidth - 28,
+            TextFont.fontGetLineHeight() + 2,
+            windowWidth,
+            Color.colorTable[gnwWcolor[0]] & 0xFF);
+        TextFont.fontDrawText(windowBuffer, windowWidth * 8 + 8, title, windowWidth, windowWidth,
+            (Color.colorTable[gnwWcolor[4]] & 0xFF) | Color.DRAW_TEXT_FLAG_NONE);
+
+        Draw.bufferDrawRectShadowed(windowBuffer,
+            windowWidth,
+            14,
+            TextFont.fontGetLineHeight() + 14,
+            windowWidth - 14,
+            2 * TextFont.fontGetLineHeight() + 16,
+            Color.colorTable[gnwWcolor[2]] & 0xFF,
+            Color.colorTable[gnwWcolor[1]] & 0xFF);
+
+        winRegisterTextButton(win,
+            windowWidth / 2 - 72,
+            windowHeight - 8 - TextFont.fontGetLineHeight() - 6,
+            -1,
+            -1,
+            -1,
+            Kb.KEY_RETURN,
+            "Done",
+            0);
+
+        winRegisterTextButton(win,
+            windowWidth / 2 + 8,
+            windowHeight - 8 - TextFont.fontGetLineHeight() - 6,
+            -1,
+            -1,
+            -1,
+            Kb.KEY_ESCAPE,
+            "Cancel",
+            0);
+
+        windowRefresh(win);
+
+        int rc = winInputStr(win,
+            dest,
+            length,
+            16,
+            TextFont.fontGetLineHeight() + 16,
+            (Color.colorTable[gnwWcolor[3]] & 0xFF) | Color.DRAW_TEXT_FLAG_NONE,
+            Color.colorTable[gnwWcolor[0]] & 0xFF);
+
+        windowDestroy(win);
+
+        return rc;
+    }
+
+    /** Port of {@code win_yes_no} (0x4DB920). */
+    public static int winYesNo(String question, int x, int y, int color) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        int height = 3 * TextFont.fontGetLineHeight() + 16;
+        int width = Math.max(TextFont.fontGetStringWidth(question) + 16, 144) + 16;
+
+        int win = windowCreate(x, y, width, height, Color.COLOR_COUNT,
+            WindowFlags.WINDOW_MODAL.id() | WindowFlags.WINDOW_MOVE_ON_TOP.id());
+        if (win == -1) {
+            return -1;
+        }
+
+        windowDrawBorder(win);
+
+        Window window = windowGetWindow(win);
+        byte[] windowBuffer = window.buffer;
+
+        int textColor;
+        if ((color & 0xFF00) != 0) {
+            int colorIndex = (color & Color.COLOR_LAST) - 1;
+            textColor = (Color.colorTable[gnwWcolor[colorIndex]] & 0xFF) | (color & ~0xFFFF);
+        } else {
+            textColor = color;
+        }
+
+        TextFont.fontDrawText(windowBuffer, 8 * width + 16,
+            question,
+            width,
+            width,
+            textColor);
+
+        winRegisterTextButton(win,
+            width / 2 - 64,
+            height - TextFont.fontGetLineHeight() - 14,
+            -1,
+            -1,
+            -1,
+            'y',
+            "Yes",
+            0);
+        winRegisterTextButton(win,
+            width / 2 + 16,
+            height - TextFont.fontGetLineHeight() - 14,
+            -1,
+            -1,
+            -1,
+            'n',
+            "No",
+            0);
+        windowRefresh(win);
+
+        int rc = -1;
+        while (rc == -1) {
+            Color.fpsLimiter.mark();
+
+            switch (Input.inputGetInput()) {
+            case Kb.KEY_ESCAPE:
+            case 'n':
+            case 'N':
+                rc = 0;
+                break;
+            case Kb.KEY_RETURN:
+            case Kb.KEY_SPACE:
+            case 'y':
+            case 'Y':
+                rc = 1;
+                break;
+            default:
+                break;
+            }
+
+            Svga.renderPresent();
+            Color.fpsLimiter.throttle();
+        }
+
+        windowDestroy(win);
+
+        return rc;
+    }
+
+    /** Port of {@code _win_msg} (0x4DBA98). */
+    public static int winMsg(String string, int x, int y, int color) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        int windowHeight = 3 * TextFont.fontGetLineHeight() + 16;
+
+        int windowWidth = TextFont.fontGetStringWidth(string) + 16;
+        if (windowWidth < 80) {
+            windowWidth = 80;
+        }
+
+        windowWidth += 16;
+
+        int win = windowCreate(x, y, windowWidth, windowHeight, Color.COLOR_COUNT,
+            WindowFlags.WINDOW_MODAL.id() | WindowFlags.WINDOW_MOVE_ON_TOP.id());
+        if (win == -1) {
+            return -1;
+        }
+
+        windowDrawBorder(win);
+
+        Window window = windowGetWindow(win);
+        byte[] windowBuffer = window.buffer;
+
+        int textColor;
+        if ((color & 0xFF00) != 0) {
+            int colorIndex = (color & Color.COLOR_LAST) - 1;
+            textColor = (Color.colorTable[gnwWcolor[colorIndex]] & 0xFF) | (color & ~0xFFFF);
+        } else {
+            textColor = color;
+        }
+
+        TextFont.fontDrawText(windowBuffer, windowWidth * 8 + 16, string, windowWidth, windowWidth,
+            textColor);
+
+        winRegisterTextButton(win,
+            windowWidth / 2 - 32,
+            windowHeight - 8 - TextFont.fontGetLineHeight() - 6,
+            -1,
+            -1,
+            -1,
+            Kb.KEY_ESCAPE,
+            "Done",
+            0);
+
+        windowRefresh(win);
+
+        while (Input.inputGetInput() != Kb.KEY_ESCAPE) {
+            Color.fpsLimiter.mark();
+            Svga.renderPresent();
+            Color.fpsLimiter.throttle();
+        }
+
+        windowDestroy(win);
+
+        return 0;
+    }
+
+    /** Port of {@code _create_pull_down} (0x4DBC34). */
+    public static int createPullDown(String[] stringList, int stringListLength, int x, int y,
+            int foregroundColor, int backgroundColor, Geometry.Rect rect) {
+        int windowHeight = stringListLength * TextFont.fontGetLineHeight() + 16;
+        int windowWidth = winWidthNeeded(stringList, stringListLength) + 4;
+        if (windowHeight < 2 || windowWidth < 2) {
+            return -1;
+        }
+
+        int win = windowCreate(x, y, windowWidth, windowHeight, backgroundColor,
+            WindowFlags.WINDOW_MODAL.id() | WindowFlags.WINDOW_MOVE_ON_TOP.id());
+        if (win == -1) {
+            return -1;
+        }
+
+        String[] items = stringList;
+        if (stringListLength != stringList.length) {
+            items = new String[stringListLength];
+            System.arraycopy(stringList, 0, items, 0, stringListLength);
+        }
+        winText(win, items, windowWidth - 4, 2, 8, foregroundColor);
+        windowDrawRect(win, 0, 0, windowWidth - 1, windowHeight - 1,
+            Color.colorTable[Color.rgb555(0x000000)] & 0xFF);
+        windowDrawRect(win, 1, 1, windowWidth - 2, windowHeight - 2, foregroundColor);
+        windowRefresh(win);
+        windowGetRect(win, rect);
+
+        return win;
+    }
+
+    /** Port of {@code _win_input_str} (0x4DCA5C). */
+    public static int winInputStr(int win, StringBuilder dest, int maxLength, int x, int y,
+            int textColor, int backgroundColor) {
+        Window window = windowGetWindow(win);
+        int baseOfs = window.width * y + x;
+        byte[] buffer = window.buffer;
+
+        int cursorPos = dest.length();
+        dest.append('_');
+
+        int lineHeight = TextFont.fontGetLineHeight();
+        int stringWidth = TextFont.fontGetStringWidth(dest.toString());
+        Draw.bufferFill(buffer, baseOfs, stringWidth, lineHeight, window.width,
+            backgroundColor & Color.COLOR_LAST);
+        TextFont.fontDrawText(buffer, baseOfs, dest.toString(), stringWidth, window.width, textColor);
+
+        Geometry.Rect dirtyRect = new Geometry.Rect();
+        dirtyRect.left = window.rect.left + x;
+        dirtyRect.top = window.rect.top + y;
+        dirtyRect.right = dirtyRect.left + stringWidth;
+        dirtyRect.bottom = dirtyRect.top + lineHeight;
+        gnwWinRefresh(window, dirtyRect, null);
+
+        boolean isFirstKey = true;
+        for (; cursorPos <= maxLength; cursorPos++) {
+            Color.fpsLimiter.mark();
+
+            int keyCode = Input.inputGetInput();
+            if (keyCode != -1) {
+                if (keyCode == Kb.KEY_ESCAPE) {
+                    dest.setLength(cursorPos);
+                    return -1;
+                }
+
+                if (keyCode == Kb.KEY_BACKSPACE) {
+                    if (cursorPos > 0) {
+                        stringWidth = TextFont.fontGetStringWidth(dest.toString());
+
+                        if (isFirstKey) {
+                            Draw.bufferFill(buffer, baseOfs, stringWidth, lineHeight, window.width,
+                                backgroundColor & Color.COLOR_LAST);
+
+                            dirtyRect.left = window.rect.left + x;
+                            dirtyRect.top = window.rect.top + y;
+                            dirtyRect.right = dirtyRect.left + stringWidth;
+                            dirtyRect.bottom = dirtyRect.top + lineHeight;
+                            gnwWinRefresh(window, dirtyRect, null);
+
+                            dest.setLength(0);
+                            dest.append('_');
+                            cursorPos = 1;
+                        } else {
+                            dest.setCharAt(cursorPos, ' ');
+                            dest.setCharAt(cursorPos - 1, '_');
+                        }
+
+                        Draw.bufferFill(buffer, baseOfs, stringWidth, lineHeight, window.width,
+                            backgroundColor & Color.COLOR_LAST);
+                        TextFont.fontDrawText(buffer, baseOfs, dest.toString(), stringWidth,
+                            window.width, textColor);
+
+                        dirtyRect.left = window.rect.left + x;
+                        dirtyRect.top = window.rect.top + y;
+                        dirtyRect.right = dirtyRect.left + stringWidth;
+                        dirtyRect.bottom = dirtyRect.top + lineHeight;
+                        gnwWinRefresh(window, dirtyRect, null);
+
+                        dest.setLength(cursorPos);
+                        cursorPos -= 2;
+
+                        isFirstKey = false;
+                    } else {
+                        cursorPos--;
+                    }
+                } else if (keyCode == Kb.KEY_RETURN) {
+                    break;
+                } else {
+                    if (cursorPos == maxLength) {
+                        cursorPos = maxLength - 1;
+                    } else {
+                        if (keyCode > 0 && keyCode < 256) {
+                            dest.setCharAt(cursorPos, (char) keyCode);
+                            dest.append('_');
+
+                            int w = TextFont.fontGetStringWidth(dest.toString());
+                            Draw.bufferFill(buffer, baseOfs, w, lineHeight, window.width,
+                                backgroundColor & Color.COLOR_LAST);
+                            TextFont.fontDrawText(buffer, baseOfs, dest.toString(), w, window.width,
+                                textColor);
+
+                            dirtyRect.left = window.rect.left + x;
+                            dirtyRect.top = window.rect.top + y;
+                            dirtyRect.right = dirtyRect.left + w;
+                            dirtyRect.bottom = dirtyRect.top + lineHeight;
+                            gnwWinRefresh(window, dirtyRect, null);
+
+                            isFirstKey = false;
+                        } else {
+                            cursorPos--;
+                        }
+                    }
+                }
+            } else {
+                cursorPos--;
+            }
+
+            Svga.renderPresent();
+            Color.fpsLimiter.throttle();
+        }
+
+        dest.setLength(cursorPos);
+
+        return 0;
+    }
+
+    /** Port of {@code win_get_num_i} (0x4DCD68). */
+    public static int winGetNumI(int[] value, int min, int max, boolean clear, String title, int x,
+            int y) {
+        if (!windowSystemInitialized) {
+            return -1;
+        }
+
+        if (max < min) {
+            return -1;
+        }
+
+        if (value[0] < min) {
+            value[0] = min;
+        } else if (value[0] > max) {
+            value[0] = max;
+        }
+
+        int original = value[0];
+        int maxCharsWcursor = calcMaxFieldCharsWcursor(min, max);
+        if (maxCharsWcursor == -1) {
+            return -1;
+        }
+
+        int inputWidth = TextFont.fontGetMonospacedCharacterWidth() * maxCharsWcursor;
+
+        int width = TextFont.fontGetStringWidth(title);
+        if (width < inputWidth) {
+            width = inputWidth;
+        }
+
+        width += 16;
+        if (width < 160) {
+            width = 160;
+        }
+
+        int height = 5 * TextFont.fontGetLineHeight() + 16;
+        int inputX = (width - inputWidth) / 2;
+        int inputY = TextFont.fontGetLineHeight();
+        int inputHeight = TextFont.fontGetLineHeight() + 2;
+
+        int win = windowCreate(x, y, width, height, Color.COLOR_COUNT,
+            WindowFlags.WINDOW_MODAL.id() | WindowFlags.WINDOW_MOVE_ON_TOP.id());
+        if (win == -1) {
+            return -1;
+        }
+
+        windowDrawBorder(win);
+        windowFill(win, inputX, inputY + 14, inputWidth, inputHeight, 0x100 | 1);
+        windowDrawText(win, title, width - 16, 8, 8, 0x100 | 5);
+
+        Draw.bufferDrawRectShadowed(windowGetBuffer(win),
+            width,
+            inputX - 2,
+            inputY + 12,
+            inputX + inputWidth + 1,
+            inputY + 14 + inputHeight - 1,
+            Color.colorTable[gnwWcolor[2]] & 0xFF,
+            Color.colorTable[gnwWcolor[1]] & 0xFF);
+
+        winRegisterTextButton(win,
+            width / 2 - 72,
+            height - TextFont.fontGetLineHeight() - 14,
+            -1,
+            -1,
+            -1,
+            Kb.KEY_RETURN,
+            "Done",
+            0);
+
+        winRegisterTextButton(win,
+            width / 2 + 16,
+            height - TextFont.fontGetLineHeight() - 14,
+            -1,
+            -1,
+            -1,
+            Kb.KEY_ESCAPE,
+            "Cancel",
+            0);
+
+        String hint = String.format("Please enter a number between %d and %d.", min, max);
+        windowRefresh(win);
+
+        int rc;
+        while (true) {
+            rc = getNumI(win, value, maxCharsWcursor, clear, min < 0, inputX, inputY + 14);
+            if (value[0] >= min && value[0] <= max) {
+                break;
+            }
+
+            if (rc == -1) {
+                break;
+            }
+
+            winMsg(hint, x - 70, y + 100, 0x100 | 6);
+            value[0] = original;
+        }
+
+        windowDestroy(win);
+
+        return rc;
+    }
+
+    /** Port of {@code _calc_max_field_chars_wcursor} (0x4DD03C). */
+    public static int calcMaxFieldCharsWcursor(int value1, int value2) {
+        int len1 = Integer.toString(value1).length();
+        int len2 = Integer.toString(value2).length();
+        return Math.max(len1, len2) + 1;
+    }
+
+    /** Port of {@code get_num_i} (0x4DD0AC). */
+    public static int getNumI(int win, int[] value, int maxCharsWcursor, boolean clear,
+            boolean allowNegative, int x, int y) {
+        boolean firstPress = false;
+
+        Window window = windowGetWindow(win);
+        if (window == null) {
+            return -1;
+        }
+
+        int original = value[0];
+
+        int width = maxCharsWcursor * TextFont.fontGetMonospacedCharacterWidth();
+        int height = TextFont.fontGetLineHeight();
+
+        StringBuilder sb = new StringBuilder();
+        if (clear) {
+            sb.setLength(0);
+        } else {
+            String initial = Integer.toString(value[0]);
+            if (initial.length() > maxCharsWcursor) {
+                initial = initial.substring(0, maxCharsWcursor);
+            }
+            sb.append(initial);
+        }
+
+        int cursorPos = sb.length();
+        sb.append('_');
+
+        windowDrawText(win, sb.toString(), width, x, y, 0x100 | 4);
+
+        Geometry.Rect rect = new Geometry.Rect();
+        rect.left = x;
+        rect.top = y;
+        rect.right = x + width;
+        rect.bottom = y + height;
+        windowRefreshRect(win, rect);
+
+        boolean done = false;
+        while (cursorPos <= maxCharsWcursor && !done) {
+            Color.fpsLimiter.mark();
+
+            int input = Input.inputGetInput();
+            if (input == Kb.KEY_RETURN) {
+                done = true;
+            } else if (input == Kb.KEY_BACKSPACE) {
+                if (cursorPos > 0) {
+                    int stringWidth = TextFont.fontGetStringWidth(sb.toString());
+                    if (firstPress) {
+                        sb.setLength(0);
+                        sb.append('_');
+                        cursorPos = 1;
+                        firstPress = false;
+                    } else {
+                        sb.setCharAt(cursorPos - 1, '_');
+                        sb.setLength(cursorPos);
+                        cursorPos--;
+                    }
+
+                    windowFill(win, x, y, stringWidth, height, 0x100 | 1);
+                    windowDrawText(win, sb.toString(), width, x, y, 0x100 | 4);
+                    windowRefreshRect(win, rect);
+                }
+            } else if (input == Kb.KEY_ESCAPE) {
+                value[0] = original;
+                return -1;
+            } else if (input == Kb.KEY_ARROW_LEFT) {
+                if (cursorPos > 0) {
+                    int stringWidth = TextFont.fontGetStringWidth(sb.toString());
+                    sb.setCharAt(cursorPos - 1, '_');
+                    sb.setLength(cursorPos);
+                    windowFill(win, x, y, stringWidth, height, 0x100 | 1);
+                    windowDrawText(win, sb.toString(), width, x, y, 0x100 | 4);
+                    windowRefreshRect(win, rect);
+
+                    firstPress = false;
+                    cursorPos--;
+                }
+            } else {
+                if (cursorPos != maxCharsWcursor - 1) {
+                    if ((input == '-' && allowNegative && cursorPos == 0)
+                        || (input >= '0' && input <= '9')) {
+                        sb.setCharAt(cursorPos, (char) input);
+                        sb.append('_');
+
+                        int stringWidth = TextFont.fontGetStringWidth(sb.toString());
+                        windowFill(win, x, y, stringWidth, height, 0x100 | 1);
+                        windowDrawText(win, sb.toString(), width, x, y, 0x100 | 4);
+                        windowRefreshRect(win, rect);
+
+                        firstPress = false;
+                        cursorPos++;
+                    }
+                }
+            }
+
+            Svga.renderPresent();
+            Color.fpsLimiter.throttle();
+        }
+
+        value[0] = atoiField(sb.toString());
+
+        return 0;
+    }
+
+    /** C {@code atoi} on the dialog field: optional {@code '-'} then digits, stops at cursor/NUL. */
+    private static int atoiField(String string) {
+        int index = 0;
+        boolean negative = false;
+        if (index < string.length() && string.charAt(index) == '-') {
+            negative = true;
+            index++;
+        }
+        int result = 0;
+        while (index < string.length()) {
+            char ch = string.charAt(index);
+            if (ch < '0' || ch > '9') {
+                break;
+            }
+            result = result * 10 + (ch - '0');
+            index++;
+        }
+        return negative ? -result : result;
+    }
+
     /** Port of {@code programWindowSetTitle} (0x4D80D8; win32 mutex skipped). */
     public static void programWindowSetTitle(String title) {
         if (title == null) {

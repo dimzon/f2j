@@ -4450,6 +4450,90 @@ void sectionWinFrm()
     fallout::buttonDestroy(frmBtn);
     int destroyedLookup = fallout::buttonGetWindowId(frmBtn);
     std::printf("destroyed-lookup=%d\n", destroyedLookup);
+}
+
+void sectionWinDlg()
+{
+    std::puts("[windlg]");
+
+    // Reuses the live system (re-init is impossible, see [winbtn]).
+    int wmInitAgain = fallout::windowManagerInit(testVideoInit, testVideoExit,
+        fallout::WINDOW_MANAGER_INIT_FLAG_BUFFERED);
+    std::printf("wminit-again=%d\n", wmInitAgain);
+    int inputAgain = fallout::inputInit();
+    std::printf("input-again=%d\n", inputAgain);
+    fallout::mouseSetFrame(nullptr, 0, 0, 0, 0, 0, 0);
+    fallout::mouseManagerShowMouse();
+    fallout::keyboardSetLayout(fallout::KEYBOARD_LAYOUT_QWERTY);
+
+    // Park the mouse where no window button can fire: modal pumps call
+    // _win_check_all_buttons first, so every key must come from _kb_getch.
+    fallout::_mouse_set_position(639, 479);
+    fallout::_mouse_simulate_input(0, 0, 0);
+
+    // Pure field-width helper: digits of min/max plus the cursor.
+    size_t calc1 = fallout::_calc_max_field_chars_wcursor(0, 99);
+    size_t calc2 = fallout::_calc_max_field_chars_wcursor(-5, 100);
+    size_t calc3 = fallout::_calc_max_field_chars_wcursor(7, 7);
+    std::printf("calc=%d,%d,%d\n", (int)calc1, (int)calc2, (int)calc3);
+
+    // Non-modal pulldown window: geometry, paint, then destroy.
+    char* items[] = { (char*)"New", (char*)"Load", (char*)"Exit" };
+    fallout::Rect pdRect {};
+    int pdWin = fallout::_create_pull_down(items, 3, 300, 200,
+        (fallout::ColorWithFlags)3, (fallout::ColorWithFlags)5, &pdRect);
+    uLong pdCrc = winBufCrc(pdWin);
+    fallout::windowDestroy(pdWin);
+    int pdGone = fallout::windowGetWindow(pdWin) == nullptr ? 1 : 0;
+    std::printf("pdwin=%d pdrect=%d,%d,%d,%d pdcrc=%08lX pdgone=%d\n",
+        pdWin, pdRect.left, pdRect.top, pdRect.right, pdRect.bottom, pdCrc, pdGone);
+
+    // Modal yes/no: pre-seeded keys answer without any clicks.
+    kbSim(SDL_SCANCODE_Y, 1);
+    int yesRc = fallout::win_yes_no((char*)"Quit?", 200, 150, (fallout::ColorWithFlags)3);
+    kbSim(SDL_SCANCODE_N, 1);
+    int noRc = fallout::win_yes_no((char*)"Quit?", 200, 150, (fallout::ColorWithFlags)3);
+    std::printf("yes=%d no=%d\n", yesRc, noRc);
+
+    // Modal message: ESC dismisses.
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int msgRc = fallout::_win_msg((char*)"Hello", 200, 150, (fallout::ColorWithFlags)3);
+    std::printf("msg=%d\n", msgRc);
+
+    // Modal string entry: two chars + RETURN commits.
+    char name[16] = "";
+    kbSim(SDL_SCANCODE_A, 1);
+    kbSim(SDL_SCANCODE_B, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int getStrRc = fallout::_win_get_str(name, 8, (char*)"Name", 200, 150);
+    std::printf("getstr-rc=%d getstr-val=[%s]\n", getStrRc, name);
+
+    // Direct input_str: ESC cancels (value kept), typing + RETURN commits.
+    int inWin = fallout::windowCreate(10, 250, 200, 60, (fallout::ColorWithFlags)5, 0);
+    fallout::windowShow(inWin);
+    char ibuf[16] = "Q";
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int inEscRc = fallout::_win_input_str(inWin, ibuf, 10, 16, 16,
+        (fallout::ColorWithFlags)3, (fallout::Color)5);
+    char tbuf[16] = "Hi";
+    kbSim(SDL_SCANCODE_X, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int inTypeRc = fallout::_win_input_str(inWin, tbuf, 10, 16, 16,
+        (fallout::ColorWithFlags)3, (fallout::Color)5);
+    fallout::windowDestroy(inWin);
+    std::printf("inesc-rc=%d inesc-val=[%s] intype-rc=%d intype-val=[%s]\n",
+        inEscRc, ibuf, inTypeRc, tbuf);
+
+    // Modal number entry: "42" commits, ESC restores the original.
+    int numVal = 5;
+    kbSim(SDL_SCANCODE_4, 1);
+    kbSim(SDL_SCANCODE_2, 1);
+    kbSim(SDL_SCANCODE_RETURN, 1);
+    int numRc = fallout::win_get_num_i(&numVal, 0, 99, true, (char*)"Age", 200, 150);
+    int numVal2 = 5;
+    kbSim(SDL_SCANCODE_ESCAPE, 1);
+    int numEscRc = fallout::win_get_num_i(&numVal2, 0, 99, true, (char*)"Age", 200, 150);
+    std::printf("num-rc=%d num-val=%d numesc-rc=%d numesc-val=%d\n", numRc, numVal, numEscRc, numVal2);
 
     fallout::windowManagerExit();
 }
@@ -4525,5 +4609,6 @@ int main()
     sectionWinBtn();
     sectionWinMenu();
     sectionWinFrm();
+    sectionWinDlg();
     return 0;
 }
