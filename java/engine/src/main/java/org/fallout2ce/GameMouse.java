@@ -304,6 +304,7 @@ public final class GameMouse {
     private static boolean scrollingEnabled = true; // _gmouse_scrolling_enabled
     private static boolean clickToScroll; // _gmouse_click_to_scroll
     private static boolean clickedOnEdge; // _gmouse_clicked_on_edge
+    private static int bkLastCursor = MouseCursorType.MOUSE_CURSOR_INVALID.id(); // _gmouse_bk_last_cursor
     private static int animatedNextFrame; // gGameMouseAnimatedCursorNextFrame
     private static long animatedLastTimestamp; // gGameMouseAnimatedCursorLastUpdateTimestamp
     private static boolean itemHighlightEnabled = true; // gGameMouseItemHighlightEnabled
@@ -499,10 +500,11 @@ public final class GameMouse {
             gameMouseSetCursor(MouseCursorType.MOUSE_CURSOR_NONE.id());
             scrollingEnabled = true;
             enabled = true;
+            bkLastCursor = MouseCursorType.MOUSE_CURSOR_INVALID.id();
         }
     }
 
-    /** Port of {@code _gmouse_disable} (0x44B48C). */
+    /** Port of {@code _gmouse_disable} (0x44B48C). {@code allowScrolling} maps {@code (allow & 1)}. */
     public static void gmouseDisable(boolean allowScrolling) {
         if (enabled) {
             gameMouseSetCursor(MouseCursorType.MOUSE_CURSOR_NONE.id());
@@ -592,6 +594,7 @@ public final class GameMouse {
         scrollingEnabled = true;
         clickToScroll = false;
         clickedOnEdge = false;
+        bkLastCursor = MouseCursorType.MOUSE_CURSOR_INVALID.id();
         animatedNextFrame = 0;
         animatedLastTimestamp = 0;
         itemHighlightEnabled = true;

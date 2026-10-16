@@ -5954,6 +5954,33 @@ void sectionGameMouse()
     fallout::gameMouseExit();
 }
 
+void sectionGmouseEn()
+{
+    std::puts("[gmouseen]");
+
+    // Fresh init (v71 exited). Enable/disable flips cursor + scrolling;
+    // second calls are guarded no-ops.
+    int initRc = fallout::gameMouseInit();
+    fallout::_gmouse_disable_scrolling();
+    int scrollOff = fallout::gmouse_scrolling_is_enabled() ? 1 : 0;
+    fallout::_gmouse_disable(0);
+    int disCursor = (int)fallout::gameMouseGetCursor();
+    int disScroll = fallout::gmouse_scrolling_is_enabled() ? 1 : 0;
+    fallout::_gmouse_disable(0);
+    int disAgainCursor = (int)fallout::gameMouseGetCursor();
+    int disAgainScroll = fallout::gmouse_scrolling_is_enabled() ? 1 : 0;
+    fallout::_gmouse_enable();
+    int enCursor = (int)fallout::gameMouseGetCursor();
+    int enScroll = fallout::gmouse_scrolling_is_enabled() ? 1 : 0;
+    fallout::_gmouse_enable();
+    int enAgainCursor = (int)fallout::gameMouseGetCursor();
+    std::printf("init=%d scrolloff=%d dis=%d,%d disagain=%d,%d en=%d,%d enagain=%d\n",
+        initRc, scrollOff, disCursor, disScroll, disAgainCursor, disAgainScroll,
+        enCursor, enScroll, enAgainCursor);
+
+    fallout::gameMouseExit();
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6056,5 +6083,6 @@ int main()
     sectionObjVis();
     sectionObjOutline();
     sectionGameMouse();
+    sectionGmouseEn();
     return 0;
 }

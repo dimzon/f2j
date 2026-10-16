@@ -145,4 +145,32 @@ class GameMouseTest {
 
         GameMouse.gameMouseExit();
     }
+
+    @Test
+    void gmouseEnableDisableVectors() {
+        // [gmouseen] from docker/refharness/golden/v72.txt via sectionGmouseEn:
+        // fresh init (v71 exited), scrolloff-first ordering, guarded no-ops.
+        int initRc = GameMouse.gameMouseInit();
+        GameMouse.gmouseDisableScrolling();
+        int scrollOff = GameMouse.gmouseScrollingIsEnabled() ? 1 : 0;
+        GameMouse.gmouseDisable(false);
+        int disCursor = GameMouse.gameMouseGetCursor();
+        int disScroll = GameMouse.gmouseScrollingIsEnabled() ? 1 : 0;
+        GameMouse.gmouseDisable(false);
+        int disAgainCursor = GameMouse.gameMouseGetCursor();
+        int disAgainScroll = GameMouse.gmouseScrollingIsEnabled() ? 1 : 0;
+        GameMouse.gmouseEnable();
+        int enCursor = GameMouse.gameMouseGetCursor();
+        int enScroll = GameMouse.gmouseScrollingIsEnabled() ? 1 : 0;
+        GameMouse.gmouseEnable();
+        int enAgainCursor = GameMouse.gameMouseGetCursor();
+        String line = "init=" + initRc + " scrolloff=" + scrollOff
+                + " dis=" + disCursor + "," + disScroll
+                + " disagain=" + disAgainCursor + "," + disAgainScroll
+                + " en=" + enCursor + "," + enScroll
+                + " enagain=" + enAgainCursor;
+        assertEquals("init=0 scrolloff=0 dis=0,0 disagain=0,0 en=0,1 enagain=0", line);
+
+        GameMouse.gameMouseExit();
+    }
 }
