@@ -19,7 +19,10 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * only): {@code objectCreateWithProtoId} ({@code obj_pid_new}),
  * {@code objectCreateWithFrmIdProtoId} ({@code obj_new}), the floating
  * object list ({@code gObjectListHead} + {@code _obj_insert} for
- * tile {@code -1}), {@code scriptsNewObjectId} ({@code new_obj_id} from
+ * tile {@code -1}), the tile-placed list ({@code gObjectListHeadByTile} +
+ * {@code _obj_connect}/{@code _obj_connect_to_tile}, with the
+ * elevation/flat ordering walk), {@code objectSetFrmId}
+ * ({@code obj_change_fid}, rect overload deferred), {@code scriptsNewObjectId} ({@code new_obj_id} from
  * {@code src/scripts.cc}), {@code objectSetLight} /
  * {@code _obj_turn_off_light} / {@code _obj_turn_on_light},
  * {@code _obj_toggle_flat}, {@code objectSetScriptFromProto} (gate only,
@@ -34,7 +37,11 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code sectionObjCreate} in {@code docker/refharness/ref_main.cc}, and
  * the destroy tail ({@code destroy}/{@code destroynull}) of
  * {@code [itemmove]} in {@code docker/refharness/golden/v62.txt}
- * (produced by {@code sectionItemMove}).
+ * (produced by {@code sectionItemMove}), and the tile-connect state
+ * backing {@code [itemdrop]} in
+ * {@code docker/refharness/golden/v63.txt} (produced by
+ * {@code sectionItemDrop}: {@code itemDropAll} drops land on a tile via
+ * {@code objectConnect}).
  *
  * <p>Game objects reuse {@link ObjTypes.GameObject} (v33, renamed from C
  * {@code Object}); nothing is duplicated here. Flags stay immutable bit
@@ -50,10 +57,14 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * ({@code fid} path unsupported) is an explicit {@link AssertionError}
  * (vectors always pass fid-based ids).</li>
  * <li>{@code _obj_insert} order: tile {@code -1} prepends to the floating
- * head, exactly like C. The tile-bound branch (elevation/flat/art
- * ordering over {@code gObjectListHeadByTile}) needs the map and art
- * lock stack and is deferred to the map port; tile-bound nodes prepend
- * to the same head meanwhile so ids and iteration stay consistent.</li>
+ * head, exactly like C. The tile-bound branch walks the tile list with
+ * the C elevation/flat ordering (lower elevation first; a flat object
+ * sorts before a non-flat one at equal elevation); the art-lock depth
+ * tiebreak inside the equal-elevation/equal-flatness case needs the art
+ * lock stack and stays a seam (game phase), so same-flatness objects
+ * keep arrival order there. C++ would index out of bounds for an
+ * invalid non-{@code -1} tile; Java guards it back to the floating
+ * head (unreachable: every writer validates the tile first).</li>
  * <li>{@code objectFindFirst}/{@code objectFindNext} iterate the floating
  * head only (the harness never places objects on tiles, so the C
  * tile-array scan sees the same empty set); the hidden-type filter
@@ -99,10 +110,14 @@ import org.fallout2ce.ProtoTypes.ProtoId;
   * <li>{@code _gmouse_remove_item_outline} needs the game-mouse highlight
   * state ({@code gGameMouseHighlightedItem}, game phase, null headless) +
   * tile refresh; headless it is a no-op seam.</li>
-  * <li>{@code objectGetListNode}/{@code _obj_remove} unlink: tile-bound
-  * nodes live in {@code gObjectListHeadByTile} (map port); every listed
-  * harness object sits at tile {@code -1}, so the floating-head unlink is
-  * exact here.</li>
+ * <li>{@code objectGetListNode}/{@code _obj_remove} unlink: the head
+ * follows the node's tile ({@code gObjectListHead} for tile
+ * {@code -1}, {@code gObjectListHeadByTile[tile]} otherwise), exactly
+ * like C. {@code _obj_connect} allocates a second node for the tile
+ * list and leaves the floating node in place (C++ never unlinks the
+ * old node there); both lists then reference the object, so
+ * {@code objectFindFirst}/{@code objectFindNext} (still the
+ * floating-head slice, like before) keep seeing dropped objects.</li>
   * </ul>
   */
 public final class ObjectSystem {
@@ -112,6 +127,13 @@ public final class ObjectSystem {
 
     /** Port of {@code gObjectListHead} (floating objects, tile {@code -1}). */
     private static GameObjectListNode head = null;
+
+    /**
+     * Port of {@code gObjectListHeadByTile} (tile-placed objects, indexed
+     * by hex-grid tile). Entries are null until the first
+     * {@code objectConnect} to that tile, like the C zeroed array.
+     */
+    private static GameObjectListNode[] tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
 
     /** Port of {@code gObjectFindLastObjectListNode} (single-list cursor). */
     private static GameObjectListNode findCursor = null;
@@ -329,32 +351,69 @@ public final class ObjectSystem {
         return 0;
     }
 
-    // 0x48AF2C obj_toggle_flat (rect overload deferred like objectSetLight).
+    // 0x48AF2C obj_toggle_flat (rect overload deferred like objectSetLight;
+    // the slice always passes null, so both C++ paths collapse into the
+    // unlink + xor + insert below).
     public static int toggleFlat(GameObject object) {
         if (object == null) {
             return -1;
         }
 
-        GameObjectListNode prev = null;
-        GameObjectListNode node = head;
-        while (node != null && node.obj != object) {
-            prev = node;
-            node = node.next;
-        }
-
+        GameObjectListNode[] prevSlot = new GameObjectListNode[1];
+        GameObjectListNode node = findListNode(object, prevSlot);
         if (node == null) {
             return -1;
         }
 
-        if (prev != null) {
-            prev.next = node.next;
-        } else {
-            head = node.next;
-        }
+        unlinkNode(node, prevSlot[0]);
 
         object.flags = object.flags.xor(ObjectFlags.FLAT);
 
         insertNode(node);
+
+        return 0;
+    }
+
+    // 0x489EC4 obj_connect (rect overload deferred: the slice always
+    // passes null, like objectDestroy; the light call inside
+    // connectToTile keeps its null-rect shape).
+    public static int objectConnect(GameObject object, int tile, int elevation) {
+        if (object == null) {
+            return -1;
+        }
+
+        if (!MapDefs.hexGridTileIsValid(tile)) {
+            return -1;
+        }
+
+        if (!MapDefs.elevationIsValid(elevation)) {
+            return -1;
+        }
+
+        GameObjectListNode node = new GameObjectListNode();
+        node.obj = object;
+        node.next = null;
+
+        return connectToTile(node, tile, elevation);
+    }
+
+    // Sets object fid (0x48AA3C obj_change_fid, rect overload deferred:
+    // the dirty-rect union needs objectGetRect/render engine, game
+    // phase; the slice passes a rect only from the itemDropAll equipped
+    // tail, which the vectors never reach).
+    public static int objectSetFrmId(GameObject obj, FrmId frmId) {
+        if (obj == null) {
+            return -1;
+        }
+
+        if (frmId.valid()) {
+            if (!frmId.hasFid()) {
+                throw new AssertionError("objectSetFrmId called with path based"
+                        + " FrmId which is not supported!");
+            }
+        }
+
+        obj.fid = frmId.fid();
 
         return 0;
     }
@@ -500,25 +559,69 @@ public final class ObjectSystem {
         obj.data.misc.rotation = Rotation.ROTATION_NE;
     }
 
-    // Floating-head slice of 0x48D8E8 obj_insert: tile -1 prepends like C;
-    // the tile-bound ordering branch is deferred to the map port.
+    // 0x48D8E8 obj_insert: tile -1 prepends to the floating head, like
+    // C; tile-bound nodes walk the tile list with the C
+    // elevation/flat ordering (the art-lock depth tiebreak needs the
+    // art lock stack and stays a seam, game phase; see class notes).
     private static void insertNode(GameObjectListNode node) {
         if (node == null) {
             return;
         }
 
-        node.next = head;
-        head = node;
+        if (node.obj.tile == -1 || !MapDefs.hexGridTileIsValid(node.obj.tile)) {
+            node.next = head;
+            head = node;
+            return;
+        }
+
+        GameObjectListNode prev = null;
+        GameObjectListNode current = tileHeads[node.obj.tile];
+        while (current != null) {
+            GameObject obj = current.obj;
+            if (obj.elevation > node.obj.elevation) {
+                break;
+            }
+
+            if (obj.elevation == node.obj.elevation) {
+                boolean objFlat = (obj.flags.bits() & ObjectFlags.FLAT.bits()) == 0;
+                boolean newFlat =
+                        (node.obj.flags.bits() & ObjectFlags.FLAT.bits()) != 0;
+                if (objFlat && newFlat) {
+                    break;
+                }
+
+                // Equal elevation + equal flatness: the C art-lock depth
+                // tiebreak (artLock both fids) needs the art lock stack
+                // (game phase), so arrival order is kept here.
+            }
+
+            prev = current;
+            current = current.next;
+        }
+
+        node.next = current;
+        if (prev != null) {
+            prev.next = node;
+        } else {
+            tileHeads[node.obj.tile] = node;
+        }
     }
 
-    // Floating-head slice of objectGetListNode (src/object.cc): tile-bound
-    // nodes live in gObjectListHeadByTile (map port); every listed harness
-    // object sits at tile -1, so the floating scan is exact here. The
+    // Floating-head + tile-array slice of objectGetListNode
+    // (src/object.cc): the head follows the object's tile, exactly like
+    // C (tile -1 scans the floating head, otherwise the tile list). The
     // previous node rides in prevPtr[0] (null when the node is the head),
     // like the C++ out-param.
     private static GameObjectListNode findListNode(GameObject object, GameObjectListNode[] prevPtr) {
         GameObjectListNode prev = null;
-        GameObjectListNode node = head;
+        GameObjectListNode node;
+        if (object.tile != -1 && MapDefs.hexGridTileIsValid(object.tile)) {
+            node = tileHeads[object.tile];
+        } else if (object.tile == -1) {
+            node = head;
+        } else {
+            node = null;
+        }
         while (node != null) {
             if (node.obj == object) {
                 break;
@@ -560,14 +663,56 @@ public final class ObjectSystem {
         // aiRemoveBurstDisabled(obj): AI engine (game phase).
 
         if (node != prev) {
-            if (prev != null) {
-                prev.next = node.next;
+            unlinkNode(node, prev);
+        }
+
+        return 0;
+    }
+
+    // Head unlink shared by _obj_remove and _obj_toggle_flat: the head
+    // follows the node's tile, exactly like C (tile -1 advances the
+    // floating head, otherwise the tile list).
+    private static void unlinkNode(GameObjectListNode node, GameObjectListNode prev) {
+        if (prev != null) {
+            prev.next = node.next;
+        } else {
+            int tile = node.obj.tile;
+            if (tile != -1 && MapDefs.hexGridTileIsValid(tile)) {
+                tileHeads[tile] = node.next;
             } else {
-                // Tile-bound heads (gObjectListHeadByTile) come with the
-                // map port; every listed harness object is floating.
                 head = node.next;
             }
         }
+    }
+
+    // 0x48DB28 obj_connect_to_tile (rect overload deferred like
+    // objectConnect: the slice always passes null, so the adjust-light
+    // result is ignored and no rect fill runs, like C++).
+    private static int connectToTile(GameObjectListNode node, int tile, int elevation) {
+        if (node == null) {
+            return -1;
+        }
+
+        if (!MapDefs.hexGridTileIsValid(tile)) {
+            return -1;
+        }
+
+        if (!MapDefs.elevationIsValid(elevation)) {
+            return -1;
+        }
+
+        node.obj.tile = tile;
+        node.obj.elevation = elevation;
+        node.obj.x = 0;
+        node.obj.y = 0;
+        node.obj.owner = null;
+
+        insertNode(node);
+
+        // _obj_adjust_light(obj, 0, null): with a null rect C++ ignores
+        // the -1, so the guards-only slice runs bare (vector protos
+        // carry light 0,0 and bail at the intensity guard).
+        adjustLight(node.obj, false);
 
         return 0;
     }
@@ -658,9 +803,10 @@ public final class ObjectSystem {
         return object;
     }
 
-    /** Test seam: clear the list + counter (fresh-process mirror). */
+    /** Test seam: clear the lists + counter (fresh-process mirror). */
     static void resetForTests() {
         head = null;
+        tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
         findCursor = null;
         objectIdCounter = 4;
         protosInitialized = false;

@@ -5606,6 +5606,39 @@ void sectionItemMove()
         remCash, destroyCash, destroyNull, slot0 != nullptr ? slot0->pid : -999);
 }
 
+void sectionItemDrop()
+{
+    std::puts("[itemdrop]");
+
+    // No window system needed. Plain (unequipped) stacks drop to a tile;
+    // equipped drops would repaint through the tile refresher (no map).
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* cash = nullptr;
+    fallout::objectCreateWithProtoId(&cash, fallout::ProtoId(41));
+    fallout::itemAdd(dog, stim, 1);
+    fallout::itemAdd(dog, cash, 2);
+    int dropRc = fallout::itemDropAll(dog, 20100);
+    fallout::Object* slot0 = fallout::inventoryItemByIndex(dog, 0);
+    int qtyStim = fallout::itemGetQuantity(dog, stim);
+    int qtyCash = fallout::itemGetQuantity(dog, cash);
+    std::printf("drop=%d slot0null=%d qty=%d,%d\n",
+        dropRc, slot0 == nullptr ? 1 : 0, qtyStim, qtyCash);
+
+    // Empty inventory drops trivially; a bad tile restores the stack.
+    fallout::Object* dog2 = nullptr;
+    fallout::objectCreateWithProtoId(&dog2, fallout::ProtoId(16777558));
+    int dropEmpty = fallout::itemDropAll(dog2, 20100);
+    fallout::Object* stim2 = nullptr;
+    fallout::objectCreateWithProtoId(&stim2, fallout::ProtoId(40));
+    fallout::itemAdd(dog2, stim2, 1);
+    int dropBadTile = fallout::itemDropAll(dog2, -1);
+    int qtyKept = fallout::itemGetQuantity(dog2, stim2);
+    std::printf("dropempty=%d dropbadtile=%d qtykept=%d\n", dropEmpty, dropBadTile, qtyKept);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5699,5 +5732,6 @@ int main()
     sectionEquip();
     sectionBallistics();
     sectionItemMove();
+    sectionItemDrop();
     return 0;
 }

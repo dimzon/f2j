@@ -51,7 +51,10 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * scorcher damage/radius and jacket armor probes) and {@code [itemmove]} in
  * {@code docker/refharness/golden/v62.txt} (produced by
  * {@code sectionItemMove}: blocked non-force move, force move + owner pin,
- * move-all, remove + destroy + null-destroy).
+ * move-all, remove + destroy + null-destroy) and {@code [itemdrop]} in
+ * {@code docker/refharness/golden/v63.txt} (produced by
+ * {@code sectionItemDrop}: full drop at tile {@code 20100}, empty drop,
+ * bad-tile drop with stack restore).
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
@@ -78,6 +81,16 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * tile {@code -1}, so the refresh is dormant.</li>
  * <li>{@code objectDestroy} on the {@code itemDestroyAllHidden} path is
  * {@link ObjectSystem#objectDestroy} (same slice, v62).</li>
+ * <li>{@code itemDropAll} money branch: the whole stack removes at once
+ * and the dropped object's {@code charges} field is restored to the
+ * stack quantity after a successful connect, like C++.</li>
+ * <li>{@code itemDropAll} equipped tail: the 5-arg
+ * {@code scriptHooks_InvenWield} unwield seam always runs headless (no
+ * hooks; C++ ignores the result), the armor frame/stat adjust is the
+ * fully ported {@code adjustCritterStatsOnArmorChange}, and the tail
+ * re-fids via {@link ObjectSystem#objectSetFrmId} with the
+ * {@code ANIM_STAND} tile-refresh seam. The vectors carry no equipped
+ * items, so the tail is skipped there.</li>
  * </ul>
  */
 public final class Item {
@@ -965,7 +978,7 @@ public final class Item {
     // pure, ported whole (destroy is ObjectSystem#objectDestroy, v62).
     public static int itemDestroyAllHidden(GameObject owner) {
         List<InventoryItem> items = owner.data.inventory.items;
-        for (int index = 0; index < items.size();) {
+        for (int index = 0; index < items.size(); index++) {
             InventoryItem entry = items.get(index);
             GameObject item = entry.item;
             if (itemIsHidden(item)) {
@@ -979,12 +992,120 @@ public final class Item {
         return 0;
     }
 
+    // 0x477804 item_drop_all: while the inventory is non-empty, drop the
+    // head stack. Money stacks drop whole (remove-all + connect, then the
+    // charges field is restored to the stack quantity); other stacks drop
+    // one unit at a time (remove-one + connect per unit, with the
+    // re-add-on-connect-failure tail). Equipped head items arm the
+    // unwield tail first (InvenWield hook + armor frame/stat adjust);
+    // after the loop the equipped tail re-fids the critter (with the
+    // ANIM_STAND tile refresh). An empty inventory returns 0 without
+    // touching anything.
+    public static int itemDropAll(GameObject critter, int tile) {
+        boolean hasEquippedItems = false;
+
+        int frameId = FrmId.ofFid(critter.fid).frameId();
+
+        List<InventoryItem> items = critter.data.inventory.items;
+        while (!items.isEmpty()) {
+            InventoryItem inventoryItem = items.get(0);
+            GameObject item = inventoryItem.item;
+            if (ProtoId.ofGameObject(item).matchesItemType(ItemProtoTypeId.Money)) {
+                int quantity = inventoryItem.quantity;
+                if (itemRemove(critter, item, quantity) != 0) {
+                    return -1;
+                }
+
+                if (ObjectSystem.objectConnect(item, tile, critter.elevation) != 0) {
+                    if (itemAdd(critter, item, 1) != 0) {
+                        ObjectSystem.objectDestroy(item);
+                    }
+                    return -1;
+                }
+
+                item.data.item.misc.charges = quantity;
+            } else {
+                if ((item.flags.bits() & ObjectFlags.EQUIPPED.bits()) != 0) {
+                    hasEquippedItems = true;
+                    Inventory.InvenSlot invenSlot = Inventory.InvenSlot.RIGHT_HAND;
+
+                    if ((item.flags.bits() & ObjectFlags.WORN.bits()) != 0) {
+                        invenSlot = Inventory.InvenSlot.ARMOR;
+                    } else if ((item.flags.bits() & ObjectFlags.IN_LEFT_HAND.bits()) != 0) {
+                        invenSlot = Inventory.InvenSlot.LEFT_HAND;
+                    }
+
+                    // C++ ignores the hook result here (unwield always
+                    // proceeds); headless there are no hooks anyway.
+                    scriptHooksInvenWield(critter, item, invenSlot, 0, 1);
+
+                    if ((item.flags.bits() & ObjectFlags.WORN.bits()) != 0) {
+                        Proto[] proto = new Proto[1];
+                        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(critter), proto) == -1) {
+                            return -1;
+                        }
+
+                        frameId = FrmId.ofFid(proto[0].fid).frameId();
+                        adjustCritterStatsOnArmorChange(critter, item, null);
+                    }
+                }
+
+                // The head entry shifts under itemRemove (full drops
+                // compact to the next stack), so the item is re-read per
+                // unit, exactly like the C++ pointer.
+                int quantity = items.get(0).quantity;
+                for (int it = 0; it < quantity; it++) {
+                    item = items.get(0).item;
+                    if (itemRemove(critter, item, 1) != 0) {
+                        return -1;
+                    }
+
+                    if (ObjectSystem.objectConnect(item, tile, critter.elevation) != 0) {
+                        if (itemAdd(critter, item, 1) != 0) {
+                            ObjectSystem.objectDestroy(item);
+                        }
+                        return -1;
+                    }
+                }
+            }
+        }
+
+        if (hasEquippedItems) {
+            FrmId current = FrmId.ofFid(critter.fid);
+            FrmId critterFrmId = FrmId.ofCritter(frameId, current.animationType(),
+                    WeaponAnimation.NONE.value(), current.rotation());
+            ObjectSystem.objectSetFrmId(critter, critterFrmId);
+            if (FrmId.ofFid(critter.fid).animationType() == AnimationType.STAND.value()) {
+                tileWindowRefreshRect();
+            }
+        }
+
+        return 0;
+    }
+
     // scriptHooks_RemoveInventoryObject (src/sfall_script_hooks.cc): fires
     // HOOK_REMOVEINVENOBJ; with no hooks registered the call is a no-op.
     // The script engine is game phase; headless this is silent (see
     // Reaction).
     private static void scriptHooksRemoveInventoryObject(GameObject owner, GameObject item,
             int quantity, RemoveInventoryObjectHookReason reason, GameObject target) {
+    }
+
+    // scriptHooks_InvenWield (src/sfall_script_hooks.cc, 5-arg unwield
+    // form): with no hooks registered the hook call has no return values
+    // and C proceeds. The script engine is game phase; headless this is
+    // always true (the itemDropAll unwield call ignores the result
+    // anyway, like C++).
+    private static boolean scriptHooksInvenWield(GameObject critter, GameObject item,
+            Inventory.InvenSlot slot, int isWield, int isRemove) {
+        return true;
+    }
+
+    // tileWindowRefreshRect(rect, gElevation) (tile render; game phase):
+    // only reached from the itemDropAll equipped tail when the
+    // re-fidded critter stands. gElevation is map engine state (game
+    // phase); headless the refresh is a no-op (like Inventory's seam).
+    private static void tileWindowRefreshRect() {
     }
 
     // Weapon extended-flags -> skill table (src/item.cc 0x519160

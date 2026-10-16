@@ -315,4 +315,63 @@ class InventoryTest {
         assertNotNull(slot0);
         assertEquals(40, slot0.pid);
     }
+
+    @Test
+    void itemDropVectors() {
+        // [itemdrop] from docker/refharness/golden/v63.txt, produced by
+        // sectionItemDrop in docker/refharness/ref_main.cc. Dog + stimpak
+        // (pid 40) + cash (pid 41): both stacks are plain (unequipped), so
+        // the stim drops one unit at a time and the cash drops whole with
+        // the charges restore; the equipped re-fid tail is skipped (no
+        // tile refresh needed, no map). The empty-inventory drop returns 0,
+        // and the bad-tile drop fails the connect, re-adds the stack and
+        // returns -1 with the quantity kept.
+        GameObject[] dogSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dogSlot, ProtoId.ofPid(16777558)));
+        assertNotNull(dogSlot[0]);
+        GameObject dog = dogSlot[0];
+
+        GameObject[] stimSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(stimSlot, ProtoId.ofPid(40)));
+        assertNotNull(stimSlot[0]);
+        GameObject stim = stimSlot[0];
+
+        GameObject[] cashSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(cashSlot, ProtoId.ofPid(41)));
+        assertNotNull(cashSlot[0]);
+        GameObject cash = cashSlot[0];
+
+        assertEquals(0, Item.itemAdd(dog, stim, 1));
+        assertEquals(0, Item.itemAdd(dog, cash, 2));
+
+        // drop=0 slot0null=1 qty=0,0
+        int dropRc = Item.itemDropAll(dog, 20100);
+        GameObject slot0 = Inventory.inventoryItemByIndex(dog, 0);
+        int qtyStim = Item.itemGetQuantity(dog, stim);
+        int qtyCash = Item.itemGetQuantity(dog, cash);
+        assertEquals(0, dropRc);
+        assertNull(slot0);
+        assertEquals(0, qtyStim);
+        assertEquals(0, qtyCash);
+
+        // dropempty=0 dropbadtile=-1 qtykept=1
+        GameObject[] dog2Slot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dog2Slot, ProtoId.ofPid(16777558)));
+        assertNotNull(dog2Slot[0]);
+        GameObject dog2 = dog2Slot[0];
+
+        int dropEmpty = Item.itemDropAll(dog2, 20100);
+
+        GameObject[] stim2Slot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(stim2Slot, ProtoId.ofPid(40)));
+        assertNotNull(stim2Slot[0]);
+        GameObject stim2 = stim2Slot[0];
+
+        assertEquals(0, Item.itemAdd(dog2, stim2, 1));
+        int dropBadTile = Item.itemDropAll(dog2, -1);
+        int qtyKept = Item.itemGetQuantity(dog2, stim2);
+        assertEquals(0, dropEmpty);
+        assertEquals(-1, dropBadTile);
+        assertEquals(1, qtyKept);
+    }
 }
