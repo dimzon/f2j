@@ -6215,6 +6215,25 @@ void sectionMiscGetters()
     std::printf("movecost=%d bad=%d encumbered=%d\n", moveCost, moveCostBad, encumbered);
 }
 
+void sectionFindCid()
+{
+    std::puts("[findcid]");
+
+    // No window system needed. Fresh objects carry cid 0 until combat assigns.
+    fallout::Object* dog1 = nullptr;
+    fallout::objectCreateWithProtoId(&dog1, fallout::ProtoId(16777558));
+    fallout::Object* dog2 = nullptr;
+    fallout::objectCreateWithProtoId(&dog2, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* list[3] = { dog2, dog1, stim };
+    int foundDog = fallout::_find_cid(0, dog1->cid, list, 3);
+    int foundFrom1 = fallout::_find_cid(1, dog1->cid, list, 3);
+    int notFound = fallout::_find_cid(0, 9999, list, 3);
+    std::printf("cid=%d found=%d from1=%d missing=%d\n",
+        dog1->cid, foundDog, foundFrom1, notFound);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6327,5 +6346,6 @@ int main()
     sectionXpRoll();
     sectionSkillRoll();
     sectionMiscGetters();
+    sectionFindCid();
     return 0;
 }

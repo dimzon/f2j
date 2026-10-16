@@ -1,13 +1,16 @@
 package org.fallout2ce;
 
+import org.fallout2ce.ObjTypes.GameObject;
+
 /**
- * Hit-location accuracy penalties and target highlight, mirroring the pure
- * slice of {@code src/combat.cc}.
+ * Hit-location accuracy penalties, target highlight, and the combat-id
+ * search, mirroring the pure slice of {@code src/combat.cc}.
  *
  * <p>Only the data-table accessors are ported
  * ({@code combat_get_hit_location_penalty},
  * {@code combat_set_hit_location_penalty},
- * {@code combat_reset_hit_location_penalty}, {@code combatGetTargetHighlight}).
+ * {@code combat_reset_hit_location_penalty}, {@code combatGetTargetHighlight})
+ * plus the stateless linear scan {@code _find_cid}.
  * {@code combatInit} is deliberately not ported: it touches {@code gDude} and
  * segfaults headless. The tables therefore start zeroed (BSS mirror), exactly
  * as the harness observes before {@code combat_reset_hit_location_penalty}
@@ -73,6 +76,23 @@ public final class Combat {
     /** Port of {@code combatGetTargetHighlight}. */
     public static int getTargetHighlight() {
         return combatHighlight;
+    }
+
+    /**
+     * Port of {@code _find_cid} ({@code src/combat.cc:0x420E24}): pure linear
+     * scan returning the first index {@code >= startIndex} whose
+     * {@code cid} matches, else {@code critterListLength}. Fresh objects
+     * carry {@code cid -1} ({@code src/object.cc} {@code obj_allocate}),
+     * so a fresh list matches at 0 and a missing cid yields the length.
+     */
+    public static int findCid(int startIndex, int cid, GameObject[] critterList, int critterListLength) {
+        int index;
+        for (index = startIndex; index < critterListLength; index++) {
+            if (critterList[index].cid == cid) {
+                break;
+            }
+        }
+        return index;
     }
 
     /** Test seam: fresh-process mirror (BSS zeroes: penalties + highlight). */
