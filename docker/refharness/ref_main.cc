@@ -5419,6 +5419,41 @@ void sectionObjCreate()
     }
 }
 
+void sectionCritterStats()
+{
+    std::puts("[critterstats]");
+
+    // No window system needed. Reads run off the created objects' protos
+    // (gDude is null here, so all dude-only branches are skipped).
+    fallout::Object* dog = nullptr;
+    int dogRc = fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    // NOTE: critterGetStat clamps to the bounds tables, which are zero
+    // headless (statsInit is out of reach), so it reads 0 throughout;
+    // the unclamped base/bonus getters below carry the real proto data.
+    int dogStr = fallout::critterGetBaseStat(dog, fallout::STAT_STRENGTH);
+    int dogAgi = fallout::critterGetBaseStat(dog, fallout::STAT_AGILITY);
+    int dogLuck = fallout::critterGetBaseStat(dog, fallout::STAT_LUCK);
+    int dogBonus = fallout::critterGetBonusStat(dog, fallout::STAT_STRENGTH);
+    int dogClamped = fallout::critterGetStat(dog, fallout::STAT_STRENGTH);
+    std::printf("dog-rc=%d str=%d agi=%d luck=%d bonus=%d clamped=%d\n",
+        dogRc, dogStr, dogAgi, dogLuck, dogBonus, dogClamped);
+
+    // Base-stat writes clamp against the (zero) bounds tables here.
+    int setRc = fallout::critterSetBaseStat(dog, fallout::STAT_STRENGTH, 6);
+    int dogStrAfter = fallout::critterGetStat(dog, fallout::STAT_STRENGTH);
+    std::printf("set-rc=%d str-after=%d\n", setRc, dogStrAfter);
+
+    // Skill values off proto skills + primary stats (no dude tags here).
+    int sneakVal = fallout::skillGetValue(dog, fallout::SKILL_SNEAK);
+    int gunsVal = fallout::skillGetValue(dog, fallout::SKILL_SMALL_GUNS);
+    int stimSkill = fallout::skillGetValue(stim, fallout::SKILL_SNEAK);
+    int badSkill = fallout::skillGetValue(dog, (fallout::Skill)-1);
+    std::printf("sneak=%d guns=%d stim-skill=%d bad-skill=%d\n",
+        sneakVal, gunsVal, stimSkill, badSkill);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5507,5 +5542,6 @@ int main()
     sectionGameTime();
     sectionTraitSelect();
     sectionObjCreate();
+    sectionCritterStats();
     return 0;
 }

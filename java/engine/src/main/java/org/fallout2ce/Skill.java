@@ -3,9 +3,39 @@ package org.fallout2ce;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.fallout2ce.ObjTypes.GameObject;
+import org.fallout2ce.ProtoTypes.Proto;
+import org.fallout2ce.ProtoTypes.ProtoId;
+
 /**
- * Skill result codes, mirroring the pure parts of {@code src/skill.h}.
- * The skill engine ({@code skill.cc}) comes with the game phase.
+ * Skill result codes + skill value engine slice, mirroring the pure parts of
+ * {@code src/skill.cc} / {@code src/skill.h}.
+ *
+ * <p>Vectors: {@code [statskill]} costs/defaults/difficulty live here already;
+ * {@code [critterstats]} skill values ({@code sneak/guns/stim/bad}) come
+ * from {@link #skillGetValue} (game data needed for the proto skills).
+ *
+ * <p>NOTES / seams (all documented at the use site too):
+ * <ul>
+ * <li>{@code gDude} is modelled as a {@code null} holder (no dude in
+ * {@link ObjectSystem} yet): every {@code critter == gDude} check reads
+ * false, so the tagged-bonus / trait / perk / difficulty block is dormant
+ * until the game phase. The {@code null == null} C quirk is avoided via a
+ * null guard in {@link #isDude}.</li>
+ * <li>Perk lookups ({@code perkGetRank}, {@code perkGetSkillModifier}) need
+ * the perk engine (unported; {@link Perk} only carries property ids). The
+ * private stubs return 0 and are only reachable from the dormant dude
+ * block.</li>
+ * <li>{@code skillMaximum} (sfall {@code set_skill_max}, default 300) and
+ * the tag-tuning flags ({@code tagSkillBonus} 20,
+ * {@code tagPerkAppliesInitialBonus} false,
+ * {@code tagSkillsDoublePointBonusDisabled} false) mirror
+ * {@code skillsInitDefaults}; {@link #resetForTests} restores all of them
+ * (plus the zeroed tags/usage) for the fresh-process mirror.</li>
+ * <li>The raw-negative branch ({@code SKILLS_MIN_RAW_POINTS -128},
+ * {@code SKILLS_MIN_VALUE -999}) is fully ported, including the
+ * non-dude-gated {@code skillIsTagged} doubling inside it.</li>
+ * </ul>
  */
 public final class Skill {
 
@@ -67,10 +97,109 @@ public final class Skill {
     };
 
     /**
+     * Compile-time per-skill {@code baseValueMult} column of
+     * {@code defaultSkillDescriptions} in {@code src/skill.cc} (index =
+     * skill id). All ones in the vanilla table; the sfall
+     * {@code SkillMultiN} loader (unported) is the only writer.
+     */
+    private static final int[] BASE_VALUE_MULT = {
+        1, // SmallGuns
+        1, // BigGuns
+        1, // EnergyWeapons
+        1, // Unarmed
+        1, // MeleeWeapons
+        1, // Throwing
+        1, // FirstAid
+        1, // Doctor
+        1, // Sneak
+        1, // Lockpick
+        1, // Steal
+        1, // Traps
+        1, // Science
+        1, // Repair
+        1, // Speech
+        1, // Barter
+        1, // Gambling
+        1, // Outdoorsman
+    };
+
+    /**
+     * Port of {@code skillStatMultipliers[SKILL_COUNT][PRIMARY_STAT_COUNT]}
+     * ({@code src/skill.cc}), as built by {@code skillsInitDefaults}:
+     * {@code statModifier} on each skill's {@code stat1}/{@code stat2}
+     * columns, 0 elsewhere. Column order is STR, PER, END, CHA, INT, AGI,
+     * LUCK. Transcribed from the {@code statModifier}/{@code stat1}/
+     * {@code stat2} columns of {@code defaultSkillDescriptions}:
+     * SmallGuns(4,AGI) BigGuns(2,AGI) Energy(2,AGI) Unarmed(2,AGI+STR)
+     * Melee(2,AGI+STR) Throwing(4,AGI) FirstAid(2,PER+INT) Doctor(1,PER+INT)
+     * Sneak(3,AGI) Lockpick(1,PER+AGI) Steal(3,AGI) Traps(1,PER+AGI)
+     * Science(4,INT) Repair(3,INT) Speech(5,CHA) Barter(4,CHA)
+     * Gambling(5,LUCK) Outdoorsman(2,END+INT).
+     */
+    private static final double[][] SKILL_STAT_MULTIPLIERS = {
+        { 0, 0, 0, 0, 0, 4, 0 }, // SmallGuns: AGI x4
+        { 0, 0, 0, 0, 0, 2, 0 }, // BigGuns: AGI x2
+        { 0, 0, 0, 0, 0, 2, 0 }, // EnergyWeapons: AGI x2
+        { 2, 0, 0, 0, 0, 2, 0 }, // Unarmed: STR x2 + AGI x2
+        { 2, 0, 0, 0, 0, 2, 0 }, // MeleeWeapons: STR x2 + AGI x2
+        { 0, 0, 0, 0, 0, 4, 0 }, // Throwing: AGI x4
+        { 0, 2, 0, 0, 2, 0, 0 }, // FirstAid: PER x2 + INT x2
+        { 0, 1, 0, 0, 1, 0, 0 }, // Doctor: PER x1 + INT x1
+        { 0, 0, 0, 0, 0, 3, 0 }, // Sneak: AGI x3
+        { 0, 1, 0, 0, 0, 1, 0 }, // Lockpick: PER x1 + AGI x1
+        { 0, 0, 0, 0, 0, 3, 0 }, // Steal: AGI x3
+        { 0, 1, 0, 0, 0, 1, 0 }, // Traps: PER x1 + AGI x1
+        { 0, 0, 0, 0, 4, 0, 0 }, // Science: INT x4
+        { 0, 0, 0, 0, 3, 0, 0 }, // Repair: INT x3
+        { 0, 0, 0, 5, 0, 0, 0 }, // Speech: CHA x5
+        { 0, 0, 0, 4, 0, 0, 0 }, // Barter: CHA x4
+        { 0, 0, 0, 0, 0, 0, 5 }, // Gambling: LUCK x5
+        { 0, 0, 2, 0, 2, 0, 0 }, // Outdoorsman: END x2 + INT x2
+    };
+
+    /**
      * Tagged-state array, mirroring {@code gTaggedSkills} in
      * {@code src/skill.cc}. Zero-init (all ids 0 = SmallGuns).
      */
     private static final int[] TAGGED_SKILLS = new int[SkillDefs.NUM_TAGGED_SKILLS];
+
+    /** Port of {@code skillMaximum} (sfall {@code set_skill_max}, default 300). */
+    private static int skillMaximum = 300;
+
+    /** Port of {@code tagSkillBonus} (default 20). */
+    private static int tagSkillBonus = 20;
+
+    /** Port of {@code tagPerkAppliesInitialBonus} (default false). */
+    private static boolean tagPerkAppliesInitialBonus = false;
+
+    /** Port of {@code tagSkillsDoublePointBonusDisabled} (default false). */
+    private static boolean tagSkillsDoublePointBonusDisabled = false;
+
+    /** Port of {@code SKILLS_MIN_RAW_POINTS} ({@code src/skill.cc}). */
+    private static final int SKILLS_MIN_RAW_POINTS = -128;
+
+    /** Port of {@code SKILLS_MIN_VALUE} ({@code src/skill.cc}). */
+    private static final int SKILLS_MIN_VALUE = -999;
+
+    /**
+     * Port of {@code gDude}: null headless, so the dude block of
+     * {@link #skillGetValue} is dormant (see class notes).
+     */
+    private static final GameObject G_DUDE = null;
+
+    private static boolean isDude(GameObject critter) {
+        return critter != null && critter == G_DUDE;
+    }
+
+    // Seams for the perk engine (unported): only reachable from the dormant
+    // dude block.
+    private static int perkGetRank(GameObject critter, int perk) {
+        return 0;
+    }
+
+    private static int perkGetSkillModifier(GameObject critter, int skill) {
+        return 0;
+    }
 
     /** Port of {@code skillsGetCost(int)}. */
     public static int skillsGetCost(int skillValue) {
@@ -133,12 +262,106 @@ public final class Skill {
         }
     }
 
-    /** Test seam: zero the tagged-state array (fresh-process mirror). */
+    /** Test seam: fresh-process mirror (tags, usage, maximum, tag flags). */
     static void resetForTests() {
         java.util.Arrays.fill(TAGGED_SKILLS, 0);
         for (int skill = 0; skill < SkillDefs.SKILL_COUNT; skill++) {
             java.util.Arrays.fill(TIMES_SKILL_USED[skill], 0);
         }
+        skillMaximum = 300;
+        tagSkillBonus = 20;
+        tagPerkAppliesInitialBonus = false;
+        tagSkillsDoublePointBonusDisabled = false;
+    }
+
+    /**
+     * Port of {@code skillGetValue} (src/skill.cc 0x4AA558): invalid skill
+     * -5, non-critter 0, proto-miss -5, else
+     * {@code default + base * mult + sum(primaryStat x multiplier)}, the
+     * dormant dude block (tag doubling + tag bonus + trait + perk +
+     * difficulty), the raw-negative adjustment (with the non-dude-gated
+     * tagged doubling), truncation, the -999 floor for negative raws, and
+     * the {@code skillMaximum} cap.
+     */
+    public static int skillGetValue(GameObject critter, int skill) {
+        if (!SkillDefs.skillIsValid(skill)) {
+            return -5;
+        }
+
+        if (critter == null
+                || ProtoId.ofPid(critter.pid).objectType()
+                        != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(critter), slot) == -1) {
+            return -5;
+        }
+        Proto proto = slot[0];
+
+        int baseValue = proto.critter.data.skills[skill];
+        int rawSkillPoints = baseValue;
+        if (baseValue < 0) {
+            baseValue = 0;
+        }
+
+        double value = DEFAULT_VALUES[skill] + baseValue * BASE_VALUE_MULT[skill];
+        for (int stat = StatDefs.STAT_FIRST; stat < StatDefs.PRIMARY_STAT_COUNT; stat++) {
+            value += Stat.critterGetStat(critter, stat) * SKILL_STAT_MULTIPLIERS[skill][stat];
+        }
+
+        if (isDude(critter)) {
+            if (isTagged(skill)) {
+                if (!tagSkillsDoublePointBonusDisabled) {
+                    value += baseValue * BASE_VALUE_MULT[skill];
+                }
+
+                if (tagPerkAppliesInitialBonus
+                        || perkGetRank(critter, PerkDefs.Perk.PERK_TAG.id()) == 0
+                        || skill != TAGGED_SKILLS[3]) {
+                    value += tagSkillBonus;
+                }
+            }
+
+            value += TraitDefs.traitGetSkillModifier(skill);
+            value += perkGetSkillModifier(critter, skill);
+            value += getGameDifficultyModifier(skill);
+        }
+
+        if (rawSkillPoints < 0) {
+            if (rawSkillPoints < SKILLS_MIN_RAW_POINTS) {
+                rawSkillPoints = SKILLS_MIN_RAW_POINTS;
+            }
+
+            rawSkillPoints *= BASE_VALUE_MULT[skill];
+            if (isTagged(skill)) {
+                rawSkillPoints *= 2;
+            }
+
+            value += rawSkillPoints;
+        }
+
+        int integerValue = (int) value;
+        if (rawSkillPoints < 0 && integerValue < 0) {
+            if (integerValue < SKILLS_MIN_VALUE) {
+                integerValue = SKILLS_MIN_VALUE;
+            }
+        }
+
+        if (integerValue > skillMaximum) {
+            integerValue = skillMaximum;
+        }
+
+        return integerValue;
+    }
+
+    /**
+     * Port of {@code skillSetMaximum}: out-of-range values restore the
+     * vanilla ceiling (300), like sfall.
+     */
+    public static void skillSetMaximum(int maximum) {
+        skillMaximum = maximum >= 0 && maximum <= 300 ? maximum : 300;
     }
 
     /** {@code SKILLS_MAX_USES_PER_DAY} ({@code src/skill.cc}): stamps per skill. */
