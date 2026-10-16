@@ -11,11 +11,13 @@ import org.fallout2ce.ProtoTypes.ProtoId;
 /**
  * Critter id tables, mirroring the pure parts of {@code src/critter.h},
  * plus the body/kill read slice of {@code src/critter.cc}:
- * {@code critterGetBodyType} and {@code critterGetKillType}, and the
+ * {@code critterGetBodyType} and {@code critterGetKillType}, the
  * critter-vitals slice: {@code critterGetHitPoints},
  * {@code critterAdjustHitPoints}, {@code critterGetPoison},
  * {@code critterAdjustPoison}, {@code critterGetRadiation},
- * {@code critterAdjustRadiation}.
+ * {@code critterAdjustRadiation}, and the movement slice:
+ * {@code critterGetMovementPointCostAdjustedForCrippledLegs} and
+ * {@code critterIsEncumbered}.
  *
  * <p>BodyType/KillType enums live in {@link ProtoTypes} (reused, not
  * duplicated). The live hp/poison/radiation reads duplicate the
@@ -30,7 +32,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code sectionExplosives} in {@code docker/refharness/ref_main.cc}),
  * and {@code [vitals]} in {@code docker/refharness/golden/v66.txt}
  * (produced by {@code sectionVitals} in
- * {@code docker/refharness/ref_main.cc}).
+ * {@code docker/refharness/ref_main.cc}), and {@code [miscgetters]} in
+ * {@code docker/refharness/golden/v81.txt} (produced by
+ * {@code sectionMiscGetters} in {@code docker/refharness/ref_main.cc}).
  *
  * <p>See {@link StatDefs} for the {@code operator++} iteration note.
  *
@@ -45,6 +49,14 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * avoided via a null guard in {@link #isDude}.</li>
  * <li>Null {@code critterGetBodyType} input returns BIPED silently (C++
  * debugPrints; Java ports stay silent, see {@link Reaction}).</li>
+ * <li>{@code scriptHooks_MoveCost} arrives as a dormant identity seam
+ * (no script hooks headless; see {@link Item} for the same convention
+ * with {@code scriptHooks_CalcApCost}).</li>
+ * <li>{@code critterIsEncumbered} reads capacity via
+ * {@link Stat#critterGetStat} ({@code STAT_CARRY_WEIGHT}, clamped 0
+ * headless like every saveable stat) against the live
+ * {@link Item#objectGetInventoryWeight}: fresh objects carry nothing,
+ * so the vector reads {@code 0 < 0} = false.</li>
  * </ul>
  */
 public final class Critter {
@@ -248,6 +260,53 @@ public final class Critter {
     // gate above holds (no dude headless).
     private static int scriptHooksAdjustRads(GameObject critter, int amount) {
         return amount;
+    }
+
+    // critter_compute_ap_from_distance (src/critter.cc 0x42E62C):
+    // non-critter -> 0, else 8x distance with both legs crippled, 4x
+    // with either leg crippled, 1x otherwise, then the sfall MoveCost
+    // hook (identity headless, see below). Headless trace: the fresh
+    // dog's results are DAM_NONE -> distance (5).
+    public static int critterGetMovementPointCostAdjustedForCrippledLegs(GameObject critter, int distance) {
+        if (critter == null) {
+            return 0;
+        }
+        if (ProtoId.ofGameObject(critter).objectType()
+                != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return 0;
+        }
+
+        int flags = critter.data.critter.combat.results.bits();
+        int actionPoints;
+        if ((flags & Dam.CRIP_LEG_LEFT.bits()) != Dam.NONE.bits()
+                && (flags & Dam.CRIP_LEG_RIGHT.bits()) != Dam.NONE.bits()) {
+            actionPoints = 8 * distance;
+        } else if ((flags & Dam.CRIP_LEG_ANY.bits()) != Dam.NONE.bits()) {
+            actionPoints = 4 * distance;
+        } else {
+            actionPoints = distance;
+        }
+
+        return scriptHooksMoveCost(critter, distance, actionPoints);
+    }
+
+    // critter_is_overloaded (src/critter.cc 0x42E66C): carry capacity via
+    // Stat#critterGetStat (STAT_CARRY_WEIGHT) against the live
+    // Item#objectGetInventoryWeight. Headless trace: 0 < 0 is false (the
+    // capacity clamps to 0 like every saveable stat, and the fresh dog
+    // carries nothing).
+    public static boolean critterIsEncumbered(GameObject critter) {
+        int maxWeight = Stat.critterGetStat(critter, StatDefs.Stat.STAT_CARRY_WEIGHT.id());
+        int currentWeight = Item.objectGetInventoryWeight(critter);
+        return maxWeight < currentWeight;
+    }
+
+    // Seam for scriptHooks_MoveCost (src/sfall_script_hooks.cc): with no
+    // hooks registered the C++ call returns the input cost unchanged, so
+    // the headless default is identity (same convention as
+    // Item#scriptHooksCalcApCost). Dormant: no script engine headless.
+    private static int scriptHooksMoveCost(GameObject critter, int distance, int actionPoints) {
+        return actionPoints;
     }
 
     // Seam for critterKill(critter, ANIM_INVALID, true) (src/critter.cc,

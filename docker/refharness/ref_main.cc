@@ -60,6 +60,7 @@
 #include "trait.h"
 #include "object.h"
 #include "map.h"
+#include "map_edge.h"
 #include "item.h"
 #include "inventory.h"
 #include "sfall_config.h"
@@ -6190,6 +6191,30 @@ void sectionSkillRoll()
         roll1, how1, roll2, how2, rollBad, rollStim, howStim);
 }
 
+void sectionMiscGetters()
+{
+    std::puts("[miscgetters]");
+
+    // No window system needed. Edge/roof subsystems are unloaded (zeros);
+    // movement math is pure flag reads; the dog carries nothing.
+    int edgeOn = fallout::mapEdgeIsEnabled() ? 1 : 0;
+    int zoneSel = fallout::mapEdgeZoneIsSelected() ? 1 : 0;
+    int alignX = fallout::mapEdgeGetTileXAlignment();
+    int alignY = fallout::mapEdgeGetTileYAlignment();
+    // NOTE: _square_roof_intersect needs loaded roof grids (segfaults
+    // headless), so only the unloaded edge state is pinned here.
+    std::printf("edge=%d zone=%d align=%d,%d\n", edgeOn, zoneSel, alignX, alignY);
+
+    fallout::Object* dog = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    int moveCost = fallout::critterGetMovementPointCostAdjustedForCrippledLegs(dog, 5);
+    int moveCostBad = fallout::critterGetMovementPointCostAdjustedForCrippledLegs(stim, 5);
+    int encumbered = fallout::critterIsEncumbered(dog) ? 1 : 0;
+    std::printf("movecost=%d bad=%d encumbered=%d\n", moveCost, moveCostBad, encumbered);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6301,5 +6326,6 @@ int main()
     sectionPcStat();
     sectionXpRoll();
     sectionSkillRoll();
+    sectionMiscGetters();
     return 0;
 }
