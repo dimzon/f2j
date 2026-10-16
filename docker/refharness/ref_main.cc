@@ -62,6 +62,8 @@
 #include "scripts.h"
 #include "trait.h"
 #include "object.h"
+#include "interface.h"
+#include "elevator.h"
 #include "map.h"
 #include "map_edge.h"
 #include "item.h"
@@ -6645,6 +6647,20 @@ void sectionPartyObjects()
     std::printf("dup-add=%d\n", dupRc);
 }
 
+void sectionIsoRest()
+{
+    std::puts("[isorest]");
+
+    // The isoInit tail after objectsInit: palette cycle state, interface
+    // bar window, sfall elevators (no-op without config), entering spot.
+    // (artInit/tileInit/objectsInit ran in [color]/[tilemath]/[partyobjects].)
+    fallout::colorCycleInit();
+    int ifaceRc = fallout::interfaceInit();
+    fallout::elevatorsInit();
+    int enterRc = fallout::mapSetEnteringLocation(-1, -1, fallout::ROTATION_INVALID);
+    std::printf("iface=%d enter=%d\n", ifaceRc, enterRc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6772,5 +6788,6 @@ int main()
     sectionStatsSave();
     sectionFrmIds();
     sectionPartyObjects();
+    sectionIsoRest();
     return 0;
 }
