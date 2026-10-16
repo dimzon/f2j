@@ -56,6 +56,7 @@
 #include "skill.h"
 #include "combat.h"
 #include "scripts.h"
+#include "trait.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
 #include "skill_defs.h"
@@ -5346,6 +5347,46 @@ void sectionGameTime()
         idCounter0, idNew1, idNew2, idRestored, idBadRestore, idReset);
 }
 
+void sectionTraitSelect()
+{
+    std::puts("[traitselect]");
+
+    // No window system needed, no traitsInit (it segfaults headless like
+    // statsInit/perksInit): selection state + static bonus tables work
+    // from zero state.
+    fallout::traitsReset();
+    fallout::Trait sel1 = fallout::TRAIT_INVALID;
+    fallout::Trait sel2 = fallout::TRAIT_INVALID;
+    fallout::traitsGetSelected(&sel1, &sel2);
+    fallout::traitsSetSelected((fallout::Trait)15, (fallout::Trait)7);
+    fallout::Trait got1 = fallout::TRAIT_INVALID;
+    fallout::Trait got2 = fallout::TRAIT_INVALID;
+    fallout::traitsGetSelected(&got1, &got2);
+    int isGifted = fallout::traitIsSelected((fallout::Trait)15) ? 1 : 0;
+    int isFastMeta = fallout::traitIsSelected((fallout::Trait)0) ? 1 : 0;
+    int statMod = fallout::traitGetStatModifier(fallout::STAT_STRENGTH);
+    int skillMod = fallout::traitGetSkillModifier(fallout::SKILL_SNEAK);
+    std::printf("sel0=%d,%d sel=%d,%d is=%d,%d statmod=%d skillmod=%d\n",
+        (int)sel1, (int)sel2, (int)got1, (int)got2, isGifted, isFastMeta, statMod, skillMod);
+
+    // Save/load roundtrip of the two selection slots.
+    fallout::File* saveStream = fallout::fileOpen((char*)"/tmp/trt.bin", (char*)"wb");
+    int saveRc = saveStream != nullptr ? fallout::traitsSave(saveStream) : -99;
+    if (saveStream != nullptr) {
+        fallout::fileClose(saveStream);
+    }
+    fallout::traitsReset();
+    fallout::File* loadStream = fallout::fileOpen((char*)"/tmp/trt.bin", (char*)"rb");
+    int loadRc = loadStream != nullptr ? fallout::traitsLoad(loadStream) : -99;
+    if (loadStream != nullptr) {
+        fallout::fileClose(loadStream);
+    }
+    fallout::Trait back1 = fallout::TRAIT_INVALID;
+    fallout::Trait back2 = fallout::TRAIT_INVALID;
+    fallout::traitsGetSelected(&back1, &back2);
+    std::printf("save=%d load=%d back=%d,%d\n", saveRc, loadRc, (int)back1, (int)back2);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5432,5 +5473,6 @@ int main()
     sectionStatSkill();
     sectionCombatSkill();
     sectionGameTime();
+    sectionTraitSelect();
     return 0;
 }
