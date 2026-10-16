@@ -5,14 +5,15 @@ import org.fallout2ce.ProtoTypes.Proto;
 import org.fallout2ce.ProtoTypes.ProtoId;
 
 /**
- * Prototype database read slice, mirroring {@code src/proto.cc} (read path
- * only): path building ({@code proto_make_path}), {@code .lst} mapping
+ * Prototype database read + creation slice, mirroring {@code src/proto.cc}:
+ * path building ({@code proto_make_path}), {@code .lst} mapping
  * ({@code _proto_list_str}), {@code .pro} binary parse ({@code protoRead} and
  * per-type sub-reads), the cache lists with eviction
  * ({@code _proto_find_free_subnode}/{@code _proto_remove_some_list}),
  * {@code protoGetProto} (Dude shortcut, list scan, eviction guard,
- * {@code protoLoadProtoId}) and {@code protoGetDataMember} with its
- * stale-value quirk.
+ * {@code protoLoadProtoId}), {@code protoGetDataMember} with its
+ * stale-value quirk, and {@code proto_new} (counter {@code _proto_new_id} +
+ * per-type {@code proto_*_init} defaults).
  *
  * <p>VFS reads reuse {@link Db#fileOpen} / {@code fileRead*} (big-endian,
  * like C {@code fileReadInt32} / {@code _db_freadInt} which are aliases).
@@ -815,6 +816,360 @@ public final class ProtoDb {
         return 0;
     }
 
+    // Fid fallback shared by the proto_*_init ports: frame (num - 1), or the
+    // type's reserved.frm when art is missing (no art/VFS in this slice, so
+    // the Reserved fid always wins — deterministic and disk-free, like the
+    // harness which never runs protoInit).
+    static int protoInitFid(ObjectType objectType, int protoNum) {
+        int fid = FrmId.ofType(objectType, protoNum - 1).fid();
+        if (!FrmId.ofFid(fid).exist()) {
+            fid = FrmId.ofType(objectType, 0).fid();
+        }
+        return fid;
+    }
+
+    // 0x49EBFC proto_item_subdata_init.
+    static int protoItemSubdataInit(Proto proto, ProtoTypes.ItemType type) {
+        if (type == null) {
+            return -1;
+        }
+        switch (type) {
+        case ITEM_TYPE_ARMOR:
+            proto.item.data.armor.armorClass = 0;
+            for (int i = 0; i < 7; i++) {
+                proto.item.data.armor.damageResistance[i] = 0;
+                proto.item.data.armor.damageThreshold[i] = 0;
+            }
+            proto.item.data.armor.perk = PerkDefs.Perk.PERK_INVALID;
+            proto.item.data.armor.maleFid = -1;
+            proto.item.data.armor.femaleFid = -1;
+            break;
+        case ITEM_TYPE_CONTAINER:
+            proto.item.data.container.openFlags = 0;
+            proto.item.data.container.maxSize = 250;
+            proto.item.extendedFlags = proto.item.extendedFlags
+                    .or(ProtoTypes.ProtoExtendedFlags.CAN_USE);
+            break;
+        case ITEM_TYPE_DRUG:
+            proto.item.data.drug.stat[0] = StatDefs.Stat.STAT_STRENGTH;
+            proto.item.data.drug.stat[1] = StatDefs.Stat.STAT_INVALID;
+            proto.item.data.drug.stat[2] = StatDefs.Stat.STAT_INVALID;
+            for (int i = 0; i < 3; i++) {
+                proto.item.data.drug.amount[i] = 0;
+                proto.item.data.drug.amount1[i] = 0;
+                proto.item.data.drug.amount2[i] = 0;
+            }
+            proto.item.data.drug.duration1 = 0;
+            proto.item.data.drug.duration2 = 0;
+            proto.item.data.drug.addictionChance = 0;
+            proto.item.data.drug.withdrawalEffect = PerkDefs.of(PerkDefs.PERK_FIRST);
+            proto.item.data.drug.withdrawalOnset = 0;
+            proto.item.extendedFlags = proto.item.extendedFlags
+                    .or(ProtoTypes.ProtoExtendedFlags.CAN_USE_ON);
+            break;
+        case ITEM_TYPE_WEAPON:
+            proto.item.data.weapon.animationCode = ArtDefs.WeaponAnimation.None;
+            proto.item.data.weapon.minDamage = 0;
+            proto.item.data.weapon.maxDamage = 0;
+            proto.item.data.weapon.damageType = ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
+            proto.item.data.weapon.maxRange1 = 0;
+            proto.item.data.weapon.maxRange2 = 0;
+            proto.item.data.weapon.projectilePid = ProtoId.EMPTY_PID;
+            proto.item.data.weapon.minStrength = 0;
+            proto.item.data.weapon.actionPointCost1 = 0;
+            proto.item.data.weapon.actionPointCost2 = 0;
+            proto.item.data.weapon.criticalFailureType = 0;
+            proto.item.data.weapon.perk = PerkDefs.Perk.PERK_INVALID;
+            proto.item.data.weapon.rounds = 0;
+            proto.item.data.weapon.caliber = ProtoTypes.CaliberType.CALIBER_NONE;
+            proto.item.data.weapon.ammoTypePid = ProtoId.EMPTY_PID;
+            proto.item.data.weapon.ammoCapacity = 0;
+            proto.item.data.weapon.soundCode = 0;
+            break;
+        case ITEM_TYPE_AMMO:
+            proto.item.data.ammo.caliber = ProtoTypes.CaliberType.CALIBER_NONE;
+            proto.item.data.ammo.quantity = 20;
+            proto.item.data.ammo.armorClassModifier = 0;
+            proto.item.data.ammo.damageResistanceModifier = 0;
+            proto.item.data.ammo.damageMultiplier = 1;
+            proto.item.data.ammo.damageDivisor = 1;
+            break;
+        case ITEM_TYPE_MISC:
+            proto.item.data.misc.powerTypePid = ProtoId.EMPTY_PID;
+            proto.item.data.misc.powerType = 20;
+            // NOTE: C leaves charges (malloc garbage) unset here; Java keeps 0.
+            break;
+        case ITEM_TYPE_KEY:
+            proto.item.data.key.keyCode = -1;
+            proto.item.extendedFlags = proto.item.extendedFlags
+                    .or(ProtoTypes.ProtoExtendedFlags.CAN_USE_ON);
+            break;
+        default:
+            break;
+        }
+        return 0;
+    }
+
+    // 0x49EB2C proto_item_init. C writes the union variant only; the header
+    // overlays it, so Java sets both (same duplication as protoRead).
+    static int protoItemInit(Proto proto, ProtoId protoId) {
+        int protoNum = protoId.protoId();
+        int fid = protoInitFid(ObjectType.ITEM, protoNum);
+
+        proto.pid = ProtoId.EMPTY_PID;
+        proto.messageId = 100 * protoNum;
+        proto.fid = fid;
+        proto.lightDistance = 0;
+        proto.lightIntensity = 0;
+        ProtoTypes.ProtoFlags flags = ProtoTypes.ProtoFlags.FLAT
+                .or(ProtoTypes.ProtoFlags.LIGHT_THRU)
+                .or(ProtoTypes.ProtoFlags.SHOOT_THRU);
+        proto.flags = flags;
+        ProtoTypes.ProtoExtendedFlags extendedFlags = ProtoTypes.ProtoExtendedFlags.LOOK
+                .or(ProtoTypes.ProtoExtendedFlags.CAN_PICK_UP);
+        proto.extendedFlags = extendedFlags;
+        proto.sid = -1;
+
+        proto.item.pid = ProtoId.EMPTY_PID;
+        proto.item.messageId = 100 * protoNum;
+        proto.item.fid = fid;
+        proto.item.lightDistance = 0;
+        proto.item.lightIntensity = 0;
+        proto.item.flags = flags;
+        proto.item.extendedFlags = extendedFlags;
+        proto.item.sid = -1;
+        proto.item.type = ProtoTypes.ItemType.ITEM_TYPE_MISC;
+        protoItemSubdataInit(proto, proto.item.type);
+        proto.item.material = ProtoTypes.MaterialType.MATERIAL_TYPE_METAL;
+        proto.item.size = 1;
+        proto.item.weight = 10;
+        proto.item.cost = 0;
+        proto.item.inventoryFid = -1;
+        proto.item.soundId = '0';
+        return 0;
+    }
+
+    // 0x49EDB4 proto_critter_init — NOTE-deferred.
+    static int protoCritterInit(Proto proto, ProtoId protoId) {
+        // Full init needs the stat-description defaults table (src/stat.cc
+        // gStatDescriptions), the skill reset (src/skill.cc) and the
+        // CritterFrmId art lookup; none are ported in this slice. Mirror only
+        // the C _protos_been_initialized gate. protoNew ignores this rc and
+        // still assigns the pid, like C.
+        if (!ObjectSystem.protosInitialized) {
+            return -1;
+        }
+        // Table-driven field init lands with the stat/skill/art ports.
+        return -1;
+    }
+
+    // 0x49FC74 proto_scenery_subdata_init.
+    static int protoScenerySubdataInit(Proto proto, ProtoTypes.SceneryType type) {
+        if (type == null) {
+            return -1;
+        }
+        switch (type) {
+        case SCENERY_TYPE_DOOR:
+            proto.scenery.data.door.openFlags = 0;
+            proto.scenery.extendedFlags = proto.scenery.extendedFlags
+                    .or(ProtoTypes.ProtoExtendedFlags.CAN_USE);
+            break;
+        case SCENERY_TYPE_STAIRS:
+            proto.scenery.data.stairs.destinationBuiltTile = -1;
+            proto.scenery.data.stairs.destinationMap = WorldmapDefs.Map.MAP_INVALID;
+            proto.scenery.extendedFlags = proto.scenery.extendedFlags
+                    .or(ProtoTypes.ProtoExtendedFlags.CAN_USE);
+            break;
+        case SCENERY_TYPE_ELEVATOR:
+            proto.scenery.data.elevator.type = -1;
+            proto.scenery.data.elevator.level = -1;
+            proto.scenery.extendedFlags = proto.scenery.extendedFlags
+                    .or(ProtoTypes.ProtoExtendedFlags.CAN_USE);
+            break;
+        case SCENERY_TYPE_LADDER_UP:
+        case SCENERY_TYPE_LADDER_DOWN:
+            proto.scenery.data.ladder.destinationBuiltTile = -1;
+            proto.scenery.extendedFlags = proto.scenery.extendedFlags
+                    .or(ProtoTypes.ProtoExtendedFlags.CAN_USE);
+            break;
+        default:
+            break;
+        }
+        return 0;
+    }
+
+    // 0x49FBBC proto_scenery_init (same header/variant duplication as above).
+    static int protoSceneryInit(Proto proto, ProtoId protoId) {
+        int protoNum = protoId.protoId();
+        int fid = protoInitFid(ObjectType.SCENERY, protoNum);
+
+        proto.pid = ProtoId.EMPTY_PID;
+        proto.messageId = 100 * protoNum;
+        proto.fid = fid;
+        proto.lightDistance = 0;
+        proto.lightIntensity = 0;
+        proto.flags = ProtoTypes.ProtoFlags.NONE;
+        ProtoTypes.ProtoExtendedFlags extendedFlags = ProtoTypes.ProtoExtendedFlags.LOOK;
+        proto.extendedFlags = extendedFlags;
+        proto.sid = -1;
+
+        proto.scenery.pid = ProtoId.EMPTY_PID;
+        proto.scenery.messageId = 100 * protoNum;
+        proto.scenery.fid = fid;
+        proto.scenery.lightDistance = 0;
+        proto.scenery.lightIntensity = 0;
+        proto.scenery.flags = ProtoTypes.ProtoFlags.NONE;
+        proto.scenery.extendedFlags = extendedFlags;
+        proto.scenery.sid = -1;
+        proto.scenery.type = ProtoTypes.SceneryType.SCENERY_TYPE_GENERIC;
+        protoScenerySubdataInit(proto, proto.scenery.type);
+        proto.scenery.material = ProtoTypes.MaterialType.MATERIAL_TYPE_INVALID;
+        proto.scenery.soundId = '0';
+        return 0;
+    }
+
+    // 0x49FCFC proto_wall_init.
+    static int protoWallInit(Proto proto, ProtoId protoId) {
+        int protoNum = protoId.protoId();
+        int fid = protoInitFid(ObjectType.WALL, protoNum);
+
+        proto.pid = ProtoId.EMPTY_PID;
+        proto.messageId = 100 * protoNum;
+        proto.fid = fid;
+        proto.lightDistance = 0;
+        proto.lightIntensity = 0;
+        proto.flags = ProtoTypes.ProtoFlags.NONE;
+        proto.extendedFlags = ProtoTypes.ProtoExtendedFlags.LOOK;
+        proto.sid = -1;
+
+        proto.wall.pid = ProtoId.EMPTY_PID;
+        proto.wall.messageId = 100 * protoNum;
+        proto.wall.fid = fid;
+        proto.wall.lightDistance = 0;
+        proto.wall.lightIntensity = 0;
+        proto.wall.flags = ProtoTypes.ProtoFlags.NONE;
+        proto.wall.extendedFlags = ProtoTypes.ProtoExtendedFlags.LOOK;
+        proto.wall.sid = -1;
+        proto.wall.material = ProtoTypes.MaterialType.MATERIAL_TYPE_METAL;
+        return 0;
+    }
+
+    // 0x49FD84 proto_tile_init (no light fields, like C).
+    static int protoTileInit(Proto proto, ProtoId protoId) {
+        int protoNum = protoId.protoId();
+        int fid = protoInitFid(ObjectType.TILE, protoNum);
+
+        proto.pid = ProtoId.EMPTY_PID;
+        proto.messageId = 100 * protoNum;
+        proto.fid = fid;
+        proto.flags = ProtoTypes.ProtoFlags.NONE;
+        proto.extendedFlags = ProtoTypes.ProtoExtendedFlags.LOOK;
+        proto.sid = -1;
+
+        proto.tile.pid = ProtoId.EMPTY_PID;
+        proto.tile.messageId = 100 * protoNum;
+        proto.tile.fid = fid;
+        proto.tile.flags = ProtoTypes.ProtoFlags.NONE;
+        proto.tile.extendedFlags = ProtoTypes.ProtoExtendedFlags.LOOK;
+        proto.tile.sid = -1;
+        proto.tile.material = ProtoTypes.MaterialType.MATERIAL_TYPE_METAL;
+        return 0;
+    }
+
+    // 0x49FDFC proto_misc_init (no sid, like C).
+    static int protoMiscInit(Proto proto, ProtoId protoId) {
+        int protoNum = protoId.protoId();
+        int fid = protoInitFid(ObjectType.MISC, protoNum);
+
+        proto.pid = ProtoId.EMPTY_PID;
+        proto.messageId = 100 * protoNum;
+        proto.fid = fid;
+        proto.lightDistance = 0;
+        proto.lightIntensity = 0;
+        proto.flags = ProtoTypes.ProtoFlags.NONE;
+        proto.extendedFlags = ProtoTypes.ProtoExtendedFlags.NONE;
+
+        proto.misc.pid = ProtoId.EMPTY_PID;
+        proto.misc.messageId = 100 * protoNum;
+        proto.misc.fid = fid;
+        proto.misc.lightDistance = 0;
+        proto.misc.lightIntensity = 0;
+        proto.misc.flags = ProtoTypes.ProtoFlags.NONE;
+        proto.misc.extendedFlags = ProtoTypes.ProtoExtendedFlags.NONE;
+        return 0;
+    }
+
+    // 0x4A21DC proto_new_id: take the list counter, then bump it. C switches
+    // on the type only to pick the phantom ItemProtoTypeId/... tag; pid
+    // packing is identical, so one build path covers all six proto types.
+    static ProtoId protoNewId(int type) {
+        int result = protoLists[type].maxEntriesNum;
+        protoLists[type].maxEntriesNum = result + 1;
+        if (type >= ObjTypes.OBJ_TYPE_FIRST && type < ObjTypes.OBJ_TYPE_PROTO_COUNT) {
+            return ProtoId.ofPid(ProtoId.buildPid(ObjTypes.ofObjectType(type), result));
+        }
+        return ProtoId.empty();
+    }
+
+    // 0x4A2214 proto_max_id.
+    public static int protoMaxId(int type) {
+        if (type < 0 || type >= protoLists.length) {
+            return -1;
+        }
+        return protoLists[type].maxEntriesNum;
+    }
+
+    // 0x4A1E90 proto_new: allocate the subnode first, then take the id, then
+    // init. The init rc is ignored and the pid is stored regardless, like C.
+    // C sets only the variant pid (the union overlays the header); Java sets
+    // both. An invalid type fails the subnode gate with no side effects.
+    public static int protoNew(ProtoId[] protoIdPtr, int type) {
+        Proto[] slot = new Proto[1];
+        if (findFreeSubnode(type, slot) == -1) {
+            return -1;
+        }
+        Proto proto = slot[0];
+
+        ProtoId protoId = protoNewId(type);
+        protoIdPtr[0] = protoId;
+
+        switch (type) {
+        case 0: // OBJ_TYPE_ITEM
+            protoItemInit(proto, protoId);
+            proto.pid = protoId.pid();
+            proto.item.pid = protoId.pid();
+            break;
+        case 1: // OBJ_TYPE_CRITTER
+            protoCritterInit(proto, protoId);
+            proto.pid = protoId.pid();
+            proto.critter.pid = protoId.pid();
+            break;
+        case 2: // OBJ_TYPE_SCENERY
+            protoSceneryInit(proto, protoId);
+            proto.pid = protoId.pid();
+            proto.scenery.pid = protoId.pid();
+            break;
+        case 3: // OBJ_TYPE_WALL
+            protoWallInit(proto, protoId);
+            proto.pid = protoId.pid();
+            proto.wall.pid = protoId.pid();
+            break;
+        case 4: // OBJ_TYPE_TILE
+            protoTileInit(proto, protoId);
+            proto.pid = protoId.pid();
+            proto.tile.pid = protoId.pid();
+            break;
+        case 5: // OBJ_TYPE_MISC
+            protoMiscInit(proto, protoId);
+            proto.pid = protoId.pid();
+            proto.misc.pid = protoId.pid();
+            break;
+        default:
+            return -1;
+        }
+        return 0;
+    }
+
     // 0x4A2040 proto_remove_some_list: evict the head extent.
     static void removeSomeList(int type) {
         if (type < 0 || type >= protoLists.length) {
@@ -1121,6 +1476,10 @@ public final class ProtoDb {
             protoLists[i].head = null;
             protoLists[i].tail = null;
             protoLists[i].length = 0;
+            // Fresh-process mirror: the static init seeds max_entries_num=1
+            // for the six proto types (0 above that); proto_new bumps it per
+            // id, so created protos must not leak their counters either.
+            protoLists[i].maxEntriesNum = i < ObjTypes.OBJ_TYPE_PROTO_COUNT ? 1 : 0;
         }
         cdPathBase = "";
     }

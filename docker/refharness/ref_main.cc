@@ -6002,6 +6002,28 @@ void sectionArtHide()
         sightedFind != nullptr ? 1 : 0);
 }
 
+void sectionProtoNew()
+{
+    std::puts("[protonew]");
+
+    // No window system needed. Fresh ids come off the list counters;
+    // defaults are compiled in (no protoInit here).
+    fallout::ProtoId newId;
+    int newRc = fallout::proto_new(newId, fallout::OBJ_TYPE_ITEM);
+    fallout::Proto* newProto = nullptr;
+    int getRc = newRc == 0 ? fallout::protoGetProto(newId, &newProto) : -99;
+    std::printf("new-rc=%d newpid=%d get=%d weight=%d cost=%d type=%d material=%d\n",
+        newRc, newId.pid(), getRc,
+        newProto != nullptr ? newProto->item.weight : -999,
+        newProto != nullptr ? newProto->item.cost : -999,
+        newProto != nullptr ? (int)newProto->item.type : -999,
+        newProto != nullptr ? (int)newProto->item.material : -999);
+
+    fallout::ProtoId badId;
+    int badRc = fallout::proto_new(badId, fallout::OBJ_TYPE_INVALID);
+    std::printf("bad-rc=%d\n", badRc);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -6106,5 +6128,6 @@ int main()
     sectionGameMouse();
     sectionGmouseEn();
     sectionArtHide();
+    sectionProtoNew();
     return 0;
 }
