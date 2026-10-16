@@ -374,4 +374,89 @@ class InventoryTest {
         assertEquals(-1, dropBadTile);
         assertEquals(1, qtyKept);
     }
+
+    @Test
+    void ammoContVectors() {
+        // [ammocont] from docker/refharness/golden/v64.txt, produced by
+        // sectionAmmoCont in docker/refharness/ref_main.cc. Ammo pile (pid
+        // 14, capacity 1) clamps the setQuantity sequence 7/huge/-5; the
+        // scorcher (pid 390) carries its own ammo capacity 6 with quantity
+        // 0; the box (pid 42) totals only the gun's size 2 (stim pid 40 and
+        // cash pid 41 are size 0).
+        GameObject[] ammoSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(ammoSlot, ProtoId.ofPid(14)));
+        assertNotNull(ammoSlot[0]);
+        GameObject ammo = ammoSlot[0];
+
+        int ammoCap = Item.ammoGetCapacity(ammo);
+        int ammoQty0 = Item.ammoGetQuantity(ammo);
+        Item.ammoSetQuantity(ammo, 7);
+        int ammoQty7 = Item.ammoGetQuantity(ammo);
+        Item.ammoSetQuantity(ammo, 1000000);
+        int ammoQtyClamped = Item.ammoGetQuantity(ammo);
+        Item.ammoSetQuantity(ammo, -5);
+        int ammoQtyZero = Item.ammoGetQuantity(ammo);
+
+        GameObject[] gunSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(gunSlot, ProtoId.ofPid(390)));
+        assertNotNull(gunSlot[0]);
+        GameObject gun = gunSlot[0];
+
+        int gunCap = Item.ammoGetCapacity(gun);
+        int gunQty = Item.ammoGetQuantity(gun);
+        int nullCap = Item.ammoGetCapacity(null);
+
+        // cap=1 qty=0,1,1,0 guncap=6 gunqty=0 nullcap=0
+        assertEquals(1, ammoCap);
+        assertEquals(0, ammoQty0);
+        assertEquals(1, ammoQty7);
+        assertEquals(1, ammoQtyClamped);
+        assertEquals(0, ammoQtyZero);
+        assertEquals(6, gunCap);
+        assertEquals(0, gunQty);
+        assertEquals(0, nullCap);
+
+        GameObject[] boxSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(boxSlot, ProtoId.ofPid(42)));
+        assertNotNull(boxSlot[0]);
+        GameObject box = boxSlot[0];
+
+        GameObject[] stimSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(stimSlot, ProtoId.ofPid(40)));
+        assertNotNull(stimSlot[0]);
+        GameObject stim = stimSlot[0];
+
+        GameObject[] cashSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(cashSlot, ProtoId.ofPid(41)));
+        assertNotNull(cashSlot[0]);
+        GameObject cash = cashSlot[0];
+
+        int maxSize = Item.containerGetMaxSize(box);
+        int total0 = Item.containerGetTotalSize(box);
+        assertEquals(0, Item.itemAdd(box, stim, 1));
+        int total1 = Item.containerGetTotalSize(box);
+        assertEquals(0, Item.itemAdd(box, cash, 2));
+        int total2 = Item.containerGetTotalSize(box);
+
+        GameObject[] gun2Slot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(gun2Slot, ProtoId.ofPid(390)));
+        assertNotNull(gun2Slot[0]);
+        GameObject gun2 = gun2Slot[0];
+
+        int gunSize = Item.itemGetSize(gun2);
+        assertEquals(0, Item.itemAdd(box, gun2, 1));
+        int total3 = Item.containerGetTotalSize(box);
+        int nullMax = Item.containerGetMaxSize(null);
+        int nullTotal = Item.containerGetTotalSize(null);
+
+        // maxsize=500 total=0,0,2 gunsize=2 null=0,0
+        assertEquals(500, maxSize);
+        assertEquals(0, total0);
+        assertEquals(0, total1);
+        assertEquals(0, total2);
+        assertEquals(2, total3);
+        assertEquals(2, gunSize);
+        assertEquals(0, nullMax);
+        assertEquals(0, nullTotal);
+    }
 }

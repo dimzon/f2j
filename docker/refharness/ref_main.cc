@@ -5639,6 +5639,53 @@ void sectionItemDrop()
     std::printf("dropempty=%d dropbadtile=%d qtykept=%d\n", dropEmpty, dropBadTile, qtyKept);
 }
 
+void sectionAmmoCont()
+{
+    std::puts("[ammocont]");
+
+    // No window system needed. Ammo piles clamp to proto capacity.
+    fallout::Object* ammo = nullptr;
+    fallout::objectCreateWithProtoId(&ammo, fallout::ProtoId(14));
+    int ammoCap = fallout::ammoGetCapacity(ammo);
+    int ammoQty0 = fallout::ammoGetQuantity(ammo);
+    fallout::ammoSetQuantity(ammo, 7);
+    int ammoQty7 = fallout::ammoGetQuantity(ammo);
+    fallout::ammoSetQuantity(ammo, 1000000);
+    int ammoQtyClamped = fallout::ammoGetQuantity(ammo);
+    fallout::ammoSetQuantity(ammo, -5);
+    int ammoQtyZero = fallout::ammoGetQuantity(ammo);
+    fallout::Object* gun = nullptr;
+    fallout::objectCreateWithProtoId(&gun, fallout::ProtoId(390));
+    int gunCap = fallout::ammoGetCapacity(gun);
+    int gunQty = fallout::ammoGetQuantity(gun);
+    int nullCap = fallout::ammoGetCapacity(nullptr);
+    std::printf("cap=%d qty=%d,%d,%d,%d guncap=%d gunqty=%d nullcap=%d\n",
+        ammoCap, ammoQty0, ammoQty7, ammoQtyClamped, ammoQtyZero, gunCap, gunQty, nullCap);
+
+    // Containers total the sizes of their contents.
+    fallout::Object* box = nullptr;
+    fallout::objectCreateWithProtoId(&box, fallout::ProtoId(42));
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    fallout::Object* cash = nullptr;
+    fallout::objectCreateWithProtoId(&cash, fallout::ProtoId(41));
+    int maxSize = fallout::containerGetMaxSize(box);
+    int total0 = fallout::containerGetTotalSize(box);
+    fallout::itemAdd(box, stim, 1);
+    int total1 = fallout::containerGetTotalSize(box);
+    fallout::itemAdd(box, cash, 2);
+    int total2 = fallout::containerGetTotalSize(box);
+    fallout::Object* gun2 = nullptr;
+    fallout::objectCreateWithProtoId(&gun2, fallout::ProtoId(390));
+    int gunSize = fallout::itemGetSize(gun2);
+    fallout::itemAdd(box, gun2, 1);
+    int total3 = fallout::containerGetTotalSize(box);
+    int nullMax = fallout::containerGetMaxSize(nullptr);
+    int nullTotal = fallout::containerGetTotalSize(nullptr);
+    std::printf("maxsize=%d total=%d,%d,%d gunsize=%d null=%d,%d\n",
+        maxSize, total1, total2, total3, gunSize, nullMax, nullTotal);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -5733,5 +5780,6 @@ int main()
     sectionBallistics();
     sectionItemMove();
     sectionItemDrop();
+    sectionAmmoCont();
     return 0;
 }

@@ -54,7 +54,20 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * move-all, remove + destroy + null-destroy) and {@code [itemdrop]} in
  * {@code docker/refharness/golden/v63.txt} (produced by
  * {@code sectionItemDrop}: full drop at tile {@code 20100}, empty drop,
- * bad-tile drop with stack restore).
+ * bad-tile drop with stack restore), plus the ammo/container/size slice:
+ * {@code ammoGetCapacity}, {@code ammoGetQuantity}, {@code ammoSetQuantity}
+ * (clamp to {@code [0, capacity]}), {@code itemGetSize} (pure proto read),
+ * {@code containerGetMaxSize}, {@code containerGetTotalSize}.
+ * {@code [ammocont]} vectors live in
+ * {@code docker/refharness/golden/v64.txt} (produced by
+ * {@code sectionAmmoCont} in {@code docker/refharness/ref_main.cc}).
+ *
+ * <p>NOTE (caliber scope): {@code ammoGetCaliber} ({@code src/item.cc}
+ * {@code 0x4786C8}) is intentionally unported. It is not a one-liner pure
+ * read: ammo protos read {@code data.ammo.caliber} directly, but weapons
+ * hop through {@code data.item.weapon.ammoTypePid} into a second
+ * {@code protoGetProto} with a {@code -1} miss check. It is not vectored
+ * by the harness, so it stays out until a vector needs it.
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
