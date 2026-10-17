@@ -1,8 +1,14 @@
 package org.fallout2ce;
 
+import java.awt.image.BufferedImage;
+import java.awt.image.IndexColorModel;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+
+import javax.imageio.ImageIO;
 
 /**
  * Port of the cache-free part of {@code src/art.cc}: FRM header/frame
@@ -1029,8 +1035,7 @@ public final class Art {
         }
 
         if (pathHasExtension(path, ".png")) {
-            // TODO(png): indexed-PNG validation + decode via ImageIO metadata.
-            return null;
+            return artLoadPng(path);
         }
 
         if (pathHasExtension(path, ".pcx")) {
@@ -1077,6 +1082,103 @@ public final class Art {
         }
 
         return artLoadFrm(path);
+    }
+
+    /** artLoad for {@code .png}: indexed-PNG validation + decode via ImageIO metadata. */
+    static ArtData artLoadPng(String path) {
+        XFile.Handle stream = Db.fileOpen(path, "rb");
+        if (stream == null) {
+            Debug.print("ART ERROR: rejected %s: png open failed\n", path);
+            return null;
+        }
+
+        long size = Db.fileGetSize(stream);
+        if (size <= 0 || size > Integer.MAX_VALUE) {
+            Db.fileClose(stream);
+            Debug.print("ART ERROR: rejected %s: invalid png size %d\n", path, size);
+            return null;
+        }
+
+        byte[] data = new byte[(int) size];
+        if (Db.fileRead(data, 0, 1, (int) size, stream) != (int) size) {
+            Db.fileClose(stream);
+            Debug.print("ART ERROR: rejected %s: png read failed\n", path);
+            return null;
+        }
+        Db.fileClose(stream);
+
+        BufferedImage image;
+        try (ByteArrayInputStream in = new ByteArrayInputStream(data)) {
+            image = ImageIO.read(in);
+        } catch (IOException e) {
+            Debug.print("ART ERROR: rejected %s: png decode failed: %s\n", path, e.getMessage());
+            return null;
+        }
+
+        if (image == null) {
+            Debug.print("ART ERROR: rejected %s: png decode returned null\n", path);
+            return null;
+        }
+
+        if (image.getType() != BufferedImage.TYPE_BYTE_INDEXED) {
+            Debug.print("ART ERROR: rejected %s: png not indexed (type %d)\n", path, image.getType());
+            return null;
+        }
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        IndexColorModel cm = (IndexColorModel) image.getColorModel();
+        int mapSize = cm.getMapSize();
+        byte[] palette = new byte[mapSize * 3];
+        byte[] r = new byte[mapSize];
+        byte[] g = new byte[mapSize];
+        byte[] b = new byte[mapSize];
+        cm.getReds(r);
+        cm.getGreens(g);
+        cm.getBlues(b);
+        for (int i = 0; i < mapSize; i++) {
+            palette[i * 3] = r[i];
+            palette[i * 3 + 1] = g[i];
+            palette[i * 3 + 2] = b[i];
+        }
+
+        byte[] pixels = new byte[width * height];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                pixels[y * width + x] = (byte) image.getRGB(x, y);
+            }
+        }
+
+        ArtData art = new ArtData();
+        art.version = 0;
+        art.framesPerSecond = 0;
+        art.actionFrame = 0;
+        art.frameCount = 1;
+
+        int dataSize = pixels.length;
+        for (int i = 0; i < Rotation.COUNT; i++) {
+            art.xOffsets[i] = 0;
+            art.yOffsets[i] = 0;
+            art.dataOffsets[i] = (i == 0) ? 0 : dataSize;
+            art.padding[i] = 0;
+        }
+        art.dataSize = dataSize;
+
+        Art.Frame frame = new Art.Frame();
+        frame.width = width;
+        frame.height = height;
+        frame.size = dataSize;
+        frame.x = 0;
+        frame.y = 0;
+        frame.pixels = pixels;
+        art.frames.add(frame);
+
+        for (int i = 0; i < Rotation.COUNT; i++) {
+            art.rotationBase[i] = 0;
+        }
+
+        return art;
     }
 
     static ArtData artLoadLocalized(String path) {
