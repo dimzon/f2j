@@ -25,9 +25,12 @@ import org.fallout2ce.ObjTypes.GameObject;
  *
  * <p>The C++ child also ran {@code mapSetEnteringLocation(-1,-1,INVALID)}
  * (isoInit's tail) so the load adopts the header's entering spot; the test
- * mirrors that. Script/object/random-encounter phases are game-phase seams
- * (script engine, object load, worldmap) — the {@code objects=571} vector
- * therefore is not reproduced here.
+ * mirrors that. Script/object loading is ported ({@link ObjectSystem#scriptLoadAll}
+ * / {@link ObjectSystem#objectLoadAll}, {@code objectRead}/{@code objectDataRead},
+ * recursive {@code _obj_load_obj}); the script binding and ScrollBlocker script
+ * linkage stay game-phase seams. The {@code objects=571} vector is reproduced
+ * (dude + egg + hex cursor + the map's 567 objects + the ScrollBlocker the C++
+ * map script creates).
  */
 class MapLoadTest {
 
@@ -148,7 +151,13 @@ class MapLoadTest {
 
         GameObject dude = ObjectSystem.getDude();
         assertNotNull(dude);
-        assertEquals("dude=18492,0,0",
-                "dude=" + dude.tile + "," + dude.elevation + "," + dude.rotation.id());
+        int objectCount = 0;
+        for (GameObject o = ObjectSystem.objectFindFirst(); o != null;
+                o = ObjectSystem.objectFindNext()) {
+            objectCount++;
+        }
+        assertEquals("objects=571 dude=18492,0,0",
+                "objects=" + objectCount
+                        + " dude=" + dude.tile + "," + dude.elevation + "," + dude.rotation.id());
     }
 }

@@ -2272,6 +2272,448 @@ public final class ObjectSystem {
     }
 
     /** Test seam: clear the lists + find cursor state + counter (fresh-process mirror). */
+    // ===== object load (src/object.cc + src/proto.cc) =====
+
+    // Fids of the objects loaded by the last {@link #objectLoadAll}, in read order.
+    private static final List<Integer> gObjectFids = new java.util.ArrayList<>();
+
+    // 0x49EF40 objectCritterCombatDataRead (src/proto.cc).
+    static int objectCritterCombatDataRead(ObjTypes.CritterCombatData data, XFile.Handle stream) {
+        int[] v = new int[1];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        data.damageLastTurn = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        data.maneuver = new ObjTypes.CritterManeuver(v[0]);
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        data.ap = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        data.results = new ObjTypes.Dam(v[0]);
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        data.aiPacket = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        data.team = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        data.whoHitMeCid = v[0];
+        return 0;
+    }
+
+    // 0x49F004 objectDataRead (src/proto.cc). The inventory length comes back
+    // via {@code inventoryLengthOut} so the caller reads the items after.
+    static int objectDataRead(GameObject obj, XFile.Handle stream, int[] inventoryLengthOut) {
+        int[] v = new int[1];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        int length = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        int capacity = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1; // items pointer (meaningless)
+        if (length < 0 || capacity < length) {
+            return -1;
+        }
+        inventoryLengthOut[0] = length;
+
+        if (ProtoTypes.ProtoId.ofGameObject(obj).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            obj.data.critter.reaction = v[0];
+            if (objectCritterCombatDataRead(obj.data.critter.combat, stream) == -1) return -1;
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            obj.data.critter.hp = v[0];
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            obj.data.critter.radiation = v[0];
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            obj.data.critter.poison = v[0];
+        } else {
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            obj.data.flags = v[0];
+            if (obj.data.flags == 0xCCCCCCCC) {
+                obj.data.flags = 0;
+            }
+
+            ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofGameObject(obj);
+            switch (protoId.objectType()) {
+            case OBJ_TYPE_ITEM: {
+                ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+                if (ProtoDb.protoGetProto(protoId, slot) == -1) return -1;
+                switch (slot[0].item.type) {
+                case ITEM_TYPE_WEAPON:
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.item.weapon.ammoQuantity = v[0];
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.item.weapon.ammoTypePid = v[0];
+                    break;
+                case ITEM_TYPE_AMMO:
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.item.ammo.quantity = v[0];
+                    break;
+                case ITEM_TYPE_MISC:
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.item.misc.charges = v[0];
+                    break;
+                case ITEM_TYPE_KEY:
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.item.key.keyCode = v[0];
+                    break;
+                default:
+                    break;
+                }
+                break;
+            }
+            case OBJ_TYPE_SCENERY: {
+                ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+                if (ProtoDb.protoGetProto(protoId, slot) == -1) return -1;
+                switch (slot[0].scenery.type) {
+                case SCENERY_TYPE_DOOR:
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.scenery.door.openFlags = v[0];
+                    break;
+                case SCENERY_TYPE_STAIRS:
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.scenery.stairs.destinationBuiltTile = v[0];
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.scenery.stairs.destinationMap = WorldmapDefs.ofMap(v[0]);
+                    break;
+                case SCENERY_TYPE_ELEVATOR:
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.scenery.elevator.type = v[0];
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.scenery.elevator.level = v[0];
+                    break;
+                case SCENERY_TYPE_LADDER_UP:
+                case SCENERY_TYPE_LADDER_DOWN:
+                    if (Map.gMapHeader.version == 19) {
+                        if (Db.fileReadInt32(stream, v) == -1) return -1;
+                        obj.data.scenery.ladder.destinationBuiltTile = v[0];
+                    } else {
+                        if (Db.fileReadInt32(stream, v) == -1) return -1;
+                        obj.data.scenery.ladder.destinationMap = WorldmapDefs.ofMap(v[0]);
+                        if (Db.fileReadInt32(stream, v) == -1) return -1;
+                        obj.data.scenery.ladder.destinationBuiltTile = v[0];
+                    }
+                    break;
+                default:
+                    break;
+                }
+                break;
+            }
+            case OBJ_TYPE_MISC:
+                if (ProtoDefs.isExitGridProtoId(protoId)) {
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.misc.map = WorldmapDefs.ofMap(v[0]);
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.misc.tile = v[0];
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.misc.elevation = v[0];
+                    if (Db.fileReadInt32(stream, v) == -1) return -1;
+                    obj.data.misc.rotation = ObjTypes.ofRotation(v[0]);
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        return 0;
+    }
+
+    // 0x4890F0 objectRead: fields + data. The exit-grid fid fix and
+    // item-ammo fix are field-only (no stream reads) and do not affect the
+    // object count, so they are documented seams.
+    static int objectRead(GameObject obj, XFile.Handle stream, int[] inventoryLengthOut) {
+        int[] v = new int[1];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.id = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.tile = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.x = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.y = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.sx = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.sy = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.frame = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.rotation = ObjTypes.ofRotation(v[0]);
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.fid = v[0];
+        long[] u = new long[1];
+        if (Db.fileReadUInt32(stream, u) == -1) return -1;
+        obj.flags = new ObjTypes.ObjectFlags((int) u[0]);
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.elevation = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.pid = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.cid = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.lightDistance = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.lightIntensity = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        // field_74 (unused)
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.sid = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        obj.scriptIndex = v[0];
+        obj.outline = OutlineType.NONE;
+        obj.owner = null;
+        if (objectDataRead(obj, stream, inventoryLengthOut) != 0) return -1;
+        return 0;
+    }
+
+    // 0x489140 _obj_load_obj (recursive).
+    static int objLoadObj(XFile.Handle stream, GameObject[] objectPtr, int elevation, GameObject owner) {
+        GameObject obj = objectAllocate();
+        if (obj == null) {
+            objectPtr[0] = null;
+            return -1;
+        }
+        int[] invLen = new int[1];
+        if (objectRead(obj, stream, invLen) != 0) {
+            objectPtr[0] = null;
+            return -1;
+        }
+        if (obj.sid != -1) {
+            // scriptGetScript: game phase (script engine); on miss C sets sid=-1.
+            obj.sid = -1;
+        }
+        // _obj_fix_violence_settings: field-only seam.
+        if (!FrmId.ofFid(obj.fid).exist()) {
+            objectPtr[0] = null;
+            return -2;
+        }
+        if (elevation == -1) {
+            elevation = obj.elevation;
+        } else {
+            obj.elevation = elevation;
+        }
+        obj.owner = owner;
+        if (invLen[0] <= 0) {
+            objectPtr[0] = obj;
+            return 0;
+        }
+        for (int index = 0; index < invLen[0]; index++) {
+            int[] q = new int[1];
+            if (Db.fileReadInt32(stream, q) == -1) return -1;
+            ObjTypes.InventoryItem item = new ObjTypes.InventoryItem();
+            item.quantity = q[0];
+            obj.data.inventory.items.add(item);
+            GameObject[] itemPtr = new GameObject[1];
+            if (objLoadObj(stream, itemPtr, elevation, obj) != 0) return -1;
+            item.item = itemPtr[0];
+        }
+        objectPtr[0] = obj;
+        return 0;
+    }
+
+    // 0x488CF8 objectLoadAllInternal.
+    static int objectLoadAllInternal(XFile.Handle stream) {
+        if (stream == null) {
+            return -1;
+        }
+        // settings.mapper.fix_map_inventory: seam (false headless).
+        // gViolenceLevel: field-only seam.
+        int[] v = new int[1];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        int objectCount = v[0];
+        if (objectCount < 0) {
+            return -1;
+        }
+        gObjectFids.clear();
+
+        for (int elevation = 0; elevation < MapDefs.ELEVATION_COUNT; elevation++) {
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            int countAtElevation = v[0];
+            if (countAtElevation < 0 || countAtElevation > objectCount - gObjectFids.size()) {
+                return -1;
+            }
+            for (int index = 0; index < countAtElevation; index++) {
+                GameObject obj = objectAllocate();
+                if (obj == null) return -1;
+                int[] invLen = new int[1];
+                if (objectRead(obj, stream, invLen) != 0) return -1;
+                obj.outline = OutlineType.NONE;
+                gObjectFids.add(obj.fid);
+                if (obj.sid != -1) {
+                    // scriptGetScript: game phase; on miss sid=-1.
+                    obj.sid = -1;
+                }
+                // _obj_fix_violence_settings: field-only seam.
+                obj.elevation = elevation;
+                GameObjectListNode node = new GameObjectListNode();
+                node.obj = obj;
+                insertNode(node);
+                if ((obj.flags.bits() & ObjTypes.ObjectFlags.NO_REMOVE.bits()) != 0
+                        && ProtoTypes.ProtoId.ofGameObject(obj).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER
+                        && obj.pid != 18000) {
+                    obj.flags = obj.flags.and(ObjTypes.ObjectFlags.NO_REMOVE.not());
+                }
+                if (invLen[0] != 0) {
+                    for (int itemIndex = 0; itemIndex < invLen[0]; itemIndex++) {
+                        int[] q = new int[1];
+                        if (Db.fileReadInt32(stream, q) == -1) return -1;
+                        ObjTypes.InventoryItem item = new ObjTypes.InventoryItem();
+                        item.quantity = q[0];
+                        obj.data.inventory.items.add(item);
+                        GameObject[] itemPtr = new GameObject[1];
+                        if (objLoadObj(stream, itemPtr, elevation, obj) == -1) return -1;
+                        item.item = itemPtr[0];
+                    }
+                }
+            }
+        }
+
+        if (gObjectFids.size() != objectCount) {
+            return -1;
+        }
+        objRebuildAllLight();
+        return 0;
+    }
+
+    // 0x488CE4 objectLoadAll.
+    public static int objectLoadAll(XFile.Handle stream) {
+        int rc = objectLoadAllInternal(stream);
+        // gViolenceLevel = VIOLENCE_LEVEL_INVALID: field-only seam.
+        return rc;
+    }
+
+    // ===== script load (src/scripts.cc) =====
+
+    static final int SCRIPT_TYPE_COUNT = 5;
+    static final int SCRIPT_TYPE_FIRST = 0;
+    static final int SCRIPT_TYPE_SPATIAL = 1;
+    static final int SCRIPT_TYPE_TIMED = 2;
+    static final int SCRIPT_PROC_COUNT = 28;
+    static final int SCRIPT_LIST_EXTENT_SIZE = 16;
+    static final int MAP_HEADER_SAVED = 0x01;
+
+    /** Minimal Script holder for the load boundary. */
+    static final class Script {
+        int sid;
+        int field4;
+        int builtTile;
+        int radius;
+        int time;
+        int flags;
+        int index;
+        int ownerId;
+        int localVarsOffset;
+        int localVarsCount;
+        int returnValue;
+        int action;
+        int fixedParam;
+        int actionBeingUsed;
+        int scriptOverrides;
+        int field48;
+        int howMuch;
+        int field50;
+        final int[] procs = new int[SCRIPT_PROC_COUNT];
+    }
+
+    static int scriptTypeFromSid(int sid) {
+        return sid >> 24;
+    }
+
+    // 0x4A5B88 scriptRead.
+    static int scriptRead(Script scr, XFile.Handle stream) {
+        int[] v = new int[1];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.sid = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.field4 = v[0];
+        switch (scriptTypeFromSid(scr.sid)) {
+        case SCRIPT_TYPE_SPATIAL:
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            scr.builtTile = v[0];
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            scr.radius = v[0];
+            break;
+        case SCRIPT_TYPE_TIMED:
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            scr.time = v[0];
+            break;
+        default:
+            break;
+        }
+        long[] u = new long[1];
+        if (Db.fileReadUInt32(stream, u) == -1) return -1;
+        scr.flags = (int) u[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.index = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1; // prg
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.ownerId = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.localVarsOffset = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.localVarsCount = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.returnValue = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.action = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.fixedParam = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.actionBeingUsed = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.scriptOverrides = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.field48 = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.howMuch = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        scr.field50 = v[0];
+        // procs zeroed, program/owner/source/target null, overriddenSelf null.
+        if ((Map.gMapHeader.flags & MAP_HEADER_SAVED) == 0) {
+            scr.localVarsCount = 0;
+        }
+        return 0;
+    }
+
+    // 0x4A5BE8 scriptListExtentRead.
+    static int scriptListExtentRead(int expectedLength, XFile.Handle stream) {
+        for (int index = 0; index < SCRIPT_LIST_EXTENT_SIZE; index++) {
+            Script scr = new Script();
+            if (scriptRead(scr, stream) != 0) {
+                return -1;
+            }
+        }
+        int[] v = new int[1];
+        if (Db.fileReadInt32(stream, v) != 0) return -1;
+        if (v[0] != expectedLength) {
+            return -1;
+        }
+        if (Db.fileReadInt32(stream, v) != 0) return -1;
+        return 0;
+    }
+
+    // 0x4A5B88 scriptLoadAll.
+    static int scriptLoadAll(XFile.Handle stream) {
+        for (int index = SCRIPT_TYPE_FIRST; index < SCRIPT_TYPE_COUNT; index++) {
+            int[] v = new int[1];
+            if (Db.fileReadInt32(stream, v) == -1) return -1;
+            int scriptsCount = v[0];
+            if (scriptsCount < 0) {
+                return -1;
+            }
+            if (scriptsCount != 0) {
+                int length = scriptsCount / SCRIPT_LIST_EXTENT_SIZE;
+                if (scriptsCount % SCRIPT_LIST_EXTENT_SIZE != 0) {
+                    length++;
+                }
+                int remaining = scriptsCount;
+                for (int extentIndex = 0; extentIndex < length; extentIndex++) {
+                    int expectedLength = Math.min(remaining, SCRIPT_LIST_EXTENT_SIZE);
+                    if (scriptListExtentRead(expectedLength, stream) != 0) {
+                        return -1;
+                    }
+                    remaining -= expectedLength;
+                }
+            }
+        }
+        return 0;
+    }
+
     static void resetForTests() {
         head = null;
         tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];

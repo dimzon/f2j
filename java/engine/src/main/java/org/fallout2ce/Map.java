@@ -427,9 +427,14 @@ public final class Map {
             return -1;
         }
 
-        // scriptLoadAll / objectLoadAll / _map_fix_critter_combat_data /
-        // wmSetupRandomEncounter: game phase (script engine, object load,
-        // worldmap encounter tables). Documented seams.
+        if (ObjectSystem.scriptLoadAll(stream) != 0) {
+            return -1;
+        }
+        if (ObjectSystem.objectLoadAll(stream) != 0) {
+            return -1;
+        }
+
+        // _map_fix_critter_combat_data: game phase (script engine), seam.
 
         if (mapSetElevation(EnteringLocation.getEnteringElevation()) != 0) {
             return -1;
@@ -446,8 +451,24 @@ public final class Map {
             ObjectSystem.objectSetRotation(dude, EnteringLocation.getEnteringRotation().value());
         }
 
-        // gMapHeader.index / globalVarsRead / scriptsEnable / scriptAdd /
-        // wmSetupRandomEncounter: game phase (worldmap, script engine).
+        // Map script (scriptAdd): game phase (script engine). The C++ also
+        // creates a hidden ScrollBlocker object for the map script; port the
+        // object creation (the script binding itself is a documented seam).
+        if (gMapHeader.scriptIndex > 0) {
+            GameObject[] blockerPtr = new GameObject[1];
+            ObjectSystem.objectCreateWithFrmIdProtoId(blockerPtr,
+                    FrmId.ofType(ObjectType.MISC, ArtDefs.MiscFrameId.ScrollBlocker.id()),
+                    ProtoTypes.ProtoId.empty());
+            GameObject blocker = blockerPtr[0];
+            if (blocker != null) {
+                blocker.flags = blocker.flags.or(ObjectFlags.LIGHT_THRU)
+                        .or(ObjectFlags.NO_SAVE).or(ObjectFlags.HIDDEN);
+                ObjectSystem.objectSetLocation(blocker, 1, 0);
+            }
+        }
+
+        // gMapHeader.index / globalVarsRead / scriptsEnable / wmSetupRandomEncounter:
+        // game phase (worldmap, script engine).
         placeDudeAndMouse();
         // isoEnable / fileSetReadProgressHandler: game phase (tickers).
         return 0;
