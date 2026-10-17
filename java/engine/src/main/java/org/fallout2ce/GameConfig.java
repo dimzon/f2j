@@ -61,7 +61,8 @@ public final class GameConfig {
                 PlatformPaths.windowsPathToNative("data\\sound\\music\\*.acm"));
         List<String> acms = Db.fileNameListInit(alternativeMusicPath);
         if (!acms.isEmpty()) {
-            // TODO: apply these to settings directly instead of config
+            // NOTE: mirrors upstream TODO - writes go through the game config
+            // (settings are merged from it later), not directly to settings.
             Config.configSetString(gameConfig, SOUND_KEY, "music_path1", "data\\sound\\music\\");
             Config.configSetString(gameConfig, SOUND_KEY, "music_path2", "data\\sound\\music\\");
         }

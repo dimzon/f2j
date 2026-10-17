@@ -6,8 +6,8 @@ import java.util.List;
 /**
  * Port of {@code src/sfall_filesystem.cc} (alias registry only).
  *
- * <p>NOTE: {@code artCacheFlush()} call sites are TODO — wired when the
- * art module lands (no observable behavior without it today).
+ * <p>{@code artCacheFlush()} runs after every alias mutation, matching
+ * {@code src/sfall_filesystem.cc}.
  */
 public final class SfallFileSystem {
 
@@ -81,13 +81,13 @@ public final class SfallFileSystem {
         for (int index = 0; index < aliases.size(); index++) {
             if (!aliases.get(index).active) {
                 aliases.set(index, alias);
-                // TODO(art): artCacheFlush();
+                Art.artCacheFlush();
                 return index;
             }
         }
 
         aliases.add(alias);
-        // TODO(art): artCacheFlush();
+        Art.artCacheFlush();
         return aliases.size() - 1;
     }
 
@@ -104,7 +104,7 @@ public final class SfallFileSystem {
         alias.path = "";
         alias.source = "";
         alias.normalizedPath = "";
-        // TODO(art): artCacheFlush();
+        Art.artCacheFlush();
     }
 
     public static void sfallFileSystemReset() {
@@ -112,7 +112,7 @@ public final class SfallFileSystem {
             return;
         }
         aliases.clear();
-        // TODO(art): artCacheFlush();
+        Art.artCacheFlush();
     }
 
     public static String sfallFileSystemResolveAlias(String path) {

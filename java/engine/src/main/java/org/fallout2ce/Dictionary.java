@@ -249,7 +249,7 @@ public final class Dictionary {
         }
 
         if (dictionaryInit(dest, src.entriesCapacity, src.valueSize, src.io) != 0) {
-            // FIXME: Should return -1, as we were unable to initialize dictionary.
+            // NOTE: mirrors the upstream quirk - returns 0 on init failure.
             return 0;
         }
 

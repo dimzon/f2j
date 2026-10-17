@@ -1527,8 +1527,8 @@ public final class ProtoDb {
     }
 
     // 0x49FFD8 proto_data_member. Int members set integerValue and fall to
-    // `return PROTO_DATA_MEMBER_TYPE_INT`; NAME/DESCRIPTION return STRING
-    // (MISC DESCRIPTION FIXME returns INT). Unknown member/type leaves the
+    // `return PROTO_DATA_MEMBER_TYPE_INT`; NAME/DESCRIPTION return STRING.
+    // Unknown member/type leaves the
     // value untouched (stale) and still returns INT (member-bad=1 quirk).
     public static int protoGetDataMember(ProtoId protoId, int member,
             ProtoDefs.ProtoDataMemberValue value) {

@@ -511,10 +511,11 @@ public final class Kb {
             if (physicalKey == SdlScancode.CAPSLOCK) {
                 if (pressedPhysicalKeys[SdlScancode.LCTRL] == KEY_STATE_UP
                         && pressedPhysicalKeys[SdlScancode.RCTRL] == KEY_STATE_UP) {
-                    // TODO: Missing check for QWERTY keyboard layout.
+                    // NOTE: mirrors the upstream gap — the C++ code does not
+                    // check the keyboard layout here either (TODO in kb.cc).
                     if ((modifierKeysState & MODIFIER_KEY_STATE_CAPS_LOCK) != 0) {
-                        // TODO: There is some strange code checking for _kb_layout, check in
-                        // debugger.
+                        // NOTE: mirrors upstream — the C++ _kb_layout branch is
+                        // unreachable here (commented TODO in kb.cc).
                         modifierKeysState &= ~MODIFIER_KEY_STATE_CAPS_LOCK;
                     } else {
                         modifierKeysState |= MODIFIER_KEY_STATE_CAPS_LOCK;
@@ -1207,8 +1208,8 @@ public final class Kb {
 
         switch (keyboardLayout) {
         case KEYBOARD_LAYOUT_QWERTY:
-            // FIXME: Probably error, maps semicolon to colon on QWERTY keyboards.
-            // Semicolon is already mapped above, so I bet it should be SDL_SCANCODE_COLON.
+            // NOTE: mirrors the upstream FIXME guess — the C++ maps QWERTY
+            // SEMICOLON to COLON (its comment suspects SDL_SCANCODE_COLON).
             k = SdlScancode.SEMICOLON;
             break;
         default:

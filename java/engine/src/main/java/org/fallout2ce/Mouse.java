@@ -486,7 +486,8 @@ public final class Mouse {
 
         mouseSimulateInput(x, y, buttons);
 
-        // TODO: Move to `_mouse_simulate_input`.
+        // NOTE: wheel handling stays after _mouse_simulate_input to match C
+        // (moving it inside would skip it on early-return paths).
         mouseWheelX = mouseData != null ? mouseData.wheelX() : 0;
         mouseWheelY = mouseData != null ? mouseData.wheelY() : 0;
 

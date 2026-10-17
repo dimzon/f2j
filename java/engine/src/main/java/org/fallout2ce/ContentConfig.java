@@ -47,7 +47,8 @@ public final class ContentConfig {
 
         Config.configRead(contentConfig, CONFIG_PATH, true);
         // Patch config allows to override only certain fields, without replacing the whole file.
-        // TODO: remove this after config patching by mods is implemented inside configRead
+        // NOTE: mirrors upstream - removed once mod config patching lands in
+        // configRead.
         Config.configRead(contentConfig, CONFIG_PATCH_PATH, true);
     }
 

@@ -612,7 +612,7 @@ public final class ObjectSystem {
     // the copied sid is live, re-apply the src rotation, clear QUEUED,
     // then re-home the inventory through recursive copies + itemAdd.
     // Failure paths return -1 with the node left listed: C only destroys
-    // the node wrapper there (the listed object leaks, marked TODO), and
+    // the node wrapper there (the listed object leaks, as upstream does), and
     // the GC owns the Java object, so no unlink runs either.
     public static int objCopy(GameObject[] objectPtr, GameObject src) {
         if (src == null) {

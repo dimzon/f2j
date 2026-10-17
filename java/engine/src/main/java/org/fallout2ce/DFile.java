@@ -316,9 +316,9 @@ public final class DFile {
                     return 1;
                 }
 
-                // NOTE: C does NOT update position here (only the FIXME'd
-                // compressedBytesRead). The tracked position goes stale;
-                // mirrored exactly.
+                // NOTE: C does NOT update position here (only the
+                // compressedBytesRead field, an upstream quirk). The tracked
+                // position goes stale; mirrored exactly.
                 stream.compressedBytesRead = (int) offsetFromBeginning;
             }
 

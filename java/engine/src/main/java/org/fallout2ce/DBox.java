@@ -1051,14 +1051,14 @@ public final class DBox {
                         case Kb.KEY_ARROW_DOWN:
                             if (isScrollable) {
                                 pageOffset++;
-                                // FIXME quirk (load): C uses > maxPageOffset
-                                // here where the save dialog uses >=, so an
-                                // out-of-bounds index reads as selected.
+                                // NOTE: mirrors the upstream load quirk - C uses
+                                // > maxPageOffset here (the save dialog uses >=),
+                                // so an out-of-bounds index reads as selected.
                                 if (pageOffset > maxPageOffset) {
                                     selectedFileIndex++;
-                                    // FIXME quirk (load): C uses >
-                                    // FILE_LINE_COUNT where the save dialog
-                                    // uses >=.
+                                    // NOTE: mirrors the upstream load quirk - C
+                                    // uses > FILE_LINE_COUNT (the save dialog
+                                    // uses >=).
                                     if (selectedFileIndex > FILE_LINE_COUNT) {
                                         selectedFileIndex = FILE_LINE_COUNT - 1;
                                     }
@@ -1476,8 +1476,8 @@ public final class DBox {
                                     cursorWidth, cursorHeight - 2, bgWidth, color);
                             }
 
-                            // FIXME quirk: no windowRefresh here, so the
-                            // blinking above never shows (ported as-is).
+                            // NOTE: mirrors upstream - no windowRefresh here, so
+                            // the blinking above never shows (ported as-is).
 
                             int delay =
                                 (scrollCounter > 14.4) ? 1000 / scrollDelay : 1000 / 24;

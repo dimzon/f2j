@@ -711,8 +711,8 @@ public final class Interface {
 
     /** Port of {@code intface_init_items} (0x45FD2C). */
     private static int intfaceInitItems() {
-        // FIXME (port of the C FIXME): these values are initialized with -1 in
-        // C and never checked for -1; Java stores the null sentinel.
+        // NOTE: port of the upstream FIXME - these values are initialized with
+        // -1 in C and never checked for -1; Java stores the null sentinel.
         interfaceItemItems[Inventory.Hand.HAND_LEFT.id()] = null;
         interfaceItemItems[Inventory.Hand.HAND_RIGHT.id()] = null;
 

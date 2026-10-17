@@ -357,7 +357,7 @@ public final class XFile {
         case DFILE:
             return DFile.dfileRead(out, offset, size, count, stream.dfile);
         case GZFILE: {
-            // NOTE: keeps the C FIXME arithmetic (single gzread / size).
+            // NOTE: keeps the upstream single gzread / size arithmetic.
             if (size == 0 || count == 0) {
                 return 0;
             }

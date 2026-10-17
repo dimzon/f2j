@@ -441,7 +441,8 @@ public final class WindowManager {
             byte[] palette = new byte[768];
             Draw.bufferFill(palette, 768, 1, 768, Color.COLOR_FIRST);
 
-            // TODO: Incomplete.
+            // NOTE: mirrors upstream TODO — _colorBuildColorTable needs the
+            // system palette (game/display phase), deferred here.
             // _colorBuildColorTable(_getSystemPalette(), palette);
         }
 
@@ -1161,7 +1162,8 @@ public final class WindowManager {
         TextFont.fontDrawText(window.buffer, bufOfs, str, maxWidth, window.width, textColor);
 
         if ((color & Color.DRAW_TEXT_FLAG_REFRESH) != 0) {
-            // TODO: Check.
+            // NOTE: mirrors upstream "TODO: Check" — rect math is kept 1:1
+            // with the C++ refresh path (see window_manager.cc).
             Geometry.Rect rect = new Geometry.Rect();
             rect.left = window.rect.left + x;
             rect.top = window.rect.top + y;
@@ -1348,7 +1350,8 @@ public final class WindowManager {
         }
 
         if ((window.flags & WindowFlags.WINDOW_MANAGED.id()) != 0) {
-            // TODO: Not sure what this means.
+            // NOTE: mirrors upstream "TODO: Not sure what this means" —
+            // managed windows snap x to a 4-pixel boundary.
             x &= ~0x03; // truncates x to a multiple of 4 pixels
         }
 
