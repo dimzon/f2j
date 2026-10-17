@@ -61,6 +61,7 @@
 #include "combat.h"
 #include "critter.h"
 #include "scripts.h"
+#include "sfall_global_scripts.h"
 #include "trait.h"
 #include "object.h"
 #include "interface.h"
@@ -6666,6 +6667,43 @@ void sectionIsoRest()
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
 // _obj_remove_all inside mapNewMap would walk freed memory; the child boots
 // its own engine, which is what the game does anyway.
+void sectionMapTransition()
+{
+    std::puts("[maptransition]");
+
+    // mapSetTransition: copy fields, MAP_FIRST (== MAP_RND_DESERT_1 == 0)
+    // normalizes to MAP_TRANSITION (-2); combat-quit seam is false headless.
+    // Null guard -> -1. MAP_INVALID (-1) is not normalized.
+    fallout::MapTransition t1;
+    t1.map = fallout::MAP_RND_DESERT_1;
+    t1.tile = 5;
+    t1.elevation = 1;
+    t1.rotation = fallout::ROTATION_NE;
+    int rc1 = fallout::mapSetTransition(&t1);
+    std::printf("rc=%d map=%d tile=%d elev=%d rot=%d\n", rc1,
+        (int)t1.map, t1.tile, t1.elevation, (int)t1.rotation);
+
+    fallout::MapTransition t2;
+    t2.map = fallout::MAP_INVALID;
+    t2.tile = -1;
+    t2.elevation = 0;
+    t2.rotation = fallout::ROTATION_INVALID;
+    int rc2 = fallout::mapSetTransition(&t2);
+    std::printf("rc=%d map=%d tile=%d elev=%d rot=%d\n", rc2,
+        (int)t2.map, t2.tile, t2.elevation, (int)t2.rotation);
+
+    fallout::MapTransition t3;
+    t3.map = fallout::MAP_TRANSITION;
+    t3.tile = 0;
+    t3.elevation = 0;
+    t3.rotation = fallout::ROTATION_NE;
+    int rc3 = fallout::mapSetTransition(&t3);
+    std::printf("rc=%d map=%d tile=%d elev=%d rot=%d\n", rc3,
+        (int)t3.map, t3.tile, t3.elevation, (int)t3.rotation);
+
+    int rcNull = fallout::mapSetTransition(nullptr);
+    std::printf("rc-null=%d\n", rcNull);
+}
 void sectionMapChild()
 {
     std::puts("[mapnewmap]");
@@ -6734,9 +6772,44 @@ void sectionMapChild()
 
     // mapNewMap: mapEdgeFree, elevation 0, center 20100, transition/header
     // reset, _obj_remove_all (NO_REMOVE objects survive: dude, egg, both
-    // mouse cursors), map var frees, _square_reset (every grid fid becomes
+    // mouse cursors), map var frees, _square_reset (every grid frame becomes
     // the grid frame), _map_place_dude_and_mouse (dude + egg land on the
     // center tile via the objectSetLocation dude-tail), tileWindowRefresh.
+    if (getenv("REFHARNESS_PROBE_MAP") != nullptr) {
+        const char* probeName = getenv("REFHARNESS_PROBE_MAP");
+        char probePath[64];
+        snprintf(probePath, sizeof(probePath), "MAPS\\%s", probeName);
+        fallout::File* stream = fallout::fileOpen(probePath, "rb");
+        if (stream != nullptr) {
+            int version = -1;
+            char name[16] = {};
+            int enteringTile = -1;
+            int enteringElevation = -1;
+            int enteringRotation = -1;
+            int localCount = -1;
+            int scriptIndex = -1;
+            int flags = -1;
+            int darkness = -1;
+            int globalCount = -1;
+            fallout::fileReadInt32(stream, &version);
+            fallout::fileRead(name, 1, 16, stream);
+            fallout::fileReadInt32(stream, &enteringTile);
+            fallout::fileReadInt32(stream, &enteringElevation);
+            fallout::fileReadInt32(stream, &enteringRotation);
+            fallout::fileReadInt32(stream, &localCount);
+            fallout::fileReadInt32(stream, &scriptIndex);
+            fallout::fileReadInt32(stream, &flags);
+            fallout::fileReadInt32(stream, &darkness);
+            fallout::fileReadInt32(stream, &globalCount);
+            std::printf("probe ver=%d name=%.16s tile=%d elev=%d rot=%d local=%d script=%d flags=%d dark=%d global=%d\n",
+                version, name, enteringTile, enteringElevation, enteringRotation,
+                localCount, scriptIndex, flags, darkness, globalCount);
+            fallout::fileClose(stream);
+        } else {
+            std::puts("probe open-failed");
+        }
+        return;
+    }
     fallout::mapNewMap();
     std::printf("newmap elev=%d center=%d hdr=%d,%d,%d,%d local=%d global=%d gvarlen=%d,%d\n",
         fallout::gElevation,
@@ -6774,6 +6847,7 @@ void sectionMapChild()
         dude != nullptr ? fallout::objectGetLightIntensity(dude) : -999,
         dude != nullptr ? (unsigned int)dude->flags : 0u);
 }
+
 
 // Some sections feed the engine deliberately over-long runs (the v26 graph
 // stress, the v40 mouse blit), which trip ASan in an instrumented build.
@@ -6943,6 +7017,7 @@ int main()
     RUN_SECTION(FrmIds);
     RUN_SECTION(PartyObjects);
     RUN_SECTION(IsoRest);
+    RUN_SECTION(MapTransition);
     // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.
     setenv("REFHARNESS_MAP_ONLY", "1", 1);
