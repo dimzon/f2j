@@ -126,6 +126,46 @@ public final class MapVars {
         localPointers = new Object[0];
     }
 
+    // 0x483FE4 mapGlobalVariablesInit (NOTE: Uninline in C): free, then
+    // allocate {@code count} ints + pointer slots (zero-filled; C malloc is
+    // not zeroed, but the matching Load reads every slot).
+    public static int mapGlobalVariablesInit(int count) {
+        mapGlobalVariablesFree();
+        if (count != 0) {
+            globalVars = new int[count];
+            globalPointers = new Object[count];
+        }
+        globalVarsLength = count;
+        return 0;
+    }
+
+    // 0x48405C mapGlobalVariablesLoad (NOTE: Uninline in C).
+    public static int mapGlobalVariablesLoad(XFile.Handle stream) {
+        if (Db.fileReadInt32List(stream, globalVars, 0, globalVarsLength) != 0) {
+            return -1;
+        }
+        return 0;
+    }
+
+    // 0x484080 mapLocalVariablesInit (NOTE: Uninline in C).
+    public static int mapLocalVariablesInit(int count) {
+        mapLocalVariablesFree();
+        if (count != 0) {
+            localVars = new int[count];
+            localPointers = new Object[count];
+        }
+        localVarsLength = count;
+        return 0;
+    }
+
+    // 0x4840F8 mapLocalVariablesLoad (NOTE: Uninline in C).
+    public static int mapLocalVariablesLoad(XFile.Handle stream) {
+        if (Db.fileReadInt32List(stream, localVars, 0, localVarsLength) != 0) {
+            return -1;
+        }
+        return 0;
+    }
+
     // 0x482220 mapSetGlobalVar (silent: no debugPrint).
     public static int mapSetGlobalVar(int var, ProgramValue value) {
         if (var < 0 || var >= globalVarsLength) {

@@ -88,6 +88,11 @@ public final class Map {
     static final int HALF_FID_FLAGS_POSITION = 12;
     static final int ROOF_HALF_FID_SHIFT = 16;
 
+    /** Ports of {@code MAP_HEADER_ELEVATION_0/1/2} ({@code src/map_defs.h}). */
+    static final int MAP_HEADER_ELEVATION_0 = 0x02;
+    static final int MAP_HEADER_ELEVATION_1 = 0x04;
+    static final int MAP_HEADER_ELEVATION_2 = 0x08;
+
     /** Port of {@code _square} ({@code src/map.cc}): one grid per elevation. */
     private static final TileData[] square = {
         new TileData(), new TileData(), new TileData(),
@@ -268,6 +273,184 @@ public final class Map {
                 fids[i] = (floorHalf & 0xFFFF) | ((roofHalf & 0xFFFF) << ROOF_HALF_FID_SHIFT);
             }
         }
+    }
+
+    /**
+     * Port of {@code _square_load} (0x48431C): reset, then for every elevation
+     * whose flag is absent read {@code SQUARE_GRID_SIZE} fids, clearing the
+     * roof TemporarilyHidden bit and mapping roof frame {@code Invalid} to
+     * {@code Last}.
+     */
+    static int squareLoad(XFile.Handle stream, int flags) {
+        squareReset();
+        int[] elevFlags = { MAP_HEADER_ELEVATION_0, MAP_HEADER_ELEVATION_1, MAP_HEADER_ELEVATION_2 };
+        for (int elevation = 0; elevation < MapDefs.ELEVATION_COUNT; elevation++) {
+            if ((flags & elevFlags[elevation]) == 0) {
+                int[] tileFids = square[elevation].tileFid;
+                if (Db.fileReadInt32List(stream, tileFids, 0, MapDefs.SQUARE_GRID_SIZE) != 0) {
+                    return -1;
+                }
+                for (int tile = 0; tile < MapDefs.SQUARE_GRID_SIZE; tile++) {
+                    int fid = tileFids[tile];
+                    int roofFlags = ((fid >> ROOF_HALF_FID_SHIFT) & HALF_FID_FLAGS_MASK) >> HALF_FID_FLAGS_POSITION;
+                    roofFlags &= ~ArtDefs.TileFlags.TemporarilyHidden.bits();
+                    int roofFrame = (fid >> ROOF_HALF_FID_SHIFT) & HALF_FID_FRAME_MASK;
+                    if (roofFrame == ArtDefs.TileFrameId.Invalid.id()) {
+                        roofFrame = ArtDefs.TileFrameId.Last.id();
+                    }
+                    int floorFrame = fid & HALF_FID_FRAME_MASK;
+                    int floorFlags = (fid & HALF_FID_FLAGS_MASK) >> HALF_FID_FLAGS_POSITION;
+                    tileFids[tile] = ((floorFrame & HALF_FID_FRAME_MASK) | (floorFlags << HALF_FID_FLAGS_POSITION))
+                            | (((roofFrame & HALF_FID_FRAME_MASK) | (roofFlags << HALF_FID_FLAGS_POSITION))
+                                    << ROOF_HALF_FID_SHIFT);
+                }
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Port of {@code mapHeaderRead} (0x4844B4): version, name, entering
+     * tile/elevation/rotation, local/script/flags/darkness/global counts,
+     * map index, lastVisitTime, then 44 reserved ints.
+     */
+    static int mapHeaderRead(XFile.Handle stream) {
+        int[] v = new int[1];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.version = v[0];
+        byte[] name = new byte[16];
+        if (Db.fileReadFixedLengthString(stream, name, 0, 16) == -1) return -1;
+        System.arraycopy(name, 0, gMapHeader.name, 0, 16);
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.enteringTile = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.enteringElevation = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.enteringRotation = Rotation.fromInt(v[0]);
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.localVariablesCount = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.scriptIndex = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.flags = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.darkness = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.globalVariablesCount = v[0];
+        if (Db.fileReadInt32(stream, v) == -1) return -1;
+        gMapHeader.index = WorldmapDefs.ofMap(v[0]);
+        long[] u = new long[1];
+        if (Db.fileReadUInt32(stream, u) == -1) return -1;
+        gMapHeader.lastVisitTime = u[0];
+        if (Db.fileReadInt32List(stream, gMapHeader.field3C, 0, 44) == -1) return -1;
+        return 0;
+    }
+
+    /** Port of {@code mapLoadSaved} as a game-phase seam (save-game load unported). */
+    static int mapLoadSaved(String fileName) {
+        return -1;
+    }
+
+    /**
+     * Port of {@code mapLoadByName} (0x482A68): uppercase the name, look for a
+     * {@code .SAV} sibling, else load the {@code .MAP}; on success copy the name
+     * into the header. The {@code .SAV}/{@code wmMapMusicStart} paths are game
+     * phase (documented seams).
+     */
+    public static int mapLoadByName(String fileName) {
+        String upper = fileName.toUpperCase();
+        int rc = -1;
+        if (!Settings.settings.system.executableIsMapper()) {
+            int mapDot = upper.indexOf(".MAP");
+            if (mapDot != -1) {
+                String savName = upper.substring(0, mapDot) + ".SAV";
+                XFile.Handle stream = Db.fileOpen("MAPS\\" + savName, "rb");
+                if (stream != null) {
+                    Db.fileClose(stream);
+                    rc = mapLoadSaved(upper);
+                }
+            }
+        }
+        if (rc == -1) {
+            XFile.Handle stream = Db.fileOpen("MAPS\\" + upper, "rb");
+            if (stream != null) {
+                rc = mapLoad(stream);
+                Db.fileClose(stream);
+            }
+            if (rc == 0) {
+                // gMapHeader.name = fileName; gDude whoHitMe = nullptr (dormant).
+            }
+        }
+        return rc;
+    }
+
+    /**
+     * Port of {@code mapLoad} (0x482B74): header, version, entering spot,
+     * remove-all, map vars init/load, square load, elevation, tile center,
+     * ambient light, dude placement and refresh. Script/object/random-encounter
+     * phases are documented seams (script engine, object load, worldmap).
+     */
+    public static int mapLoad(XFile.Handle stream) {
+        if (stream == null) {
+            return -1;
+        }
+        if (mapHeaderRead(stream) != 0) {
+            return -1;
+        }
+        if (gMapHeader.version != 19 && gMapHeader.version != 20) {
+            return -1;
+        }
+        if (EnteringLocation.getEnteringElevation() == -1) {
+            EnteringLocation.mapSetEnteringLocation(gMapHeader.enteringElevation,
+                    gMapHeader.enteringTile, gMapHeader.enteringRotation);
+        }
+        ObjectSystem.objRemoveAll();
+        if (gMapHeader.globalVariablesCount < 0) {
+            gMapHeader.globalVariablesCount = 0;
+        }
+        if (gMapHeader.localVariablesCount < 0) {
+            gMapHeader.localVariablesCount = 0;
+        }
+        if (MapVars.mapGlobalVariablesInit(gMapHeader.globalVariablesCount) != 0) {
+            return -1;
+        }
+        if (MapVars.mapGlobalVariablesLoad(stream) != 0) {
+            return -1;
+        }
+        if (MapVars.mapLocalVariablesInit(gMapHeader.localVariablesCount) != 0) {
+            return -1;
+        }
+        if (MapVars.mapLocalVariablesLoad(stream) != 0) {
+            return -1;
+        }
+        if (squareLoad(stream, gMapHeader.flags) != 0) {
+            return -1;
+        }
+
+        // scriptLoadAll / objectLoadAll / _map_fix_critter_combat_data /
+        // wmSetupRandomEncounter: game phase (script engine, object load,
+        // worldmap encounter tables). Documented seams.
+
+        if (mapSetElevation(EnteringLocation.getEnteringElevation()) != 0) {
+            return -1;
+        }
+        // mapEdgeLoad: game phase (worldmap edges).
+        if (TileMath.tileSetCenter(EnteringLocation.getEnteringTile(),
+                TileMath.TILE_SET_CENTER_FLAG_IGNORE_SCROLL_RESTRICTIONS) != 0) {
+            return -1;
+        }
+        Light.lightSetAmbientIntensity(Light.LIGHT_INTENSITY_MAX, false);
+        GameObject dude = ObjectSystem.getDude();
+        if (dude != null) {
+            ObjectSystem.objectSetLocation(dude, EnteringLocation.getEnteringTile(), gElevation);
+            ObjectSystem.objectSetRotation(dude, EnteringLocation.getEnteringRotation().value());
+        }
+
+        // gMapHeader.index / globalVarsRead / scriptsEnable / scriptAdd /
+        // wmSetupRandomEncounter: game phase (worldmap, script engine).
+        placeDudeAndMouse();
+        // isoEnable / fileSetReadProgressHandler: game phase (tickers).
+        return 0;
     }
 
     /**

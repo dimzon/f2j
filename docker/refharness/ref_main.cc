@@ -6663,6 +6663,8 @@ void sectionIsoRest()
     std::printf("iface=%d enter=%d\n", ifaceRc, enterRc);
 }
 
+void sectionMapLoad();
+
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
 // _obj_remove_all inside mapNewMap would walk freed memory; the child boots
@@ -6846,6 +6848,7 @@ void sectionMapChild()
         dude != nullptr ? dude->rotation : -999,
         dude != nullptr ? fallout::objectGetLightIntensity(dude) : -999,
         dude != nullptr ? (unsigned int)dude->flags : 0u);
+    sectionMapLoad();
 }
 
 
@@ -6942,6 +6945,58 @@ void sectionMapStart()
         fallout::gMapHeader.enteringElevation,
         (int)fallout::gMapHeader.enteringRotation,
         (int)cur);
+}
+void sectionMapLoad()
+{
+    std::puts("[mapload]");
+
+    // isoInit's tail sets the entering spot to the -1 sentinel; the child
+    // boots only the head, so mirror it before the load (otherwise
+    // gEnteringTile stays -1 and tileSetCenter rejects it).
+    fallout::mapSetEnteringLocation(-1, -1, fallout::ROTATION_INVALID);
+
+    // perksInit allocates gPartyMemberPerkRanks, which lightSetAmbientIntensity
+    // dereferences for the dude (perkGetRank -> perkGetRankData). It needs the
+    // message-list repository (gameInit wires both).
+    fallout::messageListRepositoryInit();
+    fallout::perksInit();
+    // wmSetupRandomEncounter reads wmMsgFile / encounter tables (worldmap).
+    fallout::wmWorldMap_init();
+    // scriptsExecMapEnterProc runs sfall global scripts (gameInit wires this).
+    fallout::sfall_gl_scr_init();
+
+    // Suppress the C++ map-load stderr noise: the party-script errors and
+    // the non-deterministic "MAP LOAD: ... total=Nms" timer line. The printf
+    // vectors go to stdout and stay deterministic.
+    std::freopen("/dev/null", "w", stderr);
+
+    char mapName[32] = "ARTEMPLE.MAP";
+    int rc = fallout::mapLoadByName(mapName);
+    std::printf("loadrc=%d ver=%d tile=%d elev=%d rot=%d local=%d global=%d gvarlen=%d,%d\n",
+        rc,
+        fallout::gMapHeader.version,
+        fallout::gMapHeader.enteringTile,
+        fallout::gMapHeader.enteringElevation,
+        (int)fallout::gMapHeader.enteringRotation,
+        fallout::gMapHeader.localVariablesCount,
+        fallout::gMapHeader.globalVariablesCount,
+        fallout::gMapGlobalVarsLength,
+        fallout::gMapLocalVarsLength);
+
+    const int* fids = fallout::_square[0]->tileFid;
+    std::printf("square=%08X,%08X,%08X,%08X\n", fids[0], fids[1], fids[50], fids[99]);
+
+    int objectCount = 0;
+    for (fallout::Object* object = fallout::objectFindFirst(); object != nullptr;
+         object = fallout::objectFindNext()) {
+        objectCount++;
+    }
+    fallout::Object* dude = fallout::gDude;
+    std::printf("objects=%d dude=%d,%d,%d\n",
+        objectCount,
+        dude != nullptr ? dude->tile : -999,
+        dude != nullptr ? dude->elevation : -999,
+        dude != nullptr ? dude->rotation : -999);
 }
 int main()
 {
