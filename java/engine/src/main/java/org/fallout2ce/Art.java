@@ -1034,8 +1034,46 @@ public final class Art {
         }
 
         if (pathHasExtension(path, ".pcx")) {
-            // TODO(pcx): datafile/pcx decoder phase.
-            return null;
+            int[] widthPtr = new int[1];
+            int[] heightPtr = new int[1];
+            byte[] palette = new byte[768];
+            byte[] data = Pcx.pcxRead(path, widthPtr, heightPtr, palette);
+            if (data == null) {
+                Debug.print("ART ERROR: rejected %s: pcx read failed\n", path);
+                return null;
+            }
+
+            ArtData art = new ArtData();
+            art.version = 0;
+            art.framesPerSecond = 0;
+            art.actionFrame = 0;
+            art.frameCount = 1;
+
+            int width = widthPtr[0];
+            int height = heightPtr[0];
+            int dataSize = data.length;
+            for (int i = 0; i < Rotation.COUNT; i++) {
+                art.xOffsets[i] = 0;
+                art.yOffsets[i] = 0;
+                art.dataOffsets[i] = (i == 0) ? 0 : dataSize;
+                art.padding[i] = 0;
+            }
+            art.dataSize = dataSize;
+
+            Art.Frame frame = new Art.Frame();
+            frame.width = width;
+            frame.height = height;
+            frame.size = dataSize;
+            frame.x = 0;
+            frame.y = 0;
+            frame.pixels = data;
+            art.frames.add(frame);
+
+            for (int i = 0; i < Rotation.COUNT; i++) {
+                art.rotationBase[i] = 0;
+            }
+
+            return art;
         }
 
         return artLoadFrm(path);
