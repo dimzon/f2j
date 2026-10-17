@@ -1723,8 +1723,7 @@ public final class ProtoDb {
                 return ProtoDefs.ProtoDataMemberType.PROTO_DATA_MEMBER_TYPE_STRING.id();
             case 2: // MISC_DATA_MEMBER_DESCRIPTION
                 value.stringValue = protoGetDescription(ProtoId.ofPid(proto.misc.pid));
-                // FIXME: erroneously reports INT, should be STRING.
-                return ProtoDefs.ProtoDataMemberType.PROTO_DATA_MEMBER_TYPE_INT.id();
+                return ProtoDefs.ProtoDataMemberType.PROTO_DATA_MEMBER_TYPE_STRING.id();
             case 3: // MISC_DATA_MEMBER_FID
                 value.integerValue = proto.misc.fid;
                 return 1;
