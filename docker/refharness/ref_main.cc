@@ -6882,6 +6882,53 @@ static bool sectionSkipped(const char* name)
         }                             \
     } while (0)
 
+void sectionObjPlaceOnTile()
+{
+std::puts("[objplaceontile]");
+
+// Reuse the boot done by sectionMapChild? No - this runs in the main
+// process after all previous sections. objectsInit already ran in
+// [partyobjects]; calling it again would reset state. Instead verify
+// objects are live, then create + connect + find + move.
+if (fallout::gDude == nullptr) {
+    std::puts("objects-not-initialized");
+    return;
+}
+
+fallout::Object* obj = nullptr;
+int rc = fallout::objectCreateWithFrmIdProtoId(&obj,
+    fallout::FrmId(fallout::MiscFrameId::ScrollBlocker),
+    fallout::ProtoId::Empty());
+std::printf("create=%d pid=%d\n", rc, obj != nullptr ? obj->pid : -999);
+
+    if (rc == 0 && obj != nullptr) {
+        int setRc = fallout::objectSetLocation(obj, 20100, 0, nullptr);
+        std::printf("set=%d tile=%d elev=%d\n", setRc,
+            obj->tile, obj->elevation);
+
+    int found = 0;
+    for (fallout::Object* o = fallout::objectFindFirst(); o != nullptr;
+         o = fallout::objectFindNext()) {
+        if (o == obj) { found = 1; break; }
+    }
+    std::printf("found=%d\n", found);
+
+    int moveRc = fallout::objectSetLocation(obj, 20517, 0, nullptr);
+    std::printf("move=%d tile=%d elev=%d\n", moveRc,
+        obj->tile, obj->elevation);
+
+    found = 0;
+    for (fallout::Object* o = fallout::objectFindFirst(); o != nullptr;
+         o = fallout::objectFindNext()) {
+        if (o == obj) { found = 1; break; }
+    }
+    std::printf("found-after-move=%d\n", found);
+
+    fallout::objectDestroy(obj);
+    }
+}
+
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -7018,7 +7065,9 @@ int main()
     RUN_SECTION(PartyObjects);
     RUN_SECTION(IsoRest);
     RUN_SECTION(MapTransition);
-    // Re-exec for the map sections: a fresh engine avoids the freed-object
+    RUN_SECTION(ObjPlaceOnTile);
+
+// Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.
     setenv("REFHARNESS_MAP_ONLY", "1", 1);
     execl("/proc/self/exe", "refharness", (char*)nullptr);
