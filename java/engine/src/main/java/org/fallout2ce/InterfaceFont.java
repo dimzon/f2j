@@ -189,7 +189,7 @@ public final class InterfaceFont {
         }
 
         try {
-            int fileSize = Db.fileGetSize(stream);
+            long fileSize = Db.fileGetSize(stream);
 
             int[] sig = new int[1];
             if (Db.fileReadInt32(stream, sig) != 0) {
@@ -227,7 +227,7 @@ public final class InterfaceFont {
                 glyph.offset = offset[0];
             }
 
-            int glyphDataSize = fileSize - 2060;
+            int glyphDataSize = (int) (fileSize - 2060);
             if (glyphDataSize < 0) {
                 // NOTE: C malloc-huge-or-fail path; fail closed.
                 return -1;

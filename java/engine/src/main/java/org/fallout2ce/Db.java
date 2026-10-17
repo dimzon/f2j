@@ -616,11 +616,9 @@ public final class Db {
         }
     }
 
-    // TODO: Return type should be long.
-    //
     // 0x4C68BC db_filelength.
-    public static int fileGetSize(XFile.Handle stream) {
-        return (int) XFile.xfileGetSize(stream);
+    public static long fileGetSize(XFile.Handle stream) {
+        return XFile.xfileGetSize(stream);
     }
 
     // 0x4C68C4 db_register_callback.

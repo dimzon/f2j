@@ -552,26 +552,25 @@ public final class EventQueue {
     // 0x4A26D0 queue_process
     public static int queueProcessEvents() {
         int time = gameTimeGetTime();
-        // TODO: this is 0 or 1, but in some cases -1. Probably needs to be bool.
-        int stopProcess = 0;
+        boolean stopProcess = false;
 
         while (queueListHead != null) {
             QueueListNode node = queueListHead;
-            if (Integer.compareUnsigned(time, node.time) < 0 || stopProcess != 0) {
+            if (Integer.compareUnsigned(time, node.time) < 0 || stopProcess) {
                 break;
             }
 
             queueListHead = node.next;
 
             EventTypeDescription description = eventTypeDescriptions[node.type.id()];
-            stopProcess = description.handlerProc.handle(node.owner, node.data);
+            stopProcess = description.handlerProc.handle(node.owner, node.data) != 0;
 
             if (description.freeProc != null) {
                 description.freeProc.free(node.data);
             }
         }
 
-        return stopProcess;
+        return stopProcess ? 1 : 0;
     }
 
     // 0x4A2748 queue_clear

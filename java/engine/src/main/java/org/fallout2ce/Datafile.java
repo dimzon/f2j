@@ -156,9 +156,9 @@ public final class Datafile {
             return null;
         }
 
-        int size = Db.fileGetSize(stream);
-        byte[] data = new byte[size];
-        Db.fileRead(data, 0, size, 1, stream);
+        long size = Db.fileGetSize(stream);
+        byte[] data = new byte[(int) size];
+        Db.fileRead(data, 0, (int) size, 1, stream);
         Db.fileClose(stream);
         return data;
     }

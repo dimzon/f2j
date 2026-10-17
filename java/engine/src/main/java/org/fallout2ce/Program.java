@@ -307,14 +307,14 @@ public class Program {
             return null;
         }
 
-        int fileSize = Db.fileGetSize(stream);
+        long fileSize = Db.fileGetSize(stream);
         if (fileSize < PROCEDURES_BASE_OFFSET + 4) {
             Db.fileClose(stream);
             return null;
         }
 
-        byte[] data = new byte[fileSize];
-        long itemsRead = Db.fileRead(data, 0, 1, fileSize, stream);
+        byte[] data = new byte[(int) fileSize];
+        long itemsRead = Db.fileRead(data, 0, 1, (int) fileSize, stream);
         Db.fileClose(stream);
         if (itemsRead != fileSize) {
             return null;
