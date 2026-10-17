@@ -239,6 +239,18 @@ public final class Map {
         return gMapHeader.index != null ? gMapHeader.index.id() : 0;
     }
 
+    /** Port of {@code mapSetStart} (0x4824CC): sets entering tile/elevation/rotation in the header. */
+    public static void mapSetStart(int tile, int elevation, Rotation rotation) {
+        gMapHeader.enteringTile = tile;
+        gMapHeader.enteringElevation = elevation;
+        gMapHeader.enteringRotation = rotation;
+    }
+
+    /** Port of {@code mapGetCurrentMap} (0x4826B8): returns the header map index. */
+    public static int mapGetCurrentMap() {
+        return mapIndex();
+    }
+
     /**
      * Port of {@code _square_reset} (0x484210): every grid fid becomes the
      * grid frame ({@code TileFrameId::Grid}) with the old half flags kept.

@@ -6929,6 +6929,20 @@ std::printf("create=%d pid=%d\n", rc, obj != nullptr ? obj->pid : -999);
 }
 
 
+void sectionMapStart()
+{
+    std::puts("[mapstart]");
+
+    // mapSetStart: sets entering tile/elevation/rotation in the header.
+    // mapGetCurrentMap: returns header index (MAP_INVALID in a fresh child).
+    fallout::mapSetStart(20100, 0, fallout::ROTATION_NE);
+    fallout::Map cur = fallout::mapGetCurrentMap();
+    std::printf("start=%d,%d,%d current=%d\n",
+        fallout::gMapHeader.enteringTile,
+        fallout::gMapHeader.enteringElevation,
+        (int)fallout::gMapHeader.enteringRotation,
+        (int)cur);
+}
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
@@ -7066,6 +7080,7 @@ int main()
     RUN_SECTION(IsoRest);
     RUN_SECTION(MapTransition);
     RUN_SECTION(ObjPlaceOnTile);
+    RUN_SECTION(MapStart);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.
