@@ -496,10 +496,13 @@ public final class ObjTypes {
     /**
      * Port of {@code Inventory}. The C array ({@code length}/{@code capacity}
      * + realloc) becomes a list; save/load ports handle the disk ints at
-     * the boundary.
+     * the boundary. {@code capacity} is kept because C round-trips the raw
+     * value through the save file (it is the malloc'd slot count, not the
+     * item count), so deriving it from {@code size()} changes the bytes.
      */
     public static final class Inventory {
         public final List<InventoryItem> items = new ArrayList<>();
+        public int capacity;
     }
 
     /** Port of {@code WeaponObjectData}. */

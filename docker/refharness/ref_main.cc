@@ -7011,6 +7011,28 @@ void sectionMapSave()
     snprintf(path, sizeof(path), "%s", fallout::mapBuildSavePath(fallout::gMapHeader.name));
     std::printf("path=%s\n", path);
 
+    // Render-boundary normalization. Three object fields reach the save file
+    // as side effects of the render pass rather than of _map_save_file, so a
+    // headless port cannot reproduce them byte-for-byte without the renderer:
+    //
+    //   obj.sx/sy  - rewritten by _obj_render_object (object.cc:5029) to the
+    //                screen rect of the object, but only for objects whose
+    //                art is resident in the cache (artLock) and only for the
+    //                tiles it actually visits. Value depends on render order.
+    //   OBJECT_SEEN- stamped by _obj_process_seen (object.cc:3136) from
+    //                _obj_seen, which the render sweep fills via
+    //                obj_set_seen (object.cc:1494).
+    //
+    // All three are cleared here, and mirrored in MapLoadTest#mapSaveVectors,
+    // so the vector pins the save path itself rather than render bookkeeping.
+    for (fallout::Object* object = fallout::objectFindFirst(); object != nullptr;
+         object = fallout::objectFindNext()) {
+        object->sx = 0;
+        object->sy = 0;
+        object->flags &= ~fallout::OBJECT_SEEN;
+    }
+    fallout::_obj_clear_seen();
+
     int rc = fallout::_map_save(false);
     std::printf("rc=%d\n", rc);
 

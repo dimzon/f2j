@@ -1093,4 +1093,4 @@ objects=571 dude=18492,0,0
 [mapsave]
 path=data\MAPS\ARTEMPLE.MAP
 rc=0
-size=92780 crc=BC6A1A0F
+size=92780 crc=3533AE40

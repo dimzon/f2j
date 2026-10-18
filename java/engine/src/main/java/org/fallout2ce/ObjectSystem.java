@@ -372,6 +372,60 @@ public final class ObjectSystem {
         java.util.Arrays.fill(objSeen, (byte) 0);
     }
 
+    // 0x48C7A0 _obj_process_seen: expands the per-tile seen bits into a
+    // visibility mask (a 5x5 tile neighbourhood spread by the C loop's
+    // stride), then stamps OBJECT_SEEN on every object at the dude's
+    // elevation that falls in it. objectSaveAll calls it before writing, so
+    // the flag lands in the serialised bytes.
+    static void objProcessSeen() {
+        Arrays.fill(objSeenCheck, (byte) 0);
+
+        int v0 = 400;
+        for (int i = 0; i < OBJ_SEEN_SIZE; i++) {
+            if (objSeen[i] != 0) {
+                for (int v3 = i - 400; v3 != v0; v3 += 25) {
+                    if (v3 >= 0 && v3 < OBJ_SEEN_SIZE) {
+                        objSeenCheck[v3] = -1;
+                        if (v3 > 0) {
+                            objSeenCheck[v3 - 1] = -1;
+                        }
+                        if (v3 < 5000) {
+                            objSeenCheck[v3 + 1] = -1;
+                        }
+                        if (v3 > 1) {
+                            objSeenCheck[v3 - 2] = -1;
+                        }
+                        if (v3 < 4999) {
+                            objSeenCheck[v3 + 2] = -1;
+                        }
+                    }
+                }
+            }
+        }
+
+        int v7 = 0;
+        for (int i = 0; i < 5001; i++) {
+            if (objSeenCheck[i] != 0) {
+                int v8 = 1;
+                for (int v5 = v7; v5 < v7 + 8; v5++) {
+                    if ((v8 & objSeenCheck[i]) != 0 && v5 < 40000) {
+                        GameObjectListNode node = tileHeads[v5];
+                        while (node != null) {
+                            if (node.obj.elevation == dude.elevation) {
+                                node.obj.flags = node.obj.flags.or(ObjectFlags.SEEN);
+                            }
+                            node = node.next;
+                        }
+                    }
+                    v8 *= 2;
+                }
+            }
+            v7 += 8;
+        }
+
+        Arrays.fill(objSeen, (byte) 0);
+    }
+
     // 0x489F90 _obj_move (rect overload deferred: the slice always passes
     // null, so the rect fill/union tails are dropped, like C++). Null -> -1.
     // A listed tile detaches to floating (tile -1, elevation stored) and
@@ -1624,7 +1678,7 @@ public final class ObjectSystem {
         obj.data.critter.combat.aiPacket = 0;
         obj.data.critter.combat.team = 0;
         obj.data.critter.combat.whoHitMe = null;
-        obj.data.critter.combat.whoHitMeCid = 0;
+        obj.data.critter.combat.whoHitMeCid = -1;
         obj.data.critter.hp = 0;
         obj.data.critter.radiation = 0;
         obj.data.critter.poison = 0;
@@ -1905,6 +1959,7 @@ public final class ObjectSystem {
         object.sid = -1;
         object.owner = null;
         object.scriptIndex = -1;
+        object.data.critter.combat.whoHitMeCid = -1;
         return object;
     }
 
@@ -2313,6 +2368,7 @@ public final class ObjectSystem {
         if (length < 0 || capacity < length) {
             return -1;
         }
+        obj.data.inventory.capacity = capacity;
         inventoryLengthOut[0] = length;
 
         if (ProtoTypes.ProtoId.ofGameObject(obj).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
@@ -2478,8 +2534,15 @@ public final class ObjectSystem {
             return -1;
         }
         if (obj.sid != -1) {
-            // scriptGetScript: game phase (script engine); on miss C sets sid=-1.
-            obj.sid = -1;
+            // 0x4A5E34 scriptGetScript: bind the loaded script. A hit keeps the
+            // sid and copies the script index onto the object (both land in
+            // the serialised bytes), a miss clears the sid like C.
+            Script[] found = new Script[1];
+            if (scriptGetScript(obj.sid, found) == -1) {
+                obj.sid = -1;
+            } else {
+                obj.scriptIndex = found[0].index;
+            }
         }
         // _obj_fix_violence_settings: field-only seam.
         if (!FrmId.ofFid(obj.fid).exist()) {
@@ -2539,8 +2602,14 @@ public final class ObjectSystem {
                 obj.outline = OutlineType.NONE;
                 gObjectFids.add(obj.fid);
                 if (obj.sid != -1) {
-                    // scriptGetScript: game phase; on miss sid=-1.
-                    obj.sid = -1;
+                    // 0x4A5E34 scriptGetScript: a hit keeps the sid and copies
+                    // the script index onto the object; a miss clears it.
+                    Script[] found = new Script[1];
+                    if (scriptGetScript(obj.sid, found) == -1) {
+                        obj.sid = -1;
+                    } else {
+                        obj.scriptIndex = found[0].index;
+                    }
                 }
                 // _obj_fix_violence_settings: field-only seam.
                 obj.elevation = elevation;
@@ -2686,6 +2755,25 @@ public final class ObjectSystem {
         return 0;
     }
 
+    // 0x48C756 scriptGetScript: resolve sid through its type list.
+    static int scriptGetScript(int sid, Script[] scriptPtr) {
+        scriptPtr[0] = null;
+        if (sid == -1) {
+            return -1;
+        }
+        int type = scriptTypeFromSid(sid);
+        if (type < 0 || type >= SCRIPT_TYPE_COUNT) {
+            return -1;
+        }
+        for (Script script : scriptTypeScripts.get(type)) {
+            if (script.sid == sid) {
+                scriptPtr[0] = script;
+                return 0;
+            }
+        }
+        return -1;
+    }
+
     // 0x4A5BE8 scriptListExtentRead.
     static int scriptListExtentRead(int typeIndex, int expectedLength, XFile.Handle stream) {
         for (int index = 0; index < SCRIPT_LIST_EXTENT_SIZE; index++) {
@@ -2750,11 +2838,14 @@ public final class ObjectSystem {
 
     // 0x49F004 objectDataWrite. Note: the C++ critter branch writes
     // {@code data->flags}, which overlays {@code critter.reaction} in the union.
+    // The inventory capacity is the raw malloc'd slot count C round-trips
+    // through the file (proto.cc:673) — it is NOT the item count, so it is
+    // carried on {@link ObjTypes.Inventory#capacity} rather than derived.
     static int objectDataWrite(GameObject obj, XFile.Handle stream) {
         ObjTypes.ObjectData data = obj.data;
         int invLen = data.inventory.items.size();
         if (Db.fileWriteInt32(stream, invLen) == -1) return -1;
-        if (Db.fileWriteInt32(stream, invLen) == -1) return -1;
+        if (Db.fileWriteInt32(stream, data.inventory.capacity) == -1) return -1;
         if (Db.fileWriteInt32(stream, 0) == -1) return -1; // items pointer (meaningless)
 
         ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofGameObject(obj);
@@ -2882,7 +2973,7 @@ public final class ObjectSystem {
         if (stream == null) {
             return -1;
         }
-        // _obj_process_seen: no-op headless (no rendering fills _obj_seen).
+        objProcessSeen();
         long objectCountPos = Db.fileTell(stream);
         if (Db.fileWriteInt32(stream, 0) == -1) return -1;
         int objectCount = 0;
@@ -2993,6 +3084,11 @@ public final class ObjectSystem {
     static void resetForTests() {
         head = null;
         tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
+        objectListByTile = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
+        for (int index = 0; index < SCRIPT_TYPE_COUNT; index++) {
+            scriptTypeScripts.get(index).clear();
+            scriptTypeExtentLengths.get(index).clear();
+        }
         findCursor = null;
         findTile = 0;
         findElevation = 0;

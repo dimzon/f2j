@@ -170,6 +170,18 @@ class MapLoadTest {
         EnteringLocation.mapSetEnteringLocation(-1, -1, Rotation.INVALID);
         assertEquals(0, Map.mapLoadByName("ARTEMPLE.MAP"));
 
+        // Mirrors the harness normalization: sx/sy are screen coords the render
+        // pass rewrites as a side effect, and OBJECT_SEEN is stamped from the
+        // tiles that pass marked seen — both track render state, not the save
+        // path.
+        for (GameObject object = ObjectSystem.objectFindFirst(); object != null;
+                object = ObjectSystem.objectFindNext()) {
+            object.sx = 0;
+            object.sy = 0;
+            object.flags = object.flags.and(ObjTypes.ObjectFlags.SEEN.not());
+        }
+        ObjectSystem.objClearSeen();
+
         java.nio.file.Path tmp = Files.createTempFile("mapsave", ".map");
         XFile.Handle stream = Db.fileOpen(tmp.toString(), "wb");
         assertNotNull(stream);
@@ -178,11 +190,10 @@ class MapLoadTest {
         assertEquals("rc=0", "rc=" + rc);
 
         byte[] data = Files.readAllBytes(tmp);
-        java.nio.file.Files.copy(tmp, java.nio.file.Path.of("C:/Work/f2j/java-ARTEMPLE.MAP"),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
         java.util.zip.CRC32 crc = new java.util.zip.CRC32();
         crc.update(data);
-        assertEquals("size=92780 crc=BC6A1A0F",
+        assertEquals("size=92780 crc=3533AE40",
                 "size=" + data.length + " crc=" + String.format("%08X", crc.getValue()));
     }
 }

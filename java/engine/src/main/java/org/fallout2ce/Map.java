@@ -493,6 +493,19 @@ public final class Map {
     }
 
     // 0x483980 _map_save_file.
+    /**
+     * Port of {@code _map_save_file} (0x483980).
+     *
+     * <p>Render boundary: three object fields ({@code sx}/{@code sy} and the
+     * {@code OBJECT_SEEN} flag) are serialised by this path but written by the
+     * renderer as a side effect in C++ — {@code _obj_render_object}
+     * (object.cc:5029) overwrites {@code sx}/{@code sy} only for objects whose
+     * art is cache-resident, and {@code _obj_process_seen} (object.cc:3136)
+     * stamps {@code OBJECT_SEEN} from the tiles the render sweep visited. The
+     * render engine is not ported, so those values are engine state rather
+     * than save state here; the {@code [mapsave]} harness vectors normalise
+     * them on both sides so the vector pins this save path itself.
+     */
     static int mapSaveFile(XFile.Handle stream) {
         if (stream == null) {
             return -1;
