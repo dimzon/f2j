@@ -841,6 +841,230 @@ public class Program {
         programStackPushInteger(program, result);
     }
 
+    // The six comparison operators share one shape: pop two values, then
+    // dispatch on the type of the first (value[1]) and, inside, the second
+    // (value[0]). Strings compare with strcmp semantics; ints and floats
+    // compare numerically; pointers have per-operator null-test special cases.
+    private enum Cmp {
+        EQ, NE, LT, LE, GT, GE;
+
+        boolean ints(int a, int b) {
+            switch (this) {
+            case EQ: return a == b;
+            case NE: return a != b;
+            case LT: return a < b;
+            case LE: return a <= b;
+            case GT: return a > b;
+            default: return a >= b;
+            }
+        }
+
+        boolean floats(float a, float b) {
+            switch (this) {
+            case EQ: return a == b;
+            case NE: return a != b;
+            case LT: return a < b;
+            case LE: return a <= b;
+            case GT: return a > b;
+            default: return a >= b;
+            }
+        }
+
+        boolean strings(String a, String b) {
+            int order = a.compareTo(b);
+            switch (this) {
+            case EQ: return order == 0;
+            case NE: return order != 0;
+            case LT: return order < 0;
+            case LE: return order <= 0;
+            case GT: return order > 0;
+            default: return order >= 0;
+            }
+        }
+
+        String symbol() {
+            switch (this) {
+            case EQ: return "==";
+            case NE: return "!=";
+            case LT: return "<";
+            case LE: return "<=";
+            case GT: return ">";
+            default: return ">=";
+            }
+        }
+    }
+
+    private static void opCompare(Program program, Cmp cmp) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        int result;
+        switch (value[1].opcode) {
+        case VALUE_TYPE_STRING:
+        case VALUE_TYPE_DYNAMIC_STRING: {
+            String strings1 = programGetString(program, value[1].opcode, value[1].integerValue);
+            String strings0;
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                strings0 = programGetString(program, value[0].opcode, value[0].integerValue);
+                break;
+            case VALUE_TYPE_FLOAT:
+                strings0 = formatFloat5(value[0].floatValue);
+                break;
+            case VALUE_TYPE_INT:
+                strings0 = Integer.toString(value[0].integerValue);
+                break;
+            default:
+                invalidComparison(value, cmp);
+                return;
+            }
+            result = cmp.strings(strings1, strings0) ? 1 : 0;
+            break;
+        }
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING: {
+                String strings1 = formatFloat5(value[1].floatValue);
+                String strings0 = programGetString(program, value[0].opcode, value[0].integerValue);
+                result = cmp.strings(strings1, strings0) ? 1 : 0;
+                break;
+            }
+            case VALUE_TYPE_FLOAT:
+                result = cmp.floats(value[1].floatValue, value[0].floatValue) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = cmp.floats(value[1].floatValue, (float) value[0].integerValue) ? 1 : 0;
+                break;
+            default:
+                invalidComparison(value, cmp);
+                return;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING: {
+                String strings1 = Integer.toString(value[1].integerValue);
+                String strings0 = programGetString(program, value[0].opcode, value[0].integerValue);
+                result = cmp.strings(strings1, strings0) ? 1 : 0;
+                break;
+            }
+            case VALUE_TYPE_FLOAT:
+                result = cmp.floats((float) value[1].integerValue, value[0].floatValue) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = cmp.ints(value[1].integerValue, value[0].integerValue) ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                // C casts both sides to uintptr_t; Java compares the null-ness
+                // view instead (deliberate divergence, untested).
+                if (cmp == Cmp.EQ) {
+                    result = ((value[1].integerValue == 0) == (value[0].pointerValue == null)) ? 1 : 0;
+                } else if (cmp == Cmp.NE) {
+                    result = ((value[1].integerValue == 0) != (value[0].pointerValue == null)) ? 1 : 0;
+                } else {
+                    invalidComparison(value, cmp);
+                    return;
+                }
+                break;
+            default:
+                invalidComparison(value, cmp);
+                return;
+            }
+            break;
+        case VALUE_TYPE_PTR:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_INT: {
+                boolean ptrNull = value[1].pointerValue == null;
+                switch (cmp) {
+                case EQ:
+                    result = (ptrNull == (value[0].integerValue == 0)) ? 1 : 0;
+                    break;
+                case NE:
+                    result = (ptrNull != (value[0].integerValue == 0)) ? 1 : 0;
+                    break;
+                case LE:
+                    // ptr <= int: for int > 0 C compares addresses (almost
+                    // always true); for int <= 0 it is the null test.
+                    result = (value[0].integerValue > 0) ? 1 : (ptrNull ? 1 : 0);
+                    break;
+                case GE:
+                    if (value[0].integerValue != 0) {
+                        programFatalError("Invalid pointer comparison: >= only supports comparison to 0.");
+                    }
+                    result = 1;
+                    break;
+                case GT:
+                    if (value[0].integerValue != 0) {
+                        programFatalError("Invalid pointer comparison: > only supports comparison to 0.");
+                    }
+                    result = ptrNull ? 0 : 1;
+                    break;
+                default:
+                    invalidComparison(value, cmp);
+                    return;
+                }
+                break;
+            }
+            case VALUE_TYPE_PTR:
+                switch (cmp) {
+                case EQ:
+                    result = (value[1].pointerValue == value[0].pointerValue) ? 1 : 0;
+                    break;
+                case NE:
+                    result = (value[1].pointerValue != value[0].pointerValue) ? 1 : 0;
+                    break;
+                default:
+                    invalidComparison(value, cmp);
+                    return;
+                }
+                break;
+            default:
+                invalidComparison(value, cmp);
+                return;
+            }
+            break;
+        default:
+            invalidComparison(value, cmp);
+            return;
+        }
+
+        programStackPushInteger(program, result);
+    }
+
+    private static void invalidComparison(ProgramValue[] value, Cmp cmp) {
+        programFatalError("Invalid comparison: " + cmp.symbol() + " does not support "
+                + value[1].typeDebugString() + " and " + value[0].typeDebugString() + ".");
+    }
+
+    private static void opConditionalOperatorEqual(Program program) {
+        opCompare(program, Cmp.EQ);
+    }
+
+    private static void opConditionalOperatorNotEqual(Program program) {
+        opCompare(program, Cmp.NE);
+    }
+
+    private static void opConditionalOperatorLessThan(Program program) {
+        opCompare(program, Cmp.LT);
+    }
+
+    private static void opConditionalOperatorLessThanEquals(Program program) {
+        opCompare(program, Cmp.LE);
+    }
+
+    private static void opConditionalOperatorGreaterThan(Program program) {
+        opCompare(program, Cmp.GT);
+    }
+
+    private static void opConditionalOperatorGreaterThanEquals(Program program) {
+        opCompare(program, Cmp.GE);
+    }
+
     // C snprintf("%.5f", ...) under the C locale; Locale.ROOT keeps the
     // decimal point stable regardless of the JVM default locale.
     private static String formatFloat5(float value) {
@@ -889,6 +1113,12 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_BITWISE_AND, Program::opBitwiseOperatorAnd);
         interpreterRegisterOpcode(OPCODE_BITWISE_OR, Program::opBitwiseOperatorOr);
         interpreterRegisterOpcode(OPCODE_BITWISE_XOR, Program::opBitwiseOperatorXor);
+        interpreterRegisterOpcode(OPCODE_EQUAL, Program::opConditionalOperatorEqual);
+        interpreterRegisterOpcode(OPCODE_NOT_EQUAL, Program::opConditionalOperatorNotEqual);
+        interpreterRegisterOpcode(OPCODE_LESS_THAN, Program::opConditionalOperatorLessThan);
+        interpreterRegisterOpcode(OPCODE_LESS_THAN_EQUAL, Program::opConditionalOperatorLessThanEquals);
+        interpreterRegisterOpcode(OPCODE_GREATER_THAN, Program::opConditionalOperatorGreaterThan);
+        interpreterRegisterOpcode(OPCODE_GREATER_THAN_EQUAL, Program::opConditionalOperatorGreaterThanEquals);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */

@@ -6678,6 +6678,7 @@ void sectionAutomap();
 void sectionVm();
 void sectionVmStack();
 void sectionVmArith();
+void sectionVmCompare();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6875,6 +6876,7 @@ void sectionMapChild()
     sectionVm();
     sectionVmStack();
     sectionVmArith();
+    sectionVmCompare();
 }
 
 
@@ -7593,30 +7595,15 @@ static void vmStackRun(const char* name, const unsigned char* code, int codeLeng
     fallout::programFree(program);
 }
 
-// Like vmStackRun, but renders float cells as %.5f and dynamic strings by
-// content, and can place a static string at 54 with the code after it.
-static void vmArithRun(const char* name, const char* staticString,
-    const unsigned char* code, int codeLength, int budget)
+// Loads a prepared 256-byte blob, runs it from codeOffset and prints the
+// resulting stack: floats as %.5f, dynamic strings by content, the rest as
+// opcode:integerValue.
+static void vmRunProgram(const char* name, const unsigned char* data, int codeOffset, int budget)
 {
-    unsigned char data[256];
-    memset(data, 0, sizeof(data));
-    int32_t zero = 0;
-    memcpy(data + 42, &zero, sizeof(zero));
-    memcpy(data + 46, &zero, sizeof(zero));
-    memcpy(data + 50, &zero, sizeof(zero));
-
-    int codeOffset = 54;
-    if (staticString != nullptr) {
-        size_t length = strlen(staticString) + 1;
-        memcpy(data + 54, staticString, length);
-        codeOffset = 54 + (int)length;
-    }
-    memcpy(data + codeOffset, code, codeLength);
-
     char path[64];
-    snprintf(path, sizeof(path), "/tmp/vmarith-%s.int", name);
+    snprintf(path, sizeof(path), "/tmp/vm-%s.int", name);
     FILE* f = fopen(path, "wb");
-    fwrite(data, 1, sizeof(data), f);
+    fwrite(data, 1, 256, f);
     fclose(f);
 
     fallout::Program* program = fallout::programCreateByPath(path);
@@ -7646,6 +7633,43 @@ static void vmArithRun(const char* name, const char* staticString,
     std::printf("\n");
 
     fallout::programFree(program);
+}
+
+// One optional static string at 54, then the code.
+static void vmArithRun(const char* name, const char* staticString,
+    const unsigned char* code, int codeLength, int budget)
+{
+    unsigned char data[256];
+    memset(data, 0, sizeof(data));
+    int32_t zero = 0;
+    memcpy(data + 42, &zero, sizeof(zero));
+    memcpy(data + 46, &zero, sizeof(zero));
+    memcpy(data + 50, &zero, sizeof(zero));
+
+    int codeOffset = 54;
+    if (staticString != nullptr) {
+        size_t length = strlen(staticString) + 1;
+        memcpy(data + 54, staticString, length);
+        codeOffset = 54 + (int)length;
+    }
+    memcpy(data + codeOffset, code, codeLength);
+    vmRunProgram(name, data, codeOffset, budget);
+}
+
+// A raw static-string table at 54 (offsets index into it), then the code.
+static void vmStringCompareRun(const char* name, const char* stringTable, int tableLength,
+    const unsigned char* code, int codeLength, int budget)
+{
+    unsigned char data[256];
+    memset(data, 0, sizeof(data));
+    int32_t zero = 0;
+    memcpy(data + 42, &zero, sizeof(zero));
+    memcpy(data + 46, &zero, sizeof(zero));
+    memcpy(data + 50, &zero, sizeof(zero));
+    memcpy(data + 54, stringTable, tableLength);
+    int codeOffset = 54 + tableLength;
+    memcpy(data + codeOffset, code, codeLength);
+    vmRunProgram(name, data, codeOffset, budget);
 }
 
 void sectionVmStack()
@@ -7855,6 +7879,121 @@ void sectionVmArith()
         0x80, 0x11,
     };
     vmArithRun("not", nullptr, logicalNot, sizeof(logicalNot), 32);
+}
+
+void sectionVmCompare()
+{
+    std::puts("[vmcompare]");
+
+    // The six comparison operators: ints, floats, mixed int/float and
+    // static strings. Each leaves one 0/1 result.
+
+    static const unsigned char eqInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0x80, 0x33, // EQUAL
+        0x80, 0x11,
+    };
+    vmArithRun("eq-int", nullptr, eqInt, sizeof(eqInt), 32);
+
+    static const unsigned char eqIntNe[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x06,
+        0x80, 0x33, // EQUAL
+        0x80, 0x11,
+    };
+    vmArithRun("eq-int-ne", nullptr, eqIntNe, sizeof(eqIntNe), 32);
+
+    static const unsigned char neInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x06,
+        0x80, 0x34, // NOT_EQUAL
+        0x80, 0x11,
+    };
+    vmArithRun("ne-int", nullptr, neInt, sizeof(neInt), 32);
+
+    static const unsigned char ltInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x03,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0x80, 0x37, // LESS_THAN
+        0x80, 0x11,
+    };
+    vmArithRun("lt-int", nullptr, ltInt, sizeof(ltInt), 32);
+
+    static const unsigned char leInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0x80, 0x35, // LESS_THAN_EQUAL
+        0x80, 0x11,
+    };
+    vmArithRun("le-int", nullptr, leInt, sizeof(leInt), 32);
+
+    static const unsigned char geInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0x80, 0x36, // GREATER_THAN_EQUAL
+        0x80, 0x11,
+    };
+    vmArithRun("ge-int", nullptr, geInt, sizeof(geInt), 32);
+
+    static const unsigned char gtInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x06,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0x80, 0x38, // GREATER_THAN
+        0x80, 0x11,
+    };
+    vmArithRun("gt-int", nullptr, gtInt, sizeof(gtInt), 32);
+
+    static const unsigned char eqFloat[] = {
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0x80, 0x33, // EQUAL
+        0x80, 0x11,
+    };
+    vmArithRun("eq-float", nullptr, eqFloat, sizeof(eqFloat), 32);
+
+    static const unsigned char ltFloat[] = {
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0xA0, 0x01, 0x40, 0x20, 0x00, 0x00, // PUSH float 2.5
+        0x80, 0x37, // LESS_THAN
+        0x80, 0x11,
+    };
+    vmArithRun("lt-float", nullptr, ltFloat, sizeof(ltFloat), 32);
+
+    static const unsigned char eqIntFloat[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2
+        0xA0, 0x01, 0x40, 0x00, 0x00, 0x00, // PUSH float 2.0
+        0x80, 0x33, // EQUAL
+        0x80, 0x11,
+    };
+    vmArithRun("eq-int-float", nullptr, eqIntFloat, sizeof(eqIntFloat), 32);
+
+    // String table "ab\0cd\0": offset 0 is "ab", offset 3 is "cd".
+    static const char stringTable[] = { 'a', 'b', 0, 'c', 'd', 0 };
+
+    static const unsigned char eqStr[] = {
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH static string "ab"
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH static string "ab"
+        0x80, 0x33, // EQUAL
+        0x80, 0x11,
+    };
+    vmStringCompareRun("eq-str", stringTable, sizeof(stringTable), eqStr, sizeof(eqStr), 32);
+
+    static const unsigned char neStr[] = {
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH static string "ab"
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x03, // PUSH static string "cd"
+        0x80, 0x34, // NOT_EQUAL
+        0x80, 0x11,
+    };
+    vmStringCompareRun("ne-str", stringTable, sizeof(stringTable), neStr, sizeof(neStr), 32);
+
+    static const unsigned char gtStr[] = {
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH static string "ab"
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x03, // PUSH static string "cd"
+        0x80, 0x38, // GREATER_THAN
+        0x80, 0x11,
+    };
+    vmStringCompareRun("gt-str", stringTable, sizeof(stringTable), gtStr, sizeof(gtStr), 32);
 }
 
 void sectionVm()
