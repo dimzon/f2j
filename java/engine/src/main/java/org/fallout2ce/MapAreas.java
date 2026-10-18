@@ -384,9 +384,22 @@ public final class MapAreas {
         return city >= City.CITY_ARROYO.id() && city < wmMaxAreaNum();
     }
 
+    /**
+     * Port of {@code wmGetAreaIdxName}: message 1500 + area, clipped to
+     * {@code CITY_NAME_SIZE} like the C {@code strncpy}.
+     *
+     * <p>NOTE: {@code getmsg} has no language fallback of its own - on a miss
+     * it substitutes {@code _message_error_str}, the same message both this
+     * and {@code mapGetCityName} would return.
+     */
+    public static String wmGetAreaIdxName(City areaIdx) {
+        Message.Item entry = new Message.Item();
+        String text = Message.getmsg(Map.gMapMessageList, entry, 1500 + areaIdx.id());
+        return text.length() <= CITY_NAME_SIZE ? text : text.substring(0, CITY_NAME_SIZE);
+    }
+
     // 0x4BFA84 wmMatchAreaContainingMapIdx.
-    public static int wmMatchAreaContainingMapIdx(int mapIdx, City[] areaIdxPtr) {
-        areaIdxPtr[0] = City.CITY_ARROYO;
+    public static int wmMatchAreaContainingMapIdx(int mapIdx, City[] areaIdxPtr) {        areaIdxPtr[0] = City.CITY_ARROYO;
 
         for (int areaIdx = City.CITY_ARROYO.id(); areaIdx < maxAreaNum; areaIdx++) {
             CityInfo cityInfo = areaInfoList.get(areaIdx);

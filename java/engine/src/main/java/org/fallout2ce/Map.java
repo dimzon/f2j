@@ -309,6 +309,59 @@ public final class Map {
         return city[0].id();
     }
 
+    // 0x4824CC mapGetName: message 200 + map * 3 + elevation. Returns null
+    // when either id is out of range, so callers can tell "no such map" from
+    // a map whose name happens to be an empty string.
+    public static String mapGetName(int mapNum, int elevation) {
+        if (!MapRegistry.mapIsValid(mapNum)) {
+            return null;
+        }
+        if (elevation < 0 || elevation >= MapDefs.ELEVATION_COUNT) {
+            return null;
+        }
+        Message.Item entry = new Message.Item();
+        return Message.getmsg(gMapMessageList, entry, mapNum * 3 + elevation + 200);
+    }
+
+    // 0x4825E4 mapGetCityName: resolves the map's area, then message 1500+city.
+    public static String mapGetCityName(int mapNum) {
+        MapAreas.City[] city = new MapAreas.City[1];
+        if (MapAreas.wmMatchAreaContainingMapIdx(mapNum, city) == -1) {
+            return ERROR_F2;
+        }
+        Message.Item entry = new Message.Item();
+        return Message.getmsg(gMapMessageList, entry, 1500 + city[0].id());
+    }
+
+    // 0x482628 mapDescriptionById: same area lookup, then wmGetAreaIdxName's
+    // message (1500 + city). A map in no area yields C's empty scratch
+    // string, not the "ERROR! F2" that mapGetCityName uses.
+    public static String mapDescriptionById(int mapIndex) {
+        MapAreas.City[] city = new MapAreas.City[1];
+        if (MapAreas.wmMatchAreaContainingMapIdx(mapIndex, city) == 0) {
+            return MapAreas.wmGetAreaIdxName(city[0]);
+        }
+        return "";
+    }
+
+    /** Port of {@code gMapMessageList} ({@code src/map.cc}); loaded by mapInit. */
+    static final Message.MessageList gMapMessageList = new Message.MessageList();
+
+    /** Port of {@code _aErrorF2} ({@code src/map.cc}): the no-such-city string. */
+    static final String ERROR_F2 = "ERROR! F2";
+
+    /**
+     * Port of the message-list half of {@code mapInit}: {@code game\map.msg}
+     * through the sfall path alias. Split out from the window/ticker/mapNewMap
+     * tail so the name lookups stay reachable headless.
+     */
+    static boolean mapInitMessageList() {
+        if (!Message.messageListInit(gMapMessageList)) {
+            return false;
+        }
+        return Message.messageListLoad(gMapMessageList, "game\\map.msg");
+    }
+
     /** Port of {@code mapGetCurrentMap} (0x4826B8): returns the header map index. */
     public static int mapGetCurrentMap() {
         return mapIndex();

@@ -6668,6 +6668,7 @@ void sectionMapLoad();
 void sectionMapSave();
 void sectionMapRegistry();
 void sectionMapAreas();
+void sectionMapNames();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6856,6 +6857,7 @@ void sectionMapChild()
     sectionMapSave();
     sectionMapRegistry();
     sectionMapAreas();
+    sectionMapNames();
 }
 
 
@@ -7196,6 +7198,49 @@ void sectionMapAreas()
     std::printf("loaded-area-111=%d\n", fallout::mapGetLoadedAreaId());
 
     fallout::configFree(&fallout::gGameConfig);
+}
+
+void sectionMapNames()
+{
+    std::puts("[mapnames]");
+
+    // mapInit loads game\map.msg through the sfall alias; only the message
+    // list matters here, so load it directly instead of running the rest of
+    // mapInit (window show, tickers, mapNewMap).
+    if (!fallout::messageListInit(&fallout::gMapMessageList)) {
+        std::puts("msglist-init=0");
+        return;
+    }
+    std::puts("msglist-init=1");
+    std::printf("msglist-load=%d\n",
+        fallout::messageListLoad(&fallout::gMapMessageList, "game\\map.msg") ? 1 : 0);
+
+    // mapGetName indexes 200 + map * 3 + elevation.
+    for (int mapIdx : { 0, 3, 26 }) {
+        for (int elev = 0; elev < 3; elev++) {
+            char* name = fallout::mapGetName((fallout::Map)mapIdx, elev);
+            std::printf("name %d/%d = %s\n", mapIdx, elev, name != nullptr ? name : "<null>");
+        }
+    }
+    // Out-of-range map and elevation must be null, not a lookup.
+    std::printf("name -1/0 = %s\n",
+        fallout::mapGetName((fallout::Map)-1, 0) != nullptr ? "nonnull" : "<null>");
+    std::printf("name 0/3 = %s\n",
+        fallout::mapGetName((fallout::Map)0, 3) != nullptr ? "nonnull" : "<null>");
+
+    // mapGetCityName resolves through the area, then reads 1500 + city.
+    for (int mapIdx : { 0, 3, 26 }) {
+        char* city = fallout::mapGetCityName((fallout::Map)mapIdx);
+        std::printf("city %d = %s\n", mapIdx, city != nullptr ? city : "<null>");
+    }
+
+    // mapDescriptionById takes the wmGetAreaIdxName path (message 1500+city).
+    for (int mapIdx : { 0, 26 }) {
+        char* desc = fallout::mapDescriptionById((fallout::Map)mapIdx);
+        std::printf("desc %d = %s\n", mapIdx, desc != nullptr ? desc : "<null>");
+    }
+
+    fallout::messageListFree(&fallout::gMapMessageList);
 }
 
 int main()
