@@ -6680,6 +6680,7 @@ void sectionVmStack();
 void sectionVmArith();
 void sectionVmCompare();
 void sectionVmControl();
+void sectionVmLogic();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6879,6 +6880,7 @@ void sectionMapChild()
     sectionVmArith();
     sectionVmCompare();
     sectionVmControl();
+    sectionVmLogic();
 }
 
 
@@ -8096,6 +8098,64 @@ void sectionVmControl()
         0x80, 0x11, // STOP_PROGRAM
     };
     vmControlRun("store-fetch", storeFetch, sizeof(storeFetch), 32);
+}
+
+void sectionVmLogic()
+{
+    std::puts("[vmlogic]");
+
+    // AND / OR. The float cases read the raw bits (integerValue) masked with
+    // 0x7FFFFFFF, which the float vectors exercise.
+
+    static const unsigned char andInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x80, 0x3E, // AND
+        0x80, 0x11,
+    };
+    vmArithRun("and-int", nullptr, andInt, sizeof(andInt), 32);
+
+    static const unsigned char andIntFalse[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0x80, 0x3E, // AND
+        0x80, 0x11,
+    };
+    vmArithRun("and-int-false", nullptr, andIntFalse, sizeof(andIntFalse), 32);
+
+    static const unsigned char orInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x80, 0x3F, // OR
+        0x80, 0x11,
+    };
+    vmArithRun("or-int", nullptr, orInt, sizeof(orInt), 32);
+
+    static const unsigned char orIntFalse[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0x80, 0x3F, // OR
+        0x80, 0x11,
+    };
+    vmArithRun("or-int-false", nullptr, orIntFalse, sizeof(orIntFalse), 32);
+
+    // float 1.5 has non-zero bits, so AND with int 1 is 1.
+    static const unsigned char andFloat[] = {
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01, // PUSH int 1
+        0x80, 0x3E, // AND
+        0x80, 0x11,
+    };
+    vmArithRun("and-float", nullptr, andFloat, sizeof(andFloat), 32);
+
+    // float 0.0 has zero bits, so OR with int 0 is 0.
+    static const unsigned char orFloat[] = {
+        0xA0, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH float 0.0
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH int 0
+        0x80, 0x3F, // OR
+        0x80, 0x11,
+    };
+    vmArithRun("or-float", nullptr, orFloat, sizeof(orFloat), 32);
 }
 
 void sectionVm()

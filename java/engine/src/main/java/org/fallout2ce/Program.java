@@ -1065,6 +1065,207 @@ public class Program {
         opCompare(program, Cmp.GE);
     }
 
+    // opLogicalOperatorAnd (0x46A6B4) / opLogicalOperatorOr (0x46A8D8).
+    // NOTE: the float cases read integerValue (the union view, i.e. the raw
+    // IEEE-754 bits) and mask it with 0x7FFFFFFF, exactly like C.
+    private static void opLogicalOperatorAnd(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        int result;
+        switch (value[1].opcode) {
+        case VALUE_TYPE_STRING:
+        case VALUE_TYPE_DYNAMIC_STRING:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                result = 1;
+                break;
+            case VALUE_TYPE_FLOAT:
+                result = (value[0].integerValue & 0x7FFFFFFF) != 0 ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = value[0].integerValue != 0 ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                result = value[0].pointerValue != null ? 1 : 0;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                result = value[1].integerValue != 0 ? 1 : 0;
+                break;
+            case VALUE_TYPE_FLOAT:
+                result = ((value[1].integerValue & 0x7FFFFFFF) != 0
+                        && (value[0].integerValue & 0x7FFFFFFF) != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = ((value[1].integerValue & 0x7FFFFFFF) != 0
+                        && value[0].integerValue != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                result = ((value[1].integerValue & 0x7FFFFFFF) != 0
+                        && value[0].pointerValue != null) ? 1 : 0;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                result = value[1].integerValue != 0 ? 1 : 0;
+                break;
+            case VALUE_TYPE_FLOAT:
+                result = (value[1].integerValue != 0
+                        && (value[0].integerValue & 0x7FFFFFFF) != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = (value[1].integerValue != 0 && value[0].integerValue != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                result = (value[1].integerValue != 0 && value[0].pointerValue != null) ? 1 : 0;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        case VALUE_TYPE_PTR:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                result = value[1].pointerValue != null ? 1 : 0;
+                break;
+            case VALUE_TYPE_FLOAT:
+                result = (value[1].pointerValue != null
+                        && (value[0].integerValue & 0x7FFFFFFF) != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = (value[1].pointerValue != null && value[0].integerValue != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                result = (value[1].pointerValue != null && value[0].pointerValue != null) ? 1 : 0;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        default:
+            result = 0;
+            break;
+        }
+
+        programStackPushInteger(program, result);
+    }
+
+    private static void opLogicalOperatorOr(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        int result;
+        switch (value[1].opcode) {
+        case VALUE_TYPE_STRING:
+        case VALUE_TYPE_DYNAMIC_STRING:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+            case VALUE_TYPE_FLOAT:
+            case VALUE_TYPE_INT:
+            case VALUE_TYPE_PTR:
+                result = 1;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                result = 1;
+                break;
+            case VALUE_TYPE_FLOAT:
+                result = ((value[1].integerValue & 0x7FFFFFFF) != 0
+                        || (value[0].integerValue & 0x7FFFFFFF) != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = ((value[1].integerValue & 0x7FFFFFFF) != 0
+                        || value[0].integerValue != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                result = ((value[1].integerValue & 0x7FFFFFFF) != 0
+                        || value[0].pointerValue != null) ? 1 : 0;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                result = 1;
+                break;
+            case VALUE_TYPE_FLOAT:
+                result = (value[1].integerValue != 0
+                        || (value[0].integerValue & 0x7FFFFFFF) != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = (value[1].integerValue != 0 || value[0].integerValue != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                result = (value[1].integerValue != 0 || value[0].pointerValue != null) ? 1 : 0;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        case VALUE_TYPE_PTR:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                result = 1;
+                break;
+            case VALUE_TYPE_FLOAT:
+                result = (value[1].pointerValue != null
+                        || (value[0].integerValue & 0x7FFFFFFF) != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_INT:
+                result = (value[1].pointerValue != null || value[0].integerValue != 0) ? 1 : 0;
+                break;
+            case VALUE_TYPE_PTR:
+                result = (value[1].pointerValue != null || value[0].pointerValue != null) ? 1 : 0;
+                break;
+            default:
+                result = 0;
+                break;
+            }
+            break;
+        default:
+            result = 0;
+            break;
+        }
+
+        programStackPushInteger(program, result);
+    }
+
     // opJump (0x46B080): set the IP from the top of the value stack.
     private static void opJump(Program program) {
         program.instructionPointer = programStackPopInteger(program);
@@ -1176,6 +1377,8 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_WHILE, Program::opWhile);
         interpreterRegisterOpcode(OPCODE_STORE, Program::opStore);
         interpreterRegisterOpcode(OPCODE_FETCH, Program::opFetch);
+        interpreterRegisterOpcode(OPCODE_AND, Program::opLogicalOperatorAnd);
+        interpreterRegisterOpcode(OPCODE_OR, Program::opLogicalOperatorOr);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
