@@ -6669,6 +6669,7 @@ void sectionMapSave();
 void sectionMapRegistry();
 void sectionMapAreas();
 void sectionMapNames();
+void sectionStats();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6858,6 +6859,7 @@ void sectionMapChild()
     sectionMapRegistry();
     sectionMapAreas();
     sectionMapNames();
+    sectionStats();
 }
 
 
@@ -7241,6 +7243,41 @@ void sectionMapNames()
     }
 
     fallout::messageListFree(&fallout::gMapMessageList);
+}
+
+void sectionStats()
+{
+    std::puts("[stats]");
+
+    // statsInit pulls game\stat.msg through the sfall alias and fills the
+    // name/description tables plus the XP thresholds from content config.
+    int rc = fallout::statsInit();
+    std::printf("init=%d\n", rc);
+
+    // statGetName / statGetDescription read gStatDescriptions, which
+    // statsInit filled from messages 100+stat and 200+stat.
+    for (int stat : { 0, 1, 5, 36, 37 }) {
+        char* name = fallout::statGetName((fallout::Stat)stat);
+        char* desc = fallout::statGetDescription((fallout::Stat)stat);
+        std::printf("stat %d name=%s desc=%s\n", stat,
+            name != nullptr ? name : "<null>",
+            desc != nullptr ? desc : "<null>");
+    }
+    // Out of range must be null on both sides.
+    std::printf("stat -1 name=%s desc=%s\n",
+        fallout::statGetName((fallout::Stat)-1) != nullptr ? "nonnull" : "<null>",
+        fallout::statGetDescription((fallout::Stat)-1) != nullptr ? "nonnull" : "<null>");
+
+    for (int pcStat : { 0, 1, 4 }) {
+        char* name = fallout::pcStatGetName((fallout::PcStat)pcStat);
+        std::printf("pcstat %d name=%s\n", pcStat, name != nullptr ? name : "<null>");
+    }
+
+    // XP thresholds: the level-1..N progression the content config drives.
+    for (int level : { 1, 2, 3, 10, 50, 98 }) {
+        std::printf("xp level %d = %d\n", level, fallout::pcGetExperienceForLevel(level));
+    }
+    std::printf("xp next = %d\n", fallout::pcGetExperienceForNextLevel());
 }
 
 int main()

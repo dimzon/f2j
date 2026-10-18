@@ -984,6 +984,143 @@ public final class Stat {
         return 0;
     }
 
+    /**
+     * Compile-time minimumValue / maximumValue columns of
+     * {@code gStatDescriptions} (src/stat.cc), transcribed verbatim. These are
+     * what {@code statResetBounds} copies into the four configured bounds
+     * tables, so they have to match exactly.
+     */
+    private static final int[] STAT_MINIMUM_VALUES = {
+        StatDefs.PRIMARY_STAT_MIN, StatDefs.PRIMARY_STAT_MIN, StatDefs.PRIMARY_STAT_MIN,
+        StatDefs.PRIMARY_STAT_MIN, StatDefs.PRIMARY_STAT_MIN, StatDefs.PRIMARY_STAT_MIN,
+        StatDefs.PRIMARY_STAT_MIN, 0,
+        1, 0, 0, 0, 0, 0, 0, 0,
+        -60, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 16, 0, 0, 0, 0,
+    };
+
+    private static final int[] STAT_MAXIMUM_VALUES = {
+        StatDefs.PRIMARY_STAT_MAX, StatDefs.PRIMARY_STAT_MAX, StatDefs.PRIMARY_STAT_MAX,
+        StatDefs.PRIMARY_STAT_MAX, StatDefs.PRIMARY_STAT_MAX, StatDefs.PRIMARY_STAT_MAX,
+        StatDefs.PRIMARY_STAT_MAX, 999,
+        99, 999, Integer.MAX_VALUE, 500, 999, 60, 30, 100,
+        100, 100, 100, 100, 100, 100, 100, 100,
+        90, 90, 90, 90, 90, 100, 90, 95,
+        95, 101, 1, 2000, 2000, 2000,
+    };
+
+    /**
+     * Port of {@code statResetBounds} (src/stat.cc): seeds the four
+     * configured bounds tables from the compile-time description columns.
+     */
+    private static void statResetBounds() {
+        for (int stat = 0; stat < StatDefs.SAVEABLE_STAT_COUNT; stat++) {
+            PC_STAT_MAXIMUMS[stat] = STAT_MAXIMUM_VALUES[stat];
+            PC_STAT_MINIMUMS[stat] = STAT_MINIMUM_VALUES[stat];
+            NPC_STAT_MAXIMUMS[stat] = STAT_MAXIMUM_VALUES[stat];
+            NPC_STAT_MINIMUMS[stat] = STAT_MINIMUM_VALUES[stat];
+        }
+    }
+
+    /** Port of {@code gStatsMessageList} ({@code src/stat.cc}). */
+    private static final Message.MessageList STATS_MESSAGE_LIST = new Message.MessageList();
+
+    /** Port of {@code statIsValid} ({@code src/stat_defs.h}). */
+    private static boolean statIsValid(int stat) {
+        return stat >= StatDefs.STAT_FIRST && stat < StatDefs.STAT_COUNT;
+    }
+
+    /** Port of {@code pcStatIsValid} ({@code src/stat_defs.h}). */
+    private static boolean pcStatIsValid(int pcStat) {
+        return pcStat >= StatDefs.PC_STAT_FIRST && pcStat < StatDefs.PC_STAT_COUNT;
+    }
+
+    /**
+     * Port of {@code gStatDescriptions} name/description columns
+     * ({@code src/stat.cc}); filled by {@link #statsInit()}.
+     */
+    private static final String[] STAT_NAMES = new String[StatDefs.STAT_COUNT];
+    private static final String[] STAT_DESCRIPTIONS = new String[StatDefs.STAT_COUNT];
+
+    /** Port of {@code gPcStatDescriptions} name/description columns. */
+    private static final String[] PC_STAT_NAMES = new String[StatDefs.PC_STAT_COUNT];
+    private static final String[] PC_STAT_DESCRIPTIONS = new String[StatDefs.PC_STAT_COUNT];
+
+    /** Port of {@code gStatValueDescriptions} (message 301 + index - 1). */
+    private static final String[] STAT_VALUE_DESCRIPTIONS =
+            new String[StatDefs.PRIMARY_STAT_RANGE];
+
+    /**
+     * Port of {@code statsInit} (0x4AED70) as far as it is reachable
+     * headless: bounds reset, the XP threshold parse and the
+     * {@code game\stat.msg} description tables. The CRITTER stat engine and
+     * the standard-message-list registration stay with the game phase.
+     */
+    static int statsInit() {
+        statResetBounds();
+        // pcStatsReset copies gPcStatDescriptions[].defaultValue, not zero:
+        // PC_STAT_LEVEL starts at 1, which is what makes
+        // pcGetExperienceForNextLevel ask for level 2 rather than level 1.
+        for (int pcStat = 0; pcStat < StatDefs.PC_STAT_COUNT; pcStat++) {
+            PC_STAT_VALUES[pcStat] = PC_STAT_DEFAULT_VALUES[pcStat];
+        }
+
+        if (!Message.messageListInit(STATS_MESSAGE_LIST)) {
+            return -1;
+        }
+
+        if (!Message.messageListLoad(STATS_MESSAGE_LIST, "game\\stat.msg")) {
+            return -1;
+        }
+
+        Message.Item entry = new Message.Item();
+        for (int stat = 0; stat < StatDefs.STAT_COUNT; stat++) {
+            STAT_NAMES[stat] = Message.getmsg(STATS_MESSAGE_LIST, entry, 100 + stat);
+            STAT_DESCRIPTIONS[stat] = Message.getmsg(STATS_MESSAGE_LIST, entry, 200 + stat);
+        }
+
+        for (int pcStat = 0; pcStat < StatDefs.PC_STAT_COUNT; pcStat++) {
+            PC_STAT_NAMES[pcStat] = Message.getmsg(STATS_MESSAGE_LIST, entry, 400 + pcStat);
+            PC_STAT_DESCRIPTIONS[pcStat] = Message.getmsg(STATS_MESSAGE_LIST, entry, 500 + pcStat);
+        }
+
+        for (int index = StatDefs.PRIMARY_STAT_MIN - 1; index < StatDefs.PRIMARY_STAT_RANGE; index++) {
+            STAT_VALUE_DESCRIPTIONS[index] =
+                    Message.getmsg(STATS_MESSAGE_LIST, entry, 301 + index);
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code statGetName} (0x4AF854): null for an invalid stat. */
+    public static String statGetName(int stat) {
+        return statIsValid(stat) ? STAT_NAMES[stat] : null;
+    }
+
+    /** Port of {@code statGetDescription} (0x4AF898): null for an invalid stat. */
+    public static String statGetDescription(int stat) {
+        return statIsValid(stat) ? STAT_DESCRIPTIONS[stat] : null;
+    }
+
+    /**
+     * Port of {@code pcGetExperienceForNextLevel} (0x4AF9A0): one past the
+     * current level, so it reads {@code gPcStatValues[PC_STAT_LEVEL]} + 1.
+     */
+    public static int pcGetExperienceForNextLevel() {
+        return pcGetExperienceForLevel(PC_STAT_VALUES[1] + 1);
+    }
+
+    /** Port of {@code pcStatGetName} (0x4AF9F4). */
+    public static String pcStatGetName(int pcStat) {
+        return pcStatIsValid(pcStat) ? PC_STAT_NAMES[pcStat] : null;
+    }
+
+    /** Port of {@code pcStatGetDescription}. */
+    public static String pcStatGetDescription(int pcStat) {
+        return pcStatIsValid(pcStat) ? PC_STAT_DESCRIPTIONS[pcStat] : null;
+    }
+
     /** Test seam: zero the bounds tables + reset the AP bonus seams. */
     static void resetForTests() {
         java.util.Arrays.fill(PC_STAT_MAXIMUMS, 0);
