@@ -346,6 +346,11 @@ int wmWorldMap_save(File* stream);
 int wmWorldMap_load(File* stream);
 int wmMapMaxCount();
 
+// Area table size, exposed for the reference harness so the port's parse can
+// be diffed against C (the definition lives in worldmap.cc unchanged).
+extern int wmMaxAreaNum;
+int wmAreaInit();
+
 inline bool mapIsValid(int map)
 {
     return map >= MAP_FIRST && map < wmMapMaxCount();

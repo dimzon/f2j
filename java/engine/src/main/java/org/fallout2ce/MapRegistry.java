@@ -40,11 +40,15 @@ public final class MapRegistry {
     private MapRegistry() {
     }
 
-    /** MAP_AMBIENT_SOUND_EFFECTS_CAPACITY. */
-    static final int MAP_AMBIENT_SOUND_EFFECTS_CAPACITY = 4;
+    /**
+     * MAP_AMBIENT_SOUND_EFFECTS_CAPACITY. Raised from 6 to 7 upstream so
+     * "Tartar 3rd Floor 2" and "Livos Living Rooms" fit; 4 would truncate
+     * those configs and drop sfx on save.
+     */
+    static final int MAP_AMBIENT_SOUND_EFFECTS_CAPACITY = 7;
 
     /** MAP_STARTING_POINTS_CAPACITY. */
-    static final int MAP_STARTING_POINTS_CAPACITY = 4;
+    static final int MAP_STARTING_POINTS_CAPACITY = 15;
 
     /** Port of {@code MapAmbientSoundEffectInfo} ({@code src/worldmap.cc}). */
     static final class MapAmbientSoundEffectInfo {
@@ -245,6 +249,14 @@ public final class MapRegistry {
     // 0x4BFA44 wmMapIdxIsSaveable.
     public static boolean wmMapIdxIsSaveable(int mapIdx) {
         return mapInfoList.get(mapIdx).flags.has(MapFlags.MAP_SAVED);
+    }
+
+    /**
+     * The {@code lookup_name} of an entry, which is how area entrances
+     * reference their map (C: {@code wmParseFindMapIdxMatch}).
+     */
+    static String lookupName(int mapIdx) {
+        return mapInfoList.get(mapIdx).lookupName;
     }
 
     /** Test seam: fresh-process mirror (empty registry). */

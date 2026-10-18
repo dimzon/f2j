@@ -6667,6 +6667,7 @@ void sectionIsoRest()
 void sectionMapLoad();
 void sectionMapSave();
 void sectionMapRegistry();
+void sectionMapAreas();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6854,6 +6855,7 @@ void sectionMapChild()
     sectionMapLoad();
     sectionMapSave();
     sectionMapRegistry();
+    sectionMapAreas();
 }
 
 
@@ -7143,6 +7145,55 @@ void sectionMapRegistry()
             break;
         }
     }
+
+    fallout::configFree(&fallout::gGameConfig);
+}
+
+void sectionMapAreas()
+{
+    std::puts("[mapareas]");
+
+    fallout::configInit(&fallout::gGameConfig);
+    char gameCfgPath[] = "/game-en/fallout2.cfg";
+    fallout::configRead(&fallout::gGameConfig, gameCfgPath, false);
+
+    int areaRc = fallout::wmAreaInit();
+    int maxAreaNum = fallout::wmMaxAreaNum;
+    std::printf("init=%d maxarea=%d city-first=%d city-invalid=%d\n",
+        areaRc, maxAreaNum, (int)fallout::CITY_FIRST, (int)fallout::CITY_INVALID);
+
+    // cityIsValid mirrors mapIsValid for the area table, so its boundary is
+    // the same edge case worth pinning.
+    std::printf("city-valid min=%d max=%d past=%d\n",
+        fallout::cityIsValid(fallout::CITY_FIRST) ? 1 : 0,
+        fallout::cityIsValid(maxAreaNum - 1) ? 1 : 0,
+        fallout::cityIsValid(maxAreaNum) ? 1 : 0);
+
+    // wmMatchAreaContainingMapIdx resolves a map through its area's entrance
+    // table, so a successful hit also proves the entrances parsed.
+    for (int mapIdx : { 0, 3, 150 }) {
+        fallout::City area = fallout::CITY_INVALID;
+        int rc = fallout::wmMatchAreaContainingMapIdx((fallout::Map)mapIdx, &area);
+        std::printf("match %d rc=%d area=%d\n", mapIdx, rc, (int)area);
+    }
+
+    // mapAreSameArea additionally requires both maps to be saveable.
+    std::printf("same 0-0=%d\n", fallout::mapAreSameArea((fallout::Map)0, (fallout::Map)0) ? 1 : 0);
+    std::printf("same 0-150=%d\n", fallout::mapAreSameArea((fallout::Map)0, (fallout::Map)150) ? 1 : 0);
+    std::printf("same -1-0=%d\n", fallout::mapAreSameArea((fallout::Map)-1, (fallout::Map)0) ? 1 : 0);
+
+    // _get_map_idx_same returns the shared area id, or -1.
+    std::printf("idx-same 0-0=%d\n", fallout::_get_map_idx_same((fallout::Map)0, (fallout::Map)0));
+    std::printf("idx-same 0-150=%d\n", fallout::_get_map_idx_same((fallout::Map)0, (fallout::Map)150));
+
+    // mapGetLoadedAreaId reads gMapHeader.index. Index 111 rather than the
+    // table's last entry (150): the table has 151 rows but Map only names up
+    // to 149, so 150 has no enum name and cannot be carried across the port.
+    // 111 resolves to area 47, the same area the raw lookup above reports.
+    fallout::gMapHeader.index = (fallout::Map)0;
+    std::printf("loaded-area-0=%d\n", fallout::mapGetLoadedAreaId());
+    fallout::gMapHeader.index = (fallout::Map)111;
+    std::printf("loaded-area-111=%d\n", fallout::mapGetLoadedAreaId());
 
     fallout::configFree(&fallout::gGameConfig);
 }

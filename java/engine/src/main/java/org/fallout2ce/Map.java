@@ -133,7 +133,8 @@ public final class Map {
         gMapHeader.flags = 0;
         gMapHeader.darkness = 0;
         gMapHeader.globalVariablesCount = 0;
-        gMapHeader.index = null;
+        // C's BSS zero is MAP_FIRST (0), not a null enum.
+        gMapHeader.index = WorldmapDefs.Map.MAP_RND_DESERT_1;
         gMapHeader.lastVisitTime = 0;
         java.util.Arrays.fill(gMapHeader.field3C, 0);
         mapTransition.map = null;
@@ -249,6 +250,63 @@ public final class Map {
         gMapHeader.enteringTile = tile;
         gMapHeader.enteringElevation = elevation;
         gMapHeader.enteringRotation = rotation;
+    }
+
+    /**
+     * Port of {@code mapAreSameArea} (0x482528): both maps must resolve to
+     * the same area, and both must be saveable — a non-saveable map is
+     * never treated as "the same place" regardless of its area.
+     */
+    public static boolean mapAreSameArea(int map1, int map2) {
+        if (!MapRegistry.mapIsValid(map1)) {
+            return false;
+        }
+        if (!MapRegistry.mapIsValid(map2)) {
+            return false;
+        }
+        if (!MapRegistry.wmMapIdxIsSaveable(map1)) {
+            return false;
+        }
+        if (!MapRegistry.wmMapIdxIsSaveable(map2)) {
+            return false;
+        }
+        MapAreas.City[] city1 = new MapAreas.City[1];
+        if (MapAreas.wmMatchAreaContainingMapIdx(map1, city1) == -1) {
+            return false;
+        }
+        MapAreas.City[] city2 = new MapAreas.City[1];
+        if (MapAreas.wmMatchAreaContainingMapIdx(map2, city2) == -1) {
+            return false;
+        }
+        return city1[0] == city2[0];
+    }
+
+    /** Port of {@code _get_map_idx_same} (0x4825CC): shared area id, or -1. */
+    static int getMapIdxSame(int map1, int map2) {
+        MapAreas.City[] city1 = new MapAreas.City[1];
+        city1[0] = MapAreas.City.CITY_INVALID;
+        if (MapAreas.wmMatchAreaContainingMapIdx(map1, city1) == -1) {
+            return -1;
+        }
+        MapAreas.City[] city2 = new MapAreas.City[1];
+        city2[0] = MapAreas.City.CITY_INVALID;
+        if (MapAreas.wmMatchAreaContainingMapIdx(map2, city2) == -1) {
+            return -1;
+        }
+        if (city1[0] != city2[0]) {
+            return -1;
+        }
+        return city1[0].id();
+    }
+
+    /** Port of {@code mapGetLoadedAreaId} (0x48358C): area of the loaded map. */
+    public static int mapGetLoadedAreaId() {
+        MapAreas.City[] city = new MapAreas.City[1];
+        city[0] = MapAreas.City.CITY_INVALID;
+        if (MapAreas.wmMatchAreaContainingMapIdx(gMapHeader.index.id(), city) == -1) {
+            city[0] = MapAreas.City.CITY_INVALID;
+        }
+        return city[0].id();
     }
 
     /** Port of {@code mapGetCurrentMap} (0x4826B8): returns the header map index. */

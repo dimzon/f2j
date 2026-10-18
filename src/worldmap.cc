@@ -553,7 +553,7 @@ static int wmParseConditional(char** stringPtr, const char* ifString, EncounterC
 static int wmParseSubConditional(char** stringPtr, const char* ifString, EncounterConditionType* typePtr, EncounterConditionalOperator* operatorPtr, int* paramPtr, int* valuePtr);
 static int wmParseConditionalEval(char** stringPtr, EncounterConditionalOperator* conditionalOperatorPtr);
 static int wmAreaSlotInit(CityInfo* area);
-static int wmAreaInit();
+int wmAreaInit();
 static int wmParseFindMapIdxMatch(char* string, int* valuePtr);
 static int wmEntranceSlotInit(EntranceInfo* entrance);
 static int wmMapSlotInit(MapInfo* map);
@@ -724,10 +724,10 @@ static int wmMaxTileNum = 0;
 static int wmNumHorizontalTiles = 0;
 
 // 0x51DDF8 wmAreaInfoList
-static CityInfo* wmAreaInfoList = nullptr;
+CityInfo* wmAreaInfoList = nullptr;
 
 // 0x51DDFC wmMaxAreaNum
-static int wmMaxAreaNum = 0;
+int wmMaxAreaNum = 0;
 
 // 0x51DE00 wmAreaSizeStrs
 static const char* wmAreaSizeStrs[CITY_SIZE_COUNT] = {
@@ -3096,7 +3096,7 @@ static int wmAreaSlotInit(CityInfo* area)
 }
 
 // 0x4BEF68 wmAreaInit
-static int wmAreaInit()
+int wmAreaInit()
 {
     if (wmMapInit() == -1) {
         return -1;
