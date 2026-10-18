@@ -6670,6 +6670,7 @@ void sectionMapRegistry();
 void sectionMapAreas();
 void sectionMapNames();
 void sectionStats();
+void sectionCritterState();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6860,6 +6861,7 @@ void sectionMapChild()
     sectionMapAreas();
     sectionMapNames();
     sectionStats();
+    sectionCritterState();
 }
 
 
@@ -7278,6 +7280,73 @@ void sectionStats()
         std::printf("xp level %d = %d\n", level, fallout::pcGetExperienceForLevel(level));
     }
     std::printf("xp next = %d\n", fallout::pcGetExperienceForNextLevel());
+}
+
+void sectionCritterState()
+{
+    std::puts("[critterstate]");
+
+    // critterInit gives the dude a critter proto so the state predicates,
+    // which all require OBJ_TYPE_CRITTER, are reachable.
+    fallout::critterInit();
+
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+    std::printf("proto-type=%d\n", (int)fallout::ProtoId(dude).objectType());
+    std::printf("hp=%d results=%d anim=%d\n",
+        fallout::critterGetHitPoints(dude),
+        (int)dude->data.critter.combat.results,
+        (int)fallout::FrmId(dude).animationType());
+
+    // critterIsDead has three branches: HP <= 0, the DAM_DEAD bit, and
+    // neither. critterAdjustHitPoints clamps to STAT_MAXIMUM_HIT_POINTS,
+    // which is 0 for a headless dude, so drive the fields directly to
+    // isolate each branch.
+    dude->data.critter.hp = 10;
+    std::printf("dead hp=10 -> %d\n", fallout::critterIsDead(dude) ? 1 : 0);
+    dude->data.critter.hp = 0;
+    std::printf("dead hp=0 -> %d\n", fallout::critterIsDead(dude) ? 1 : 0);
+    dude->data.critter.hp = 10;
+    dude->data.critter.combat.results = (fallout::Dam)fallout::DAM_DEAD;
+    std::printf("dead flag -> %d\n", fallout::critterIsDead(dude) ? 1 : 0);
+    dude->data.critter.combat.results = (fallout::Dam)fallout::DAM_NONE;
+
+    // critterIsCrippled is the DAM_CRIP bit alone.
+    std::printf("crippled 0 -> %d\n", fallout::critterIsCrippled(dude) ? 1 : 0);
+    dude->data.critter.combat.results |= fallout::DAM_CRIP;
+    std::printf("crippled 1 -> %d\n", fallout::critterIsCrippled(dude) ? 1 : 0);
+    dude->data.critter.combat.results = (fallout::Dam)(
+        ((int)dude->data.critter.combat.results & ~(int)fallout::DAM_CRIP));
+
+    // critterIsProne keys off the knockdown bits and two anim ranges
+    // (20-35, 48-63); print the anim so a nonzero result is explicable.
+    std::printf("prone 0 -> %d anim=%d results=%d\n",
+        fallout::critterIsProne(dude) ? 1 : 0,
+        (int)fallout::FrmId(dude).animationType(),
+        (int)dude->data.critter.combat.results);
+    dude->data.critter.combat.results |= fallout::DAM_KNOCKED_DOWN;
+    std::printf("prone downed -> %d\n", fallout::critterIsProne(dude) ? 1 : 0);
+    dude->data.critter.combat.results = (fallout::Dam)(
+        ((int)dude->data.critter.combat.results & ~(int)fallout::DAM_KNOCKED_DOWN));
+
+    // dudeHasState: POISONED/RADIATED are value thresholds, the rest are bits.
+    for (int state : { 0, 1, 2, 3 }) {
+        std::printf("dude-state %d = %d\n", state, fallout::dudeHasState((fallout::DudeState)state) ? 1 : 0);
+    }
+    std::printf("dude-state 9 = %d\n", fallout::dudeHasState((fallout::DudeState)9) ? 1 : 0);
+
+    // POISONED (state 1) is a value threshold over critterGetPoison;
+    // sneaking/level-up/addicted are critter flag bits that need critterInit
+    // to have set them, so only the poisoned half is observable here.
+    dude->data.critter.poison = 1;
+    std::printf("poison 1 state1 = %d\n",
+        fallout::dudeHasState((fallout::DudeState)1) ? 1 : 0);
+    dude->data.critter.poison = 0;
+    std::printf("poison 0 state1 = %d\n",
+        fallout::dudeHasState((fallout::DudeState)1) ? 1 : 0);
 }
 
 int main()

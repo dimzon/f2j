@@ -153,6 +153,105 @@ public final class Critter {
         return slot[0].critter.data.killType;
     }
 
+    // KNOCKDOWN_AND_DEATH / SF_DEATH anim ranges (src/animation_defs.h).
+    /** FIRST_KNOCKDOWN_AND_DEATH_ANIM = ANIM_FALL_BACK. */
+    public static final int FIRST_KNOCKDOWN_AND_DEATH_ANIM = 20;
+    /** LAST_KNOCKDOWN_AND_DEATH_ANIM = ANIM_FALL_FRONT_BLOOD. */
+    public static final int LAST_KNOCKDOWN_AND_DEATH_ANIM = 35;
+    /** FIRST_SF_DEATH_ANIM = ANIM_FALL_BACK_SF. */
+    public static final int FIRST_SF_DEATH_ANIM = 48;
+    /** LAST_SF_DEATH_ANIM = ANIM_FALL_FRONT_BLOOD_SF. */
+    public static final int LAST_SF_DEATH_ANIM = 63;
+
+    /** DUDE_STATE_* (src/obj_types.h); the first three are what this slice reads. */
+    public static final int DUDE_STATE_SNEAKING = 0;
+    public static final int DUDE_STATE_POISONED = 1;
+    public static final int DUDE_STATE_RADIATED = 2;
+    public static final int DUDE_STATE_LEVEL_UP_AVAILABLE = 3;
+    public static final int DUDE_STATE_ADDICTED = 4;
+    public static final int DUDE_STATE_COUNT = 5;
+    public static final int DUDE_STATE_FIRST = DUDE_STATE_SNEAKING;
+
+    /** POISON_INDICATOR_THRESHOLD (src/interface.h). */
+    public static final int POISON_INDICATOR_THRESHOLD = 0;
+
+    /** RADATION_INDICATOR_THRESHOLD (src/interface.h, typo is upstream's). */
+    public static final int RADATION_INDICATOR_THRESHOLD = 65;
+
+    /** Port of {@code dudeStateIsValid} (src/obj_types.h). */
+    public static boolean dudeStateIsValid(int state) {
+        return state >= DUDE_STATE_FIRST && state < DUDE_STATE_COUNT;
+    }
+
+    /**
+     * Port of {@code critterIsDead} (0x42DD30): non-critter false; HP at or
+     * below zero true; the {@code DAM_DEAD} bit true; otherwise false.
+     */
+    public static boolean critterIsDead(GameObject critter) {
+        if (ProtoTypes.ProtoId.ofGameObject(critter).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+
+        if (critterGetHitPoints(critter) <= 0) {
+            return true;
+        }
+
+        return !critter.data.critter.combat.results.and(Dam.DEAD).equals(Dam.NONE);
+    }
+
+    /** Port of {@code critterIsCrippled} (0x42DD58): the {@code DAM_CRIP} bit. */
+    public static boolean critterIsCrippled(GameObject critter) {
+        if (ProtoTypes.ProtoId.ofGameObject(critter).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+
+        return !critter.data.critter.combat.results.and(Dam.CRIP).equals(Dam.NONE);
+    }
+
+    /**
+     * Port of {@code critterIsProne} (0x42DD80): non-critter false; then the
+     * knockdown bits, or the animation inside either death range.
+     */
+    public static boolean critterIsProne(GameObject critter) {
+        if (ProtoTypes.ProtoId.ofGameObject(critter).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+
+        int anim = FrmId.ofFid(critter.fid).animationType();
+
+        return (critter.data.critter.combat.results.bits() & (Dam.KNOCKED_OUT.bits() | Dam.KNOCKED_DOWN.bits())) != 0
+            || (anim >= FIRST_KNOCKDOWN_AND_DEATH_ANIM && anim <= LAST_KNOCKDOWN_AND_DEATH_ANIM)
+            || (anim >= FIRST_SF_DEATH_ANIM && anim <= LAST_SF_DEATH_ANIM);
+    }
+
+    /**
+     * Port of {@code dudeHasState} (0x42E2F8) for the states this slice can
+     * reach: POISONED and RADIATED read critter poison / radiation; the rest
+     * are critter flag bits set by critterInit, which is game phase.
+     */
+    public static boolean dudeHasState(int state) {
+        if (!dudeStateIsValid(state)) {
+            return false;
+        }
+
+        GameObject dude = ObjectSystem.getDude();
+        if (dude == null) {
+            return false;
+        }
+
+        if (state == DUDE_STATE_POISONED) {
+            return critterGetPoison(dude) > POISON_INDICATOR_THRESHOLD;
+        }
+        if (state == DUDE_STATE_RADIATED) {
+            return critterGetRadiation(dude) > RADATION_INDICATOR_THRESHOLD;
+        }
+
+        // NOTE: sneaking / level-up / addicted are CRITTER_DUDE_* flag bits.
+        // critterInit (game phase) owns them, so they read false headless,
+        // exactly like C without it.
+        return false;
+    }
+
     // critter_get_hits (src/critter.cc 0x42D18C): non-critter -> 0, else
     // the live hp field. Critter-ness is tested via ProtoId.objectType
     // (mirrors Stat#critterGetHitPoints); fresh objects are zero-init by
