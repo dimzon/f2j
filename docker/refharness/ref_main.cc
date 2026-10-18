@@ -6671,6 +6671,7 @@ void sectionMapAreas();
 void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
+void sectionPartyPrefs();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6862,6 +6863,7 @@ void sectionMapChild()
     sectionMapNames();
     sectionStats();
     sectionCritterState();
+    sectionPartyPrefs();
 }
 
 
@@ -7347,6 +7349,64 @@ void sectionCritterState()
     dude->data.critter.poison = 0;
     std::printf("poison 0 state1 = %d\n",
         fallout::dudeHasState((fallout::DudeState)1) ? 1 : 0);
+}
+
+void sectionPartyPrefs()
+{
+    std::puts("[partyprefs]");
+
+    // partyMembersInit parses the party member descriptions out of the game
+    // config; every lookup below resolves through those tables.
+    fallout::partyMembersInit();
+    std::printf("descs=%d\n", fallout::gPartyMemberDescriptionsLength);
+
+    // The dude carries the first (non-player) description at index 1.
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    // partyMemberGetCurrentLevel walks the proto-id table and reads the
+    // parsed level_up_every; 0 means the dude is not a party member.
+    std::printf("level dude=%d\n", fallout::partyMemberGetCurrentLevel(dude));
+
+    // The supports-* predicates read one flag each out of the description.
+    // The dude is not a party member, so spawn one of the first parsed
+    // party member protos to reach the flag lookups.
+    fallout::Object* member = nullptr;
+    if (fallout::gPartyMemberProtoIds.size() > 1) {
+        fallout::objectCreateWithProtoId(&member, fallout::gPartyMemberProtoIds[1]);
+    }
+    if (member == nullptr) {
+        std::puts("member=null");
+        return;
+    }
+    std::printf("member-pid=%d\n", (int)member->pid);
+    std::printf("level member=%d\n", fallout::partyMemberGetCurrentLevel(member));
+
+    for (int bw = 0; bw < 4; bw++) {
+        std::printf("bestweapon %d = %d\n", bw,
+            fallout::partyMemberSupportsBestWeapon(member, (fallout::BestWeapon)bw) ? 1 : 0);
+    }
+    for (int dm = 0; dm < 3; dm++) {
+        std::printf("distance %d = %d\n", dm,
+            fallout::partyMemberSupportsDistance(member, (fallout::DistanceMode)dm) ? 1 : 0);
+    }
+    for (int cu = 0; cu < 3; cu++) {
+        std::printf("chemuse %d = %d\n", cu,
+            fallout::partyMemberSupportsChemUse(member, (fallout::ChemUse)cu) ? 1 : 0);
+    }
+    for (int aw = 0; aw < 3; aw++) {
+        std::printf("areaattack %d = %d\n", aw,
+            fallout::partyMemberSupportsAreaAttackMode(member, (fallout::AreaAttackMode)aw) ? 1 : 0);
+    }
+
+    // An invalid enum must be rejected before the description lookup.
+    std::printf("bestweapon 99 = %d\n",
+        fallout::partyMemberSupportsBestWeapon(member, (fallout::BestWeapon)99) ? 1 : 0);
+    std::printf("distance 99 = %d\n",
+        fallout::partyMemberSupportsDistance(member, (fallout::DistanceMode)99) ? 1 : 0);
 }
 
 int main()

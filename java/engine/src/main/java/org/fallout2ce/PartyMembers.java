@@ -188,6 +188,96 @@ public final class PartyMembers {
     /** Port of {@code npcEngineLevelUp} (SFALL toggle). */
     static boolean npcEngineLevelUp = true;
 
+    /**
+     * Port of {@code partyMemberGetDescription} (src/party_member.cc): finds
+     * the description whose proto id matches the object's, starting at index 1
+     * (index 0 is the player character).
+     */
+    private static int partyMemberGetDescription(GameObject object, PartyMemberDescription[] out) {
+        for (int index = 1; index < descriptionsLength; index++) {
+            if (partyMemberProtoIds.get(index).equals(ProtoId.ofGameObject(object))) {
+                out[0] = descriptions.get(index);
+                return 0;
+            }
+        }
+        return -1;
+    }
+
+    /** Port of {@code partyMemberGetCurrentLevel} (0x495FF0): 0 when not a member. */
+    public static int partyMemberGetCurrentLevel(GameObject object) {
+        if (object == null) {
+            return 0;
+        }
+
+        for (int index = 1; index < descriptionsLength; index++) {
+            if (partyMemberProtoIds.get(index).equals(ProtoId.ofGameObject(object))) {
+                return levelUpInfos.get(index).level;
+            }
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code partyMemberSupportsBestWeapon} (0x4959D4). */
+    public static boolean partyMemberSupportsBestWeapon(GameObject object, int bestWeapon) {
+        if (ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+        if (!CombatAiDefs.bestWeaponIsValid(bestWeapon)) {
+            return false;
+        }
+        PartyMemberDescription[] desc = new PartyMemberDescription[1];
+        if (partyMemberGetDescription(object, desc) == -1) {
+            return false;
+        }
+        return desc[0].bestWeapon[bestWeapon];
+    }
+
+    /** Port of {@code partyMemberSupportsDistance} (0x495A40). */
+    public static boolean partyMemberSupportsDistance(GameObject object, int distanceMode) {
+        if (ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+        if (!CombatAiDefs.distanceModeIsValid(distanceMode)) {
+            return false;
+        }
+        PartyMemberDescription[] desc = new PartyMemberDescription[1];
+        if (partyMemberGetDescription(object, desc) == -1) {
+            return false;
+        }
+        return desc[0].distanceMode[distanceMode];
+    }
+
+    /** Port of {@code partyMemberSupportsChemUse}. */
+    public static boolean partyMemberSupportsChemUse(GameObject object, int chemUse) {
+        if (ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+        if (!CombatAiDefs.chemUseIsValid(chemUse)) {
+            return false;
+        }
+        PartyMemberDescription[] desc = new PartyMemberDescription[1];
+        if (partyMemberGetDescription(object, desc) == -1) {
+            return false;
+        }
+        return desc[0].chemUse[chemUse];
+    }
+
+    /** Port of {@code partyMemberSupportsAreaAttackMode}. */
+    public static boolean partyMemberSupportsAreaAttackMode(GameObject object, int mode) {
+        if (ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+        if (!CombatAiDefs.areaAttackModeIsValid(mode)) {
+            return false;
+        }
+        PartyMemberDescription[] desc = new PartyMemberDescription[1];
+        if (partyMemberGetDescription(object, desc) == -1) {
+            return false;
+        }
+        return desc[0].areaAttackMode[mode];
+    }
+
     // CE: extracted from partyMembersInit().
     static int partyMembersParseConfig(Config.Cfg config, boolean reindex) {
         if (config == null) {
