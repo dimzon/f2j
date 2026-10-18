@@ -6676,6 +6676,7 @@ void sectionPartyPrefs();
 void sectionItemsInit();
 void sectionAutomap();
 void sectionVm();
+void sectionVmStack();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6871,6 +6872,7 @@ void sectionMapChild()
     sectionItemsInit();
     sectionAutomap();
     sectionVm();
+    sectionVmStack();
 }
 
 
@@ -7535,6 +7537,125 @@ void sectionAutomap()
     fallout::automapSetDisplayMap((fallout::Map)3, true);
     fallout::automapSetDisplayMap((fallout::Map)42, false);
     std::printf("window=%d\n", fallout::automapGetWindow());
+}
+
+// Builds a synthetic program from a raw bytecode blob and runs it, printing
+// the resulting stack / frame / base / return-stack state. Same header shape
+// as sectionVm: procedure count 0 at 42, opcodes from byte 54.
+static void vmStackRun(const char* name, const unsigned char* code, int codeLength,
+    int framePointer, int basePointer, int budget)
+{
+    unsigned char data[256];
+    memset(data, 0, sizeof(data));
+    int32_t zero = 0;
+    memcpy(data + 42, &zero, sizeof(zero));
+    memcpy(data + 46, &zero, sizeof(zero));
+    memcpy(data + 50, &zero, sizeof(zero));
+    memcpy(data + 54, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmstack-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+
+    program->flags = 0;
+    program->framePointer = framePointer;
+    program->basePointer = basePointer;
+    program->instructionPointer = 54;
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d exited=%d flags=%08X frame=%d base=%d stack=%d",
+        name,
+        program->instructionPointer,
+        program->exited ? 1 : 0,
+        (unsigned int)program->flags,
+        program->framePointer,
+        program->basePointer,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf(" ret=%d", (int)program->returnStackValues->size());
+    for (auto it = program->returnStackValues->rbegin(); it != program->returnStackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
+void sectionVmStack()
+{
+    std::puts("[vmstack]");
+
+    // The stack/frame opcodes, exercised on hand-built bytecode so the
+    // vectors pin the exact cell order without needing a real .int.
+
+    // PUSH int / float, then POP / DUP / SWAP / POP.
+    static const unsigned char stackMove[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0B, // PUSH int 11
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x16, // PUSH int 22
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0x80, 0x1A, // POP
+        0x80, 0x1B, // DUP
+        0x80, 0x18, // SWAP
+        0x80, 0x1A, // POP
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmStackRun("move", stackMove, sizeof(stackMove), -1, -1, 32);
+
+    // PUSH float: the opcode carries VALUE_TYPE_FLOAT (0xA001) and the
+    // immediate is the IEEE-754 bits, so integerValue prints as 0x3FC00000.
+    static const unsigned char pushFloat[] = {
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmStackRun("pushfloat", pushFloat, sizeof(pushFloat), -1, -1, 32);
+
+    // A value below the frame, two args, the nargs count, PUSH_BASE, two
+    // locals, then POP_TO_BASE (which must stop at the frame) and POP_BASE.
+    static const unsigned char frame[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x64, // PUSH int 100 (below frame)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH int 5 (arg0)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x06, // PUSH int 6 (arg1)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (nargs)
+        0x80, 0x2B, // PUSH_BASE (frame = 3 - 2 = 1)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x07, // PUSH int 7 (local)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x08, // PUSH int 8 (local)
+        0x80, 0x2A, // POP_TO_BASE (back to [100])
+        0x80, 0x29, // POP_BASE (frame = -1)
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmStackRun("frame", frame, sizeof(frame), -1, -1, 32);
+
+    // D_TO_A / A_TO_D round-trip, then two D_TO_A, SWAPA, SET_GLOBAL.
+    static const unsigned char global[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0B, // PUSH int 11
+        0x80, 0x0D, // D_TO_A
+        0x80, 0x0C, // A_TO_D
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x16, // PUSH int 22
+        0x80, 0x0D, // D_TO_A
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x21, // PUSH int 33
+        0x80, 0x0D, // D_TO_A
+        0x80, 0x19, // SWAPA
+        0x80, 0x2C, // SET_GLOBAL
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmStackRun("global", global, sizeof(global), -1, -1, 32);
+
+    // EXIT: EXITED plus the intLib reference removal.
+    static const unsigned char exit[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x2A, // PUSH int 42
+        0x80, 0x0E, // EXIT
+    };
+    vmStackRun("exit", exit, sizeof(exit), -1, -1, 32);
 }
 
 void sectionVm()

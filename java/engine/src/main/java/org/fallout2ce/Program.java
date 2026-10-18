@@ -349,15 +349,139 @@ public class Program {
         program.flags |= PROGRAM_FLAG_EXITED;
     }
 
+    // opPush (0x467C94). The 4-byte immediate that follows the opcode is the
+    // value; its type is the *opcode itself* (0xC001 int, 0xA001 float, 0x9001
+    // static string, ...), which the loop already parked in flags' top 16 bits.
+    // The dispatcher masks with 0x3FF, so every type variant lands on this one
+    // handler.
+    private static void opPush(Program program) {
+        int pos = program.instructionPointer;
+        program.instructionPointer = pos + 4;
+        int value = stackReadInt32(program.data, pos);
+        ProgramValue result = new ProgramValue();
+        result.opcode = (program.flags >> 16) & 0xFFFF;
+        result.integerValue = value;
+        programStackPushValue(program, result);
+    }
+
+    // opPop (0x46BE10): discard the top value.
+    private static void opPop(Program program) {
+        programStackPopValue(program);
+    }
+
+    // opDuplicate (0x46BE4C): pop one, push it back twice.
+    private static void opDuplicate(Program program) {
+        ProgramValue value = programStackPopValue(program);
+        programStackPushValue(program, value);
+        programStackPushValue(program, value);
+    }
+
+    // opSwapStack (0x46BCAC): exchange the top two value-stack cells.
+    private static void opSwapStack(Program program) {
+        ProgramValue topValue = programStackPopValue(program);
+        ProgramValue nextValue = programStackPopValue(program);
+        programStackPushValue(program, topValue);
+        programStackPushValue(program, nextValue);
+    }
+
+    // opSwapReturnStack (0x46AFFC): same exchange on the return stack.
+    private static void opSwapReturnStack(Program program) {
+        ProgramValue topValue = programReturnStackPopValue(program);
+        ProgramValue nextValue = programReturnStackPopValue(program);
+        programReturnStackPushValue(program, topValue);
+        programReturnStackPushValue(program, nextValue);
+    }
+
+    // opPushBase (0x467CD0): pop the argument count, save the old frame pointer
+    // on the return stack, and set the frame to size - argumentCount.
+    private static void opPushBase(Program program) {
+        int argumentCount = programStackPopInteger(program);
+        programReturnStackPushInteger(program, program.framePointer);
+        program.framePointer = program.stackValues.size() - argumentCount;
+    }
+
+    // opPopBase (0x467D3C): restore the frame pointer from the return stack.
+    private static void opPopBase(Program program) {
+        int data = programReturnStackPopInteger(program);
+        program.framePointer = data;
+    }
+
+    // opPopToBase (0x467D94): discard values until the stack shrinks back to
+    // the frame.
+    private static void opPopToBase(Program program) {
+        while (program.stackValues.size() != program.framePointer) {
+            programStackPopValue(program);
+        }
+    }
+
+    // opPopReturn (0x46B63C): set the IP from the top of the return stack.
+    private static void opPopReturn(Program program) {
+        program.instructionPointer = programReturnStackPopInteger(program);
+    }
+
+    // opAtoD (0x46BA2C): move the top return-stack cell onto the value stack.
+    private static void opAtoD(Program program) {
+        ProgramValue value = programReturnStackPopValue(program);
+        programStackPushValue(program, value);
+    }
+
+    // opDtoA (0x46BA68): move the top value-stack cell onto the return stack.
+    private static void opDtoA(Program program) {
+        ProgramValue value = programStackPopValue(program);
+        programReturnStackPushValue(program, value);
+    }
+
+    // opExit (0x46C1A0): EXITED plus the child-spawn detach and the
+    // intLib reference removal (Nevs.removeProgramReferences in the port).
+    private static void opExit(Program program) {
+        program.flags |= PROGRAM_FLAG_EXITED;
+
+        Program parent = program.parent;
+        if (parent != null) {
+            if ((parent.flags & PROGRAM_FLAG_CHILD_SPAWN) != 0) {
+                parent.flags &= ~PROGRAM_FLAG_CHILD_SPAWN;
+            }
+        }
+
+        if (!program.exited) {
+            Nevs.removeProgramReferences(program);
+            program.exited = true;
+        }
+    }
+
+    // opStopProgram (0x46BAC8).
+    private static void opStopProgram(Program program) {
+        program.flags |= PROGRAM_FLAG_STOPPED;
+    }
+
+    // opSetGlobal (0x467DE0): base pointer = current stack size.
+    private static void opSetGlobal(Program program) {
+        program.basePointer = program.stackValues.size();
+    }
+
     /**
-     * Port of {@code interpreterRegisterOpcodeHandlers} for the subset this
-     * slice runs. C registers all 76 handlers here; the rest arrive with
+     * Port of {@code interpreterRegisterOpcodeHandlers} for the subset these
+     * slices run. C registers all 76 handlers here; the rest arrive with
      * their opcodes.
      */
     static void interpreterRegisterOpcodeHandlers() {
         interpreterEnabled = true;
         interpreterRegisterOpcode(OPCODE_NOOP, Program::opNoop);
+        interpreterRegisterOpcode(OPCODE_PUSH, Program::opPush);
+        interpreterRegisterOpcode(OPCODE_A_TO_D, Program::opAtoD);
+        interpreterRegisterOpcode(OPCODE_D_TO_A, Program::opDtoA);
+        interpreterRegisterOpcode(OPCODE_EXIT, Program::opExit);
         interpreterRegisterOpcode(OPCODE_EXIT_PROGRAM, Program::opExitProgram);
+        interpreterRegisterOpcode(OPCODE_STOP_PROGRAM, Program::opStopProgram);
+        interpreterRegisterOpcode(OPCODE_SWAP, Program::opSwapStack);
+        interpreterRegisterOpcode(OPCODE_SWAPA, Program::opSwapReturnStack);
+        interpreterRegisterOpcode(OPCODE_POP, Program::opPop);
+        interpreterRegisterOpcode(OPCODE_DUP, Program::opDuplicate);
+        interpreterRegisterOpcode(OPCODE_POP_RETURN, Program::opPopReturn);
+        interpreterRegisterOpcode(OPCODE_POP_BASE, Program::opPopBase);
+        interpreterRegisterOpcode(OPCODE_POP_TO_BASE, Program::opPopToBase);
+        interpreterRegisterOpcode(OPCODE_PUSH_BASE, Program::opPushBase);
+        interpreterRegisterOpcode(OPCODE_SET_GLOBAL, Program::opSetGlobal);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
