@@ -361,6 +361,9 @@ public class Program {
         ProgramValue result = new ProgramValue();
         result.opcode = (program.flags >> 16) & 0xFFFF;
         result.integerValue = value;
+        // C stores the immediate in a union, so the same 4 bytes are readable
+        // as either an int or a float; keep both Java fields in sync.
+        result.floatValue = Float.intBitsToFloat(value);
         programStackPushValue(program, result);
     }
 
@@ -459,6 +462,398 @@ public class Program {
         program.basePointer = program.stackValues.size();
     }
 
+    // opAdd (0x469BC4). String + anything concatenates (the string first, then
+    // the other operand formatted); float + anything stays float; int + int
+    // stays int unless it would overflow, in which case it promotes to float.
+    private static void opAdd(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        switch (value[1].opcode) {
+        case VALUE_TYPE_STRING:
+        case VALUE_TYPE_DYNAMIC_STRING: {
+            String strings1 = programGetString(program, value[1].opcode, value[1].integerValue);
+            String strings0;
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                strings0 = programGetString(program, value[0].opcode, value[0].integerValue);
+                break;
+            case VALUE_TYPE_FLOAT:
+                strings0 = formatFloat5(value[0].floatValue);
+                break;
+            case VALUE_TYPE_INT:
+                strings0 = Integer.toString(value[0].integerValue);
+                break;
+            case VALUE_TYPE_PTR:
+                strings0 = formatPointer(value[0].pointerValue);
+                break;
+            default:
+                strings0 = "";
+                break;
+            }
+            programStackPushString(program, strings1 + strings0);
+            break;
+        }
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING: {
+                String strings0 = programGetString(program, value[0].opcode, value[0].integerValue);
+                programStackPushString(program, formatFloat5(value[1].floatValue) + strings0);
+                break;
+            }
+            case VALUE_TYPE_FLOAT:
+                programStackPushFloat(program, value[1].floatValue + value[0].floatValue);
+                break;
+            case VALUE_TYPE_INT:
+                programStackPushFloat(program, value[1].floatValue + (float) value[0].integerValue);
+                break;
+            default:
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING: {
+                String strings0 = programGetString(program, value[0].opcode, value[0].integerValue);
+                programStackPushString(program, Integer.toString(value[1].integerValue) + strings0);
+                break;
+            }
+            case VALUE_TYPE_FLOAT:
+                programStackPushFloat(program, (float) value[1].integerValue + value[0].floatValue);
+                break;
+            case VALUE_TYPE_INT:
+                if ((value[0].integerValue <= 0
+                        || (Integer.MAX_VALUE - value[0].integerValue) > value[1].integerValue)
+                        && (value[0].integerValue >= 0
+                                || (Integer.MIN_VALUE - value[0].integerValue) <= value[1].integerValue)) {
+                    programStackPushInteger(program, value[1].integerValue + value[0].integerValue);
+                } else {
+                    programStackPushFloat(program,
+                            (float) value[1].integerValue + (float) value[0].integerValue);
+                }
+                break;
+            default:
+                break;
+            }
+            break;
+        case VALUE_TYPE_PTR:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING: {
+                String strings0 = programGetString(program, value[0].opcode, value[0].integerValue);
+                programStackPushString(program, formatPointer(value[1].pointerValue) + strings0);
+                break;
+            }
+            default:
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // opSubtract (0x46A1D8).
+    private static void opSubtract(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        switch (value[1].opcode) {
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                programStackPushFloat(program, value[1].floatValue - value[0].floatValue);
+                break;
+            default:
+                programStackPushFloat(program, value[1].floatValue - (float) value[0].integerValue);
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                programStackPushFloat(program, value[1].integerValue - value[0].floatValue);
+                break;
+            default:
+                programStackPushInteger(program, value[1].integerValue - value[0].integerValue);
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // opMultiply (0x46A300).
+    private static void opMultiply(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        switch (value[1].opcode) {
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                programStackPushFloat(program, value[1].floatValue * value[0].floatValue);
+                break;
+            default:
+                programStackPushFloat(program, value[1].floatValue * value[0].integerValue);
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                programStackPushFloat(program, value[1].integerValue * value[0].floatValue);
+                break;
+            default:
+                programStackPushInteger(program, value[0].integerValue * value[1].integerValue);
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // opDivide (0x46A424). A zero divisor is a C noreturn fatal.
+    private static void opDivide(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        switch (value[1].opcode) {
+        case VALUE_TYPE_FLOAT: {
+            float divisor;
+            if (value[0].opcode == VALUE_TYPE_FLOAT) {
+                divisor = value[0].floatValue;
+            } else {
+                divisor = (float) value[0].integerValue;
+            }
+            if (divisor == 0.0f) {
+                programFatalError("Division (DIV) by zero");
+            }
+            programStackPushFloat(program, value[1].floatValue / divisor);
+            break;
+        }
+        case VALUE_TYPE_INT:
+            if (value[0].opcode == VALUE_TYPE_FLOAT) {
+                float divisor = value[0].floatValue;
+                if (divisor == 0.0f) {
+                    programFatalError("Division (DIV) by zero");
+                }
+                programStackPushFloat(program, (float) value[1].integerValue / divisor);
+            } else {
+                if (value[0].integerValue == 0) {
+                    programFatalError("Division (DIV) by zero");
+                }
+                programStackPushInteger(program, value[1].integerValue / value[0].integerValue);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // opModulo (0x46A5B8). MOD rejects floats on either side.
+    private static void opModulo(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        if (value[1].opcode == VALUE_TYPE_FLOAT) {
+            programFatalError("Trying to MOD a float");
+        }
+
+        if (value[1].opcode != VALUE_TYPE_INT) {
+            return;
+        }
+
+        if (value[0].opcode == VALUE_TYPE_FLOAT) {
+            programFatalError("Trying to MOD with a float");
+        }
+
+        if (value[0].integerValue == 0) {
+            programFatalError("Division (MOD) by zero");
+        }
+
+        programStackPushInteger(program, value[1].integerValue % value[0].integerValue);
+    }
+
+    // opLogicalOperatorNot (0x46AACC). NOTE: it reads integerValue, so for a
+    // float this is the raw IEEE-754 bits, not the numeric value.
+    private static void opLogicalOperatorNot(Program program) {
+        ProgramValue value = programStackPopValue(program);
+        programStackPushInteger(program, value.integerValue == 0 ? 1 : 0);
+    }
+
+    // opUnaryMinus (0x46AB2C).
+    private static void opUnaryMinus(Program program) {
+        ProgramValue programValue = programStackPopValue(program);
+        switch (programValue.opcode) {
+        case VALUE_TYPE_INT:
+            programStackPushInteger(program, -programValue.integerValue);
+            break;
+        case VALUE_TYPE_FLOAT:
+            programStackPushFloat(program, -programValue.floatValue);
+            break;
+        default:
+            programFatalError("Invalid arg given to NEG");
+        }
+    }
+
+    // opBitwiseOperatorNot (0x46AB84).
+    private static void opBitwiseOperatorNot(Program program) {
+        int value = programStackPopInteger(program);
+        programStackPushInteger(program, ~value);
+    }
+
+    // opFloor (0x46ABDC). A float floors to an int; a string is a fatal.
+    private static void opFloor(Program program) {
+        ProgramValue value = programStackPopValue(program);
+
+        if (value.opcode == VALUE_TYPE_STRING) {
+            programFatalError("Invalid arg given to floor()");
+        } else if (value.opcode == VALUE_TYPE_FLOAT) {
+            value.opcode = VALUE_TYPE_INT;
+            value.integerValue = (int) value.floatValue;
+            value.floatValue = Float.intBitsToFloat(value.integerValue);
+        }
+
+        programStackPushValue(program, value);
+    }
+
+    // opBitwiseOperatorAnd (0x46AC78). Other types push nothing (C returns).
+    private static void opBitwiseOperatorAnd(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        int result;
+        switch (value[1].opcode) {
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                result = (int) value[1].floatValue & (int) value[0].floatValue;
+                break;
+            default:
+                result = (int) value[1].floatValue & value[0].integerValue;
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                result = value[1].integerValue & (int) value[0].floatValue;
+                break;
+            default:
+                result = value[1].integerValue & value[0].integerValue;
+                break;
+            }
+            break;
+        default:
+            return;
+        }
+
+        programStackPushInteger(program, result);
+    }
+
+    // opBitwiseOperatorOr (0x46ADA4).
+    private static void opBitwiseOperatorOr(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        int result;
+        switch (value[1].opcode) {
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                result = (int) value[1].floatValue | (int) value[0].floatValue;
+                break;
+            default:
+                result = (int) value[1].floatValue | value[0].integerValue;
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                result = value[1].integerValue | (int) value[0].floatValue;
+                break;
+            default:
+                result = value[1].integerValue | value[0].integerValue;
+                break;
+            }
+            break;
+        default:
+            return;
+        }
+
+        programStackPushInteger(program, result);
+    }
+
+    // opBitwiseOperatorXor (0x46AED0).
+    private static void opBitwiseOperatorXor(Program program) {
+        ProgramValue[] value = new ProgramValue[2];
+        for (int arg = 0; arg < 2; arg++) {
+            value[arg] = programStackPopValue(program);
+        }
+
+        int result;
+        switch (value[1].opcode) {
+        case VALUE_TYPE_FLOAT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                result = (int) value[1].floatValue ^ (int) value[0].floatValue;
+                break;
+            default:
+                result = (int) value[1].floatValue ^ value[0].integerValue;
+                break;
+            }
+            break;
+        case VALUE_TYPE_INT:
+            switch (value[0].opcode) {
+            case VALUE_TYPE_FLOAT:
+                result = value[1].integerValue ^ (int) value[0].floatValue;
+                break;
+            default:
+                result = value[1].integerValue ^ value[0].integerValue;
+                break;
+            }
+            break;
+        default:
+            return;
+        }
+
+        programStackPushInteger(program, result);
+    }
+
+    // C snprintf("%.5f", ...) under the C locale; Locale.ROOT keeps the
+    // decimal point stable regardless of the JVM default locale.
+    private static String formatFloat5(float value) {
+        return String.format(java.util.Locale.ROOT, "%.5f", value);
+    }
+
+    // C's "%p" prints the raw address, which Java cannot reproduce. This is a
+    // debug-only path (object + string concatenation); it keeps a stable
+    // non-null rendering instead. Deliberate divergence, untested.
+    private static String formatPointer(Object pointer) {
+        return pointer == null ? "(nil)" : pointer.toString();
+    }
+
     /**
      * Port of {@code interpreterRegisterOpcodeHandlers} for the subset these
      * slices run. C registers all 76 handlers here; the rest arrive with
@@ -482,6 +877,18 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_POP_TO_BASE, Program::opPopToBase);
         interpreterRegisterOpcode(OPCODE_PUSH_BASE, Program::opPushBase);
         interpreterRegisterOpcode(OPCODE_SET_GLOBAL, Program::opSetGlobal);
+        interpreterRegisterOpcode(OPCODE_ADD, Program::opAdd);
+        interpreterRegisterOpcode(OPCODE_SUB, Program::opSubtract);
+        interpreterRegisterOpcode(OPCODE_MUL, Program::opMultiply);
+        interpreterRegisterOpcode(OPCODE_DIV, Program::opDivide);
+        interpreterRegisterOpcode(OPCODE_MOD, Program::opModulo);
+        interpreterRegisterOpcode(OPCODE_NOT, Program::opLogicalOperatorNot);
+        interpreterRegisterOpcode(OPCODE_NEGATE, Program::opUnaryMinus);
+        interpreterRegisterOpcode(OPCODE_BITWISE_NOT, Program::opBitwiseOperatorNot);
+        interpreterRegisterOpcode(OPCODE_FLOOR, Program::opFloor);
+        interpreterRegisterOpcode(OPCODE_BITWISE_AND, Program::opBitwiseOperatorAnd);
+        interpreterRegisterOpcode(OPCODE_BITWISE_OR, Program::opBitwiseOperatorOr);
+        interpreterRegisterOpcode(OPCODE_BITWISE_XOR, Program::opBitwiseOperatorXor);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
@@ -538,6 +945,8 @@ public class Program {
         public ProgramValue(float value) {
             this.opcode = VALUE_TYPE_FLOAT;
             this.floatValue = value;
+            // Union alias: the raw bits are also the integerValue view.
+            this.integerValue = Float.floatToRawIntBits(value);
             this.pointerValue = null;
         }
 
@@ -551,6 +960,88 @@ public class Program {
             this.integerValue = other.integerValue;
             this.floatValue = other.floatValue;
             this.pointerValue = other.pointerValue;
+        }
+
+        // ProgramValue::isEmpty. NOTE: the engine treats a zero string index
+        // as empty too, which is wrong for static strings but is the behavior
+        // scripts see (see the C comment).
+        public boolean isEmpty() {
+            switch (opcode) {
+            case VALUE_TYPE_INT:
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                return integerValue == 0;
+            case VALUE_TYPE_FLOAT:
+                return floatValue == 0.0f;
+            case VALUE_TYPE_PTR:
+                return pointerValue == null;
+            default:
+                return true;
+            }
+        }
+
+        public boolean isInt() {
+            return opcode == VALUE_TYPE_INT;
+        }
+
+        public boolean isFloat() {
+            return opcode == VALUE_TYPE_FLOAT;
+        }
+
+        public boolean isString() {
+            return opcode == VALUE_TYPE_STRING || opcode == VALUE_TYPE_DYNAMIC_STRING;
+        }
+
+        public boolean isPointer() {
+            return opcode == VALUE_TYPE_PTR;
+        }
+
+        public float asFloat() {
+            switch (opcode) {
+            case VALUE_TYPE_INT:
+                return (float) integerValue;
+            case VALUE_TYPE_FLOAT:
+                return floatValue;
+            default:
+                return 0.0f;
+            }
+        }
+
+        public int asInt() {
+            switch (opcode) {
+            case VALUE_TYPE_INT:
+                return integerValue;
+            case VALUE_TYPE_FLOAT:
+                return (int) floatValue;
+            default:
+                return 0;
+            }
+        }
+
+        // C prints a diagnostic and returns "" here; the port throws, since the
+        // callers are error paths and a silent "" would hide the mismatch.
+        public String asString(Program program) {
+            if (!isString()) {
+                throw new IllegalStateException(
+                        "ProgramValue.asString: string expected, got " + Integer.toHexString(opcode));
+            }
+            return programGetString(program, opcode, integerValue);
+        }
+
+        public String typeDebugString() {
+            switch (opcode) {
+            case VALUE_TYPE_INT:
+                return "INTEGER";
+            case VALUE_TYPE_FLOAT:
+                return "FLOAT";
+            case VALUE_TYPE_STRING:
+            case VALUE_TYPE_DYNAMIC_STRING:
+                return "STRING";
+            case VALUE_TYPE_PTR:
+                return "POINTER";
+            default:
+                return "(UNKNOWN)";
+            }
         }
     }
 

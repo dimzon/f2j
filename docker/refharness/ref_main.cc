@@ -6677,6 +6677,7 @@ void sectionItemsInit();
 void sectionAutomap();
 void sectionVm();
 void sectionVmStack();
+void sectionVmArith();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6873,6 +6874,7 @@ void sectionMapChild()
     sectionAutomap();
     sectionVm();
     sectionVmStack();
+    sectionVmArith();
 }
 
 
@@ -7591,6 +7593,61 @@ static void vmStackRun(const char* name, const unsigned char* code, int codeLeng
     fallout::programFree(program);
 }
 
+// Like vmStackRun, but renders float cells as %.5f and dynamic strings by
+// content, and can place a static string at 54 with the code after it.
+static void vmArithRun(const char* name, const char* staticString,
+    const unsigned char* code, int codeLength, int budget)
+{
+    unsigned char data[256];
+    memset(data, 0, sizeof(data));
+    int32_t zero = 0;
+    memcpy(data + 42, &zero, sizeof(zero));
+    memcpy(data + 46, &zero, sizeof(zero));
+    memcpy(data + 50, &zero, sizeof(zero));
+
+    int codeOffset = 54;
+    if (staticString != nullptr) {
+        size_t length = strlen(staticString) + 1;
+        memcpy(data + 54, staticString, length);
+        codeOffset = 54 + (int)length;
+    }
+    memcpy(data + codeOffset, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmarith-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+
+    program->flags = 0;
+    program->framePointer = -1;
+    program->basePointer = -1;
+    program->instructionPointer = codeOffset;
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d flags=%08X stack=%d", name,
+        program->instructionPointer, (unsigned int)program->flags,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        if (it->opcode == VALUE_TYPE_FLOAT) {
+            std::printf(" A001:%.5f", it->floatValue);
+        } else if (it->opcode == VALUE_TYPE_DYNAMIC_STRING) {
+            std::printf(" 9801:%s", fallout::programGetString(program, it->opcode, it->integerValue));
+        } else {
+            std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+        }
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
 void sectionVmStack()
 {
     std::puts("[vmstack]");
@@ -7656,6 +7713,148 @@ void sectionVmStack()
         0x80, 0x0E, // EXIT
     };
     vmStackRun("exit", exit, sizeof(exit), -1, -1, 32);
+}
+
+void sectionVmArith()
+{
+    std::puts("[vmarith]");
+
+    // The arithmetic / bitwise / logical operators, each leaving one result.
+    // PUSH int is 0xC001 + 4 big-endian bytes; PUSH float is 0xA001 + the
+    // IEEE-754 bits.
+
+    // int + int that overflows int promotes to float (4.0e9).
+    static const unsigned char addOverflow[] = {
+        0xC0, 0x01, 0x77, 0x35, 0x94, 0x00, // PUSH int 2000000000
+        0xC0, 0x01, 0x77, 0x35, 0x94, 0x00, // PUSH int 2000000000
+        0x80, 0x39, // ADD
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmArithRun("add-overflow", nullptr, addOverflow, sizeof(addOverflow), 32);
+
+    static const unsigned char addInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x03,
+        0x80, 0x39,
+        0x80, 0x11,
+    };
+    vmArithRun("add-int", nullptr, addInt, sizeof(addInt), 32);
+
+    static const unsigned char addFloat[] = {
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0xA0, 0x01, 0x40, 0x10, 0x00, 0x00, // PUSH float 2.25
+        0x80, 0x39,
+        0x80, 0x11,
+    };
+    vmArithRun("add-float", nullptr, addFloat, sizeof(addFloat), 32);
+
+    // String + int concatenates: "ab" + "5".
+    static const unsigned char addStrInt[] = {
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH static string offset 0
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH int 5
+        0x80, 0x39,
+        0x80, 0x11,
+    };
+    vmArithRun("add-str-int", "ab", addStrInt, sizeof(addStrInt), 32);
+
+    static const unsigned char sub[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0A, // PUSH int 10
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x03, // PUSH int 3
+        0x80, 0x3A, // SUB
+        0x80, 0x11,
+    };
+    vmArithRun("sub", nullptr, sub, sizeof(sub), 32);
+
+    static const unsigned char mul[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x06,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x07,
+        0x80, 0x3B, // MUL
+        0x80, 0x11,
+    };
+    vmArithRun("mul", nullptr, mul, sizeof(mul), 32);
+
+    static const unsigned char div[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x14, // PUSH int 20
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x04, // PUSH int 4
+        0x80, 0x3C, // DIV
+        0x80, 0x11,
+    };
+    vmArithRun("div", nullptr, div, sizeof(div), 32);
+
+    static const unsigned char divFloat[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0A, // PUSH int 10
+        0xA0, 0x01, 0x40, 0x80, 0x00, 0x00, // PUSH float 4.0
+        0x80, 0x3C, // DIV
+        0x80, 0x11,
+    };
+    vmArithRun("div-float", nullptr, divFloat, sizeof(divFloat), 32);
+
+    static const unsigned char mod[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x11, // PUSH int 17
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH int 5
+        0x80, 0x3D, // MOD
+        0x80, 0x11,
+    };
+    vmArithRun("mod", nullptr, mod, sizeof(mod), 32);
+
+    static const unsigned char negateInt[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x07,
+        0x80, 0x46, // NEGATE
+        0x80, 0x11,
+    };
+    vmArithRun("negate-int", nullptr, negateInt, sizeof(negateInt), 32);
+
+    static const unsigned char negateFloat[] = {
+        0xA0, 0x01, 0x3F, 0xC0, 0x00, 0x00, // PUSH float 1.5
+        0x80, 0x46,
+        0x80, 0x11,
+    };
+    vmArithRun("negate-float", nullptr, negateFloat, sizeof(negateFloat), 32);
+
+    static const unsigned char floor[] = {
+        0xA0, 0x01, 0x40, 0x70, 0x00, 0x00, // PUSH float 3.75
+        0x80, 0x44, // FLOOR
+        0x80, 0x11,
+    };
+    vmArithRun("floor", nullptr, floor, sizeof(floor), 32);
+
+    static const unsigned char bitAnd[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0F,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x3C,
+        0x80, 0x40, // BITWISE_AND
+        0x80, 0x11,
+    };
+    vmArithRun("bitand", nullptr, bitAnd, sizeof(bitAnd), 32);
+
+    static const unsigned char bitOr[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0F,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x30,
+        0x80, 0x41, // BITWISE_OR
+        0x80, 0x11,
+    };
+    vmArithRun("bitor", nullptr, bitOr, sizeof(bitOr), 32);
+
+    static const unsigned char bitXor[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0F,
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x3C,
+        0x80, 0x42, // BITWISE_XOR
+        0x80, 0x11,
+    };
+    vmArithRun("bitxor", nullptr, bitXor, sizeof(bitXor), 32);
+
+    static const unsigned char bitNot[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0x80, 0x43, // BITWISE_NOT
+        0x80, 0x11,
+    };
+    vmArithRun("bitnot", nullptr, bitNot, sizeof(bitNot), 32);
+
+    static const unsigned char logicalNot[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0x80, 0x45, // NOT
+        0x80, 0x11,
+    };
+    vmArithRun("not", nullptr, logicalNot, sizeof(logicalNot), 32);
 }
 
 void sectionVm()
