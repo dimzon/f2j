@@ -1850,15 +1850,136 @@ public final class Item {
     }
 
     // gExplosives + the dynamite/plastic damage globals (src/item.cc).
-    // BSS mirror: the harness never runs explosionsInit/explosionsReset
-    // (game phase: content config), so headless all four damage globals
-    // stay zeroed and the registry stays empty (fresh-process state, see
-    // resetForTests).
+    // Seeded by explosionsReset from the content config; the defaults below
+    // are that function's literals, and the config lookups clamp into them.
     private static final List<ExplosiveDescription> G_EXPLOSIVES = new ArrayList<>();
     private static int gDynamiteMinDamage;
     private static int gDynamiteMaxDamage;
     private static int gPlasticExplosiveMinDamage;
     private static int gPlasticExplosiveMaxDamage;
+    private static boolean gExplosionEmitsLight;
+    private static int gGrenadeExplosionRadius;
+    private static int gRocketExplosionRadius;
+
+    /** Port of {@code gHealingItemPids} (src/item.cc), seeded by healingItemsInit. */
+    private static final int[] HEALING_ITEM_PIDS = new int[HEALING_ITEM_COUNT];
+
+    /** Port of {@code gItemsMessageList} (src/item.cc, 0x59E980). */
+    private static final Message.MessageList gItemsMessageList = new Message.MessageList();
+
+    /**
+     * Port of {@code explosionsReset} (src/item.cc): the two radius defaults,
+     * then the four damage bounds read from the content config with C's clamp
+     * order (each min is clamped against the already-clamped max).
+     */
+    static void explosionsReset() {
+        gGrenadeExplosionRadius = 2;
+        gRocketExplosionRadius = 3;
+
+        gDynamiteMinDamage = 30;
+        gDynamiteMaxDamage = 50;
+        gPlasticExplosiveMinDamage = 40;
+        gPlasticExplosiveMaxDamage = 80;
+
+        int[] value = new int[1];
+        value[0] = gDynamiteMaxDamage;
+        if (Config.configGetInt(ContentConfig.contentConfig, ContentConfig.EXPLOSIONS_SECTION,
+                    "dynamite_max", value, 50)) {
+            gDynamiteMaxDamage = Math.max(0, Math.min(9999, value[0]));
+        }
+
+        value[0] = gDynamiteMinDamage;
+        if (Config.configGetInt(ContentConfig.contentConfig, ContentConfig.EXPLOSIONS_SECTION,
+                    "dynamite_min", value, 30)) {
+            gDynamiteMinDamage = Math.max(0, Math.min(gDynamiteMaxDamage, value[0]));
+        }
+
+        value[0] = gPlasticExplosiveMaxDamage;
+        if (Config.configGetInt(ContentConfig.contentConfig, ContentConfig.EXPLOSIONS_SECTION,
+                    "plastic_explosive_max", value, 80)) {
+            gPlasticExplosiveMaxDamage = Math.max(0, Math.min(9999, value[0]));
+        }
+
+        value[0] = gPlasticExplosiveMinDamage;
+        if (Config.configGetInt(ContentConfig.contentConfig, ContentConfig.EXPLOSIONS_SECTION,
+                    "plastic_explosive_min", value, 40)) {
+            gPlasticExplosiveMinDamage = Math.max(0, Math.min(gPlasticExplosiveMaxDamage, value[0]));
+        }
+
+        G_EXPLOSIVES.clear();
+    }
+
+    /** Port of {@code explosionsInit} (src/item.cc). */
+    static void explosionsInit() {
+        gExplosionEmitsLight = false;
+        boolean[] light = new boolean[1];
+        if (Config.configGetBool(ContentConfig.contentConfig, ContentConfig.EXPLOSIONS_SECTION,
+                    "emit_light", light)) {
+            gExplosionEmitsLight = light[0];
+        }
+        explosionsReset();
+    }
+
+    /** Port of {@code healingItemsInit} (src/item.cc): content-config pids with
+     *  the vanilla proto id as each default. */
+    static void healingItemsInit() {
+        int[] value = new int[1];
+        value[0] = ProtoId.ofItemType(ItemProtoTypeId.Stimpak).pid();
+        Config.configGetInt(ContentConfig.contentConfig, ContentConfig.ITEMS_SECTION,
+                "stimpak", value);
+        HEALING_ITEM_PIDS[HealingItem.HEALING_ITEM_STIMPAK.id()] = value[0];
+
+        value[0] = ProtoId.ofItemType(ItemProtoTypeId.SuperStimpak).pid();
+        Config.configGetInt(ContentConfig.contentConfig, ContentConfig.ITEMS_SECTION,
+                "super_stimpak", value);
+        HEALING_ITEM_PIDS[HealingItem.HEALING_ITEM_SUPER_STIMPAK.id()] = value[0];
+
+        value[0] = ProtoId.ofItemType(ItemProtoTypeId.HealingPowder).pid();
+        Config.configGetInt(ContentConfig.contentConfig, ContentConfig.ITEMS_SECTION,
+                "healing_powder", value);
+        HEALING_ITEM_PIDS[HealingItem.HEALING_ITEM_HEALING_POWDER.id()] = value[0];
+    }
+
+    /**
+     * Port of {@code itemsInit} (0x4770E0): loads {@code game\item.msg} and
+     * seeds the three config-backed tables item, combat and party read back.
+     *
+     * <p>NOTE: {@code booksInit} (vanilla five plus the sfall
+     * {@code BooksFile} custom table) needs {@code gSfallConfig} and a second
+     * config file, so it stays with the game phase; the healing and explosive
+     * tables this slice vectors are reachable headless.
+     */
+    public static int itemsInit() {
+        if (!Message.messageListInit(gItemsMessageList)) {
+            return -1;
+        }
+        if (!Message.messageListLoad(gItemsMessageList, "game\\item.msg")) {
+            return -1;
+        }
+        Message.messageListRepositorySetStandardMessageList(Message.STANDARD_ITEM, gItemsMessageList);
+
+        healingItemsInit();
+        explosionsInit();
+        return 0;
+    }
+
+    /**
+     * Port of {@code itemIsHealing} (src/item.cc): membership in the
+     * content-config healing pid table.
+     */
+    public static boolean itemIsHealing(ProtoId protoId) {
+        for (int index = HEALING_ITEM_FIRST; index < HEALING_ITEM_COUNT; index++) {
+            if (HEALING_ITEM_PIDS[index] == protoId.pid()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Port of {@code explosionEmitsLight} (src/item.cc). */
+    public static boolean explosionEmitsLight() {
+        return gExplosionEmitsLight;
+    }
 
     /** Test seam: empty registry + zeroed damage globals (fresh-process mirror). */
     static void resetForTests() {
@@ -1868,6 +1989,10 @@ public final class Item {
         gDynamiteMaxDamage = 0;
         gPlasticExplosiveMinDamage = 0;
         gPlasticExplosiveMaxDamage = 0;
+        gExplosionEmitsLight = false;
+        gGrenadeExplosionRadius = 0;
+        gRocketExplosionRadius = 0;
+        java.util.Arrays.fill(HEALING_ITEM_PIDS, 0);
     }
 
     // explosive_add (src/item.cc).

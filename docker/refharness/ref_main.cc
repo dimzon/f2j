@@ -6672,6 +6672,7 @@ void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
 void sectionPartyPrefs();
+void sectionItemsInit();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6864,6 +6865,7 @@ void sectionMapChild()
     sectionStats();
     sectionCritterState();
     sectionPartyPrefs();
+    sectionItemsInit();
 }
 
 
@@ -7407,6 +7409,56 @@ void sectionPartyPrefs()
         fallout::partyMemberSupportsBestWeapon(member, (fallout::BestWeapon)99) ? 1 : 0);
     std::printf("distance 99 = %d\n",
         fallout::partyMemberSupportsDistance(member, (fallout::DistanceMode)99) ? 1 : 0);
+}
+
+void sectionItemsInit()
+{
+    std::puts("[itemsinit]");
+
+    // booksInitCustom reads gSfallConfig (BooksFile), which the child has not
+    // brought up, so initialise it the way the game does before itemsInit.
+    char prog[] = "prog";
+    char* sfallArgv[] = { prog };
+    fallout::sfallConfigInit(1, sfallArgv);
+
+    // itemsInit loads game\item.msg and seeds the three content-config
+    // tables (healing pids, explosives, books) that item, combat and party
+    // all read back.
+    int rc = fallout::itemsInit();
+    std::printf("init=%d\n", rc);
+
+    // healingItemsInit: default pids unless the content config overrides.
+    std::printf("healing stimpak=%d\n",
+        fallout::itemIsHealing((fallout::ProtoId)fallout::ItemProtoTypeId::Stimpak) ? 1 : 0);
+    std::printf("healing super=%d\n",
+        fallout::itemIsHealing((fallout::ProtoId)fallout::ItemProtoTypeId::SuperStimpak) ? 1 : 0);
+    std::printf("healing powder=%d\n",
+        fallout::itemIsHealing((fallout::ProtoId)fallout::ItemProtoTypeId::HealingPowder) ? 1 : 0);
+
+    // explosionsReset: damage bounds come from the content config, then clamp.
+    int lo = 0;
+    int hi = 0;
+    std::printf("dmg dynamite=%d",
+        fallout::explosiveGetDamage((fallout::ProtoId)fallout::ItemProtoTypeId::Dynamite, &lo, &hi)
+            ? 1 : 0);
+    std::printf(" [%d,%d]\n", lo, hi);
+    lo = 0;
+    hi = 0;
+    std::printf("dmg plastic=%d",
+        fallout::explosiveGetDamage((fallout::ProtoId)fallout::ItemProtoTypeId::PlasticExplosives, &lo, &hi)
+            ? 1 : 0);
+    std::printf(" [%d,%d]\n", lo, hi);
+    lo = 0;
+    hi = 0;
+    std::printf("dmg stimpak=%d",
+        fallout::explosiveGetDamage((fallout::ProtoId)fallout::ItemProtoTypeId::Stimpak, &lo, &hi)
+            ? 1 : 0);
+    std::printf(" [%d,%d]\n", lo, hi);
+
+    // booksInitVanilla seeds gBooks, which is file-static with no accessor, so
+    // the book table is not observable from here; the healing and explosive
+    // tables both are, through their public getters.
+    std::printf("emits-light=%d\n", fallout::explosionEmitsLight() ? 1 : 0);
 }
 
 int main()
