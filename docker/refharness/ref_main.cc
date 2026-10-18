@@ -109,6 +109,7 @@
 #include "fpattern_windows.h"
 #include "xfile.h"
 #include "worldmap.h"
+#include "automap.h"
 
 namespace {
 
@@ -6673,6 +6674,7 @@ void sectionStats();
 void sectionCritterState();
 void sectionPartyPrefs();
 void sectionItemsInit();
+void sectionAutomap();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6866,6 +6868,7 @@ void sectionMapChild()
     sectionCritterState();
     sectionPartyPrefs();
     sectionItemsInit();
+    sectionAutomap();
 }
 
 
@@ -7479,6 +7482,57 @@ void sectionItemsInit()
     std::printf("book stimpak found=%d\n",
         fallout::booksGetInfo((fallout::ProtoId)fallout::ItemProtoTypeId::Stimpak, &messageId, &skill)
             ? 1 : 0);
+}
+
+void sectionAutomap()
+{
+    std::puts("[automap]");
+
+    // AUTOMAP.DB ships as a loose file under data\, not inside a .dat, so the
+    // relative "MAPS\AUTOMAP.DB" only resolves once data\ is mounted as a
+    // directory-based xbase. gameInit does this via the master patches path.
+    fallout::xbaseOpen("/game-en/data");
+
+    // automapGetHeader opens MAPS\AUTOMAP.DB and parses version + dataSize +
+    // the [160][3] offset table. Reading it is pure file work, so it works
+    // headless; only the render/show half of automap.cc needs a display.
+    fallout::AutomapHeader* header = nullptr;
+    int rc = fallout::automapGetHeader(&header);
+    std::printf("header-rc=%d\n", rc);
+    if (rc != 0 || header == nullptr) {
+        return;
+    }
+
+    std::printf("version=%d dataSize=%d\n", (int)header->version, header->dataSize);
+
+    // The offset table is sparse: a 0 means "no automap for this map/elev".
+    int nonZero = 0;
+    for (int map = 0; map < AUTOMAP_MAP_COUNT; map++) {
+        for (int elevation = 0; elevation < 3; elevation++) {
+            if (header->offsets[map][elevation] != 0) {
+                nonZero++;
+            }
+        }
+    }
+    std::printf("offsets=%dx%d nonZero=%d\n", AUTOMAP_MAP_COUNT, 3, nonZero);
+
+    // First few populated entries, to pin the layout rather than just totals.
+    int shown = 0;
+    for (int map = 0; map < AUTOMAP_MAP_COUNT && shown < 4; map++) {
+        for (int elevation = 0; elevation < 3 && shown < 4; elevation++) {
+            if (header->offsets[map][elevation] != 0) {
+                std::printf("offset %d/%d = %d\n", map, elevation, header->offsets[map][elevation]);
+                shown++;
+            }
+        }
+    }
+
+    // automapEntryIsValid is file-static; the table boundary is
+    // already pinned by the offsets walk above.
+    // Display-map selection is pure state, no rendering needed.
+    fallout::automapSetDisplayMap((fallout::Map)3, true);
+    fallout::automapSetDisplayMap((fallout::Map)42, false);
+    std::printf("window=%d\n", fallout::automapGetWindow());
 }
 
 int main()
