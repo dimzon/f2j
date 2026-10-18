@@ -100,4 +100,29 @@ class ItemInitTest {
 
         assertFalse(Item.explosionEmitsLight());
     }
+
+    @Test
+    void vanillaBooksSeedTheTable() {
+        assertBook(ProtoTypes.ItemProtoTypeId.BigBookOfScience, 802, 12);
+        assertBook(ProtoTypes.ItemProtoTypeId.DeansElectronics, 803, 13);
+        assertBook(ProtoTypes.ItemProtoTypeId.FirstAidBook, 804, 6);
+        assertBook(ProtoTypes.ItemProtoTypeId.GunsAndBullets, 805, 0);
+        assertBook(ProtoTypes.ItemProtoTypeId.ScoutHandBook, 806, 17);
+
+        // A non-book must miss; otherwise reading any item would "teach" a
+        // skill, which is what an unseeded-but-guessed table would do.
+        int[] messageId = new int[1];
+        SkillDefs.Skill[] skill = new SkillDefs.Skill[1];
+        assertFalse(Item.booksGetInfo(
+                ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.Stimpak), messageId, skill));
+    }
+
+    private static void assertBook(ProtoTypes.ItemProtoTypeId proto, int messageId, int skillId) {
+        int[] messageIdPtr = new int[1];
+        SkillDefs.Skill[] skillPtr = new SkillDefs.Skill[1];
+        assertTrue(Item.booksGetInfo(ProtoId.ofItemType(proto), messageIdPtr, skillPtr),
+                "book " + proto + " not found");
+        assertEquals(messageId, messageIdPtr[0]);
+        assertEquals(SkillDefs.of(skillId), skillPtr[0]);
+    }
 }

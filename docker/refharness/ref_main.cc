@@ -7459,6 +7459,26 @@ void sectionItemsInit()
     // the book table is not observable from here; the healing and explosive
     // tables both are, through their public getters.
     std::printf("emits-light=%d\n", fallout::explosionEmitsLight() ? 1 : 0);
+
+    // booksGetInfo is public and reads gBooks, so the table IS observable
+    // through it - one book per vanilla entry, plus a non-book miss.
+    int messageId = 0;
+    fallout::Skill skill = fallout::SKILL_INVALID;
+    for (fallout::ItemProtoTypeId book : { fallout::ItemProtoTypeId::BigBookOfScience,
+             fallout::ItemProtoTypeId::DeansElectronics,
+             fallout::ItemProtoTypeId::FirstAidBook,
+             fallout::ItemProtoTypeId::GunsAndBullets,
+             fallout::ItemProtoTypeId::ScoutHandBook }) {
+        messageId = 0;
+        skill = fallout::SKILL_INVALID;
+        int found = fallout::booksGetInfo((fallout::ProtoId)book, &messageId, &skill) ? 1 : 0;
+        std::printf("book %d msg=%d skill=%d found=%d\n", (int)book, messageId, (int)skill, found);
+    }
+    messageId = 0;
+    skill = fallout::SKILL_INVALID;
+    std::printf("book stimpak found=%d\n",
+        fallout::booksGetInfo((fallout::ProtoId)fallout::ItemProtoTypeId::Stimpak, &messageId, &skill)
+            ? 1 : 0);
 }
 
 int main()

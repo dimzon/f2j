@@ -1920,6 +1920,90 @@ public final class Item {
         explosionsReset();
     }
 
+    /** BOOKS_MAX (src/item.cc). */
+    static final int BOOKS_MAX = 50;
+
+    /** Port of {@code booksAdd} (src/item.cc). */
+    static void booksAdd(ProtoId bookProtoId, int messageId, int skillId) {
+        BookDescription bookDescription = new BookDescription();
+        bookDescription.bookPid = bookProtoId.pid();
+        bookDescription.messageId = messageId;
+        bookDescription.skill = SkillDefs.of(skillId);
+        G_BOOKS.add(bookDescription);
+    }
+
+    /**
+     * Port of {@code booksInitVanilla} (src/item.cc): the five shipped
+     * books, each pairing a message id with the skill it teaches.
+     */
+    static void booksInitVanilla() {
+        booksAdd(ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.BigBookOfScience), 802, 12);
+        booksAdd(ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.DeansElectronics), 803, 13);
+        booksAdd(ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.FirstAidBook), 804, 6);
+        booksAdd(ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.GunsAndBullets), 805, 0);
+        booksAdd(ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.ScoutHandBook), 806, 17);
+    }
+
+    /**
+     * Port of {@code booksInitCustom} (src/item.cc): the optional sfall
+     * {@code BooksFile} table. A missing key, empty path or unreadable file
+     * is a no-op, exactly like C.
+     */
+    static void booksInitCustom() {
+        String[] booksFilePath = new String[1];
+        if (!Config.configGetString(SfallConfig.sfallConfig, SfallConfig.MISC_KEY,
+                    SfallConfig.BOOKS_FILE_KEY, booksFilePath)) {
+            return;
+        }
+        if (booksFilePath[0] == null || booksFilePath[0].isEmpty()) {
+            return;
+        }
+
+        Config.Cfg booksConfig = new Config.Cfg();
+        if (!Config.configInit(booksConfig)) {
+            return;
+        }
+        if (!Config.configRead(booksConfig, booksFilePath[0], false)) {
+            return;
+        }
+
+        boolean[] overrideVanilla = new boolean[1];
+        if (Config.configGetBool(booksConfig, "main", "overrideVanilla", overrideVanilla)
+                && overrideVanilla[0]) {
+            G_BOOKS.clear();
+        }
+
+        int[] bookCount = new int[1];
+        Config.configGetInt(booksConfig, "main", "count", bookCount);
+        if (bookCount[0] > BOOKS_MAX) {
+            bookCount[0] = BOOKS_MAX;
+        }
+
+        for (int index = 0; index < bookCount[0]; index++) {
+            // Books numbering starts with 1.
+            String sectionKey = Integer.toString(index + 1);
+
+            int[] bookPid = new int[1];
+            if (!Config.configGetInt(booksConfig, sectionKey, "PID", bookPid)) {
+                continue;
+            }
+
+            int[] messageId = new int[1];
+            if (!Config.configGetInt(booksConfig, sectionKey, "TextID", messageId)) {
+                continue;
+            }
+
+            int[] skillId = new int[1];
+            if (!Config.configGetInt(booksConfig, sectionKey, "Skill", skillId)) {
+                continue;
+            }
+
+            booksAdd(ProtoId.ofPid(bookPid[0]), messageId[0], skillId[0]);
+        }
+
+        Config.configFree(booksConfig);
+    }
+
     /** Port of {@code healingItemsInit} (src/item.cc): content-config pids with
      *  the vanilla proto id as each default. */
     static void healingItemsInit() {
@@ -1942,12 +2026,9 @@ public final class Item {
 
     /**
      * Port of {@code itemsInit} (0x4770E0): loads {@code game\item.msg} and
-     * seeds the three config-backed tables item, combat and party read back.
-     *
-     * <p>NOTE: {@code booksInit} (vanilla five plus the sfall
-     * {@code BooksFile} custom table) needs {@code gSfallConfig} and a second
-     * config file, so it stays with the game phase; the healing and explosive
-     * tables this slice vectors are reachable headless.
+     * seeds the three config-backed tables item, combat and party read back —
+     * books (vanilla five plus the optional sfall {@code BooksFile} table),
+     * healing pids and explosive damage bounds.
      */
     public static int itemsInit() {
         if (!Message.messageListInit(gItemsMessageList)) {
@@ -1958,6 +2039,8 @@ public final class Item {
         }
         Message.messageListRepositorySetStandardMessageList(Message.STANDARD_ITEM, gItemsMessageList);
 
+        booksInitVanilla();
+        booksInitCustom();
         healingItemsInit();
         explosionsInit();
         return 0;
