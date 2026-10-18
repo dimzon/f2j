@@ -6664,6 +6664,7 @@ void sectionIsoRest()
 }
 
 void sectionMapLoad();
+void sectionMapSave();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6849,6 +6850,7 @@ void sectionMapChild()
         dude != nullptr ? fallout::objectGetLightIntensity(dude) : -999,
         dude != nullptr ? (unsigned int)dude->flags : 0u);
     sectionMapLoad();
+    sectionMapSave();
 }
 
 
@@ -6997,6 +6999,48 @@ void sectionMapLoad()
         dude != nullptr ? dude->tile : -999,
         dude != nullptr ? dude->elevation : -999,
         dude != nullptr ? dude->rotation : -999);
+}
+
+void sectionMapSave()
+{
+    std::puts("[mapsave]");
+
+    // After mapLoadByName succeeded the header name is the bare file name.
+    // mapBuildSavePath joins it under the save root (master_patches_path).
+    char path[260];
+    snprintf(path, sizeof(path), "%s", fallout::mapBuildSavePath(fallout::gMapHeader.name));
+    std::printf("path=%s\n", path);
+
+    int rc = fallout::_map_save(false);
+    std::printf("rc=%d\n", rc);
+
+    fallout::File* f = fallout::fileOpen(path, "rb");
+    if (f == nullptr) {
+        std::printf("size=-1 crc=00000000\n");
+        return;
+    }
+    long size = fallout::fileGetSize(f);
+    size_t cap = size > 0 ? (size_t)size : 256;
+    unsigned char* data = (unsigned char*)malloc(cap > 0 ? cap : 1);
+    long got = 0;
+    {
+        size_t remaining = cap;
+        while (remaining > 0) {
+            size_t n = fallout::fileRead(data + got, 1, remaining, f);
+            if (n == 0) {
+                break;
+            }
+            got += n;
+            remaining -= n;
+        }
+    }
+    uLong crc = crc32(0L, Z_NULL, 0);
+    if (got > 0) {
+        crc = crc32(crc, data, (uInt)got);
+    }
+    std::printf("size=%ld crc=%08lX\n", size, crc);
+    fallout::fileClose(f);
+    free(data);
 }
 int main()
 {

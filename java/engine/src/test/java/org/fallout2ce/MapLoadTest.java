@@ -160,4 +160,29 @@ class MapLoadTest {
                 "objects=" + objectCount
                         + " dude=" + dude.tile + "," + dude.elevation + "," + dude.rotation.id());
     }
+
+    @Test
+    void mapSaveVectors() throws Exception {
+        assertEquals(0, PartyMembers.partyMembersInit());
+        byte[] objBuf = new byte[640 * 480];
+        assertEquals(0, ObjectSystem.objectsInit(objBuf, 640, 480, 640));
+        assertEquals(0, GameMouse.gameMouseInit());
+        EnteringLocation.mapSetEnteringLocation(-1, -1, Rotation.INVALID);
+        assertEquals(0, Map.mapLoadByName("ARTEMPLE.MAP"));
+
+        java.nio.file.Path tmp = Files.createTempFile("mapsave", ".map");
+        XFile.Handle stream = Db.fileOpen(tmp.toString(), "wb");
+        assertNotNull(stream);
+        int rc = Map.mapSaveFile(stream);
+        Db.fileClose(stream);
+        assertEquals("rc=0", "rc=" + rc);
+
+        byte[] data = Files.readAllBytes(tmp);
+        java.nio.file.Files.copy(tmp, java.nio.file.Path.of("C:/Work/f2j/java-ARTEMPLE.MAP"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(data);
+        assertEquals("size=92780 crc=BC6A1A0F",
+                "size=" + data.length + " crc=" + String.format("%08X", crc.getValue()));
+    }
 }

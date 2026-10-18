@@ -1,0 +1,1096 @@
+[rgb555]
+rgb555 000000=0
+rgb555 FFFFFF=32767
+rgb555 FF0000=31744
+rgb555 00FF00=992
+rgb555 0000FF=31
+rgb555 FF5252=32074
+rgb555 C5D6FF=25439
+rgb555 123456=2250
+rgb555 7B7B29=15845
+[rectUnion]
+union {(0,0)-(10,10)} {(5,5)-(15,15)} -> (0,0)-(15,15)
+union {(-5,-5)-(0,0)} {(10,10)-(20,20)} -> (-5,-5)-(20,20)
+union {(3,3)-(3,3)} {(3,3)-(3,3)} -> (3,3)-(3,3)
+[rectIntersection]
+isect rc=0 {(0,0)-(10,10)} {(5,5)-(15,15)} -> (5,5)-(10,10)
+isect rc=-1 {(0,0)-(10,10)} {(20,20)-(30,30)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(0,0)-(10,10)} -> (0,0)-(10,10)
+isect rc=0 {(0,0)-(10,10)} {(10,10)-(20,20)} -> (10,10)-(10,10)
+[rectClip]
+clip-hole[0] left=0 top=0 right=20 bottom=4
+clip-hole[1] left=0 top=5 right=4 bottom=10
+clip-hole[2] left=11 top=5 right=20 bottom=10
+clip-hole[3] left=0 top=11 right=20 bottom=20
+clip-hole count=4
+clip-miss[0] left=0 top=0 right=20 bottom=20
+clip-miss count=1
+[random]
+rand100[0]=15
+rand100[1]=20
+rand100[2]=21
+rand100[3]=62
+rand100[4]=43
+rand100[5]=98
+rand100[6]=50
+rand100[7]=2
+rand100[8]=58
+rand100[9]=9
+rand25[0]=11
+rand25[1]=25
+rand25[2]=25
+rand25[3]=17
+rand25[4]=2
+rand-degenerate=10
+INFO: Random number 3 is not in range 5 to 3
+rand-reversed=5
+[strParsers]
+parseInt rc=0 value=12 rest=[ 34,abc]
+parseInt-empty rc=0 value=0 rest=[]
+parseList rc=0 value=1 rest=[ x]
+INFO: 
+strParseStrFromList Error: Couldn't find match for string: seven!
+parseList-miss rc=-1 value=-1 rest=[]
+parseWithKey rc=0 value=3 rest=[ x=4]
+parseWithKey-miss rc=-1 value=-99 rest=[x=4]
+parseKeyValue rc=0 key=[count] value=3 rest=[, x=4]
+[strParseFunc]
+parseFunc rc=0 value=42 rest=[ next]
+INFO: 
+strParseStrFromFunc Error: Couldn't find match for string: nope!
+parseFunc-miss rc=-1 value=-1 rest=[]
+[wordWrap]
+wrap rc=0 len=2 text=[hi] width=100 bps=0,2
+wrap rc=-1 len=1 text=[hi] width=3 bps=0
+wrap rc=0 len=4 text=[aa bb cc] width=20 bps=0,3,6,9
+wrap rc=0 len=4 text=[abcdefgh] width=20 bps=0,3,6,9
+wrap rc=0 len=4 text=[aa-bb cc] width=20 bps=0,3,6,9
+wrap rc=0 len=2 text=[] width=100 bps=0,0
+wrap rc=0 len=3 text=[hi] width=6 bps=0,1,3
+[dict]
+uninit-get=-1
+uninit-add=-1
+uninit-free=-1
+init=0
+added length=4 capacity=6 valuesize=4 order=alpha,bravo,CHARLIE,delta
+alpha bytes=01000000
+bravo bytes=02000000
+CHARLIE bytes=03000000
+delta bytes=04000000
+get-ALPHA=0
+get-missing=-1
+add-dup=-1
+remove-bravo=0
+removed length=3 capacity=6 valuesize=4 order=alpha,CHARLIE,delta
+alpha bytes=01000000
+CHARLIE bytes=03000000
+delta bytes=04000000
+remove-missing=-1
+copy=0
+copied length=3 capacity=6 valuesize=4 order=alpha,CHARLIE,delta
+alpha bytes=01000000
+CHARLIE bytes=03000000
+delta bytes=04000000
+shrink=-1
+grow=0
+cap=10
+free=0
+free-copy=0
+use-after-free=-1
+[dictFile]
+write=0
+fixture-written
+load=0
+loaded length=2 capacity=2 valuesize=4 order=alpha,beta
+alpha bytes=01020304
+beta bytes=05060708
+[paths]
+split [/a/b/c.txt] -> drive=[] dir=[/a/b/] fname=[c] ext=[.txt]
+split [a\b\c] -> drive=[] dir=[a\b\] fname=[c] ext=[]
+split [//server/share/f.txt] -> drive=[//] dir=[/share/] fname=[f] ext=[.txt]
+split [noext] -> drive=[] dir=[] fname=[noext] ext=[]
+split [a/.h] -> drive=[] dir=[a/] fname=[] ext=[.h]
+split [a/b.] -> drive=[] dir=[a/] fname=[b] ext=[.]
+make drive=[] dir=[/a/b/] fname=[c] ext=[.txt] -> [/a/b/c.txt]
+make drive=[] dir=[a\b\] fname=[c] ext=[txt] -> [a\b\c.txt]
+make drive=[//server] dir=[/share/] fname=[f] ext=[.txt] -> [//server/share/f.txt]
+make drive=[] dir=[] fname=[c] ext=[] -> [c]
+make drive=[C:] dir=[\a\] fname=[] ext=[.txt] -> [C:\a\.txt]
+native [a/b/c/d.txt]
+resolve [/tmp/f2resolve/subdir/mixedcase.txt] -> [/tmp/f2resolve/SubDir/MixedCase.Txt]
+resolve [/tmp/f2resolve/SUBDIR/MIXEDCASE.TXT] -> [/tmp/f2resolve/SubDir/MixedCase.Txt]
+resolve [/tmp/f2resolve/subdir/nope/x] -> [/tmp/f2resolve/SubDir/nope/x]
+resolve [/tmp/f2resolve/nonexistent/y] -> [/tmp/f2resolve/nonexistent/y]
+[fileUtils]
+decompress-plain=0
+decompress-plain-content n=12 [hello world
+]
+compress=0
+compress-magic=1F8B
+decompress-gz=0
+decompress-gz-content n=12 [hello world
+]
+missing=-1
+missing-gz=-1
+[pattern]
+match [text\english\game\*.msg] [text\english\game\misc.msg] -> 1
+match [text\english\game\*.msg] [text\english\cuts\elder.sve] -> 0
+match [*.msg] [misc.msg] -> 1
+match [*.msg] [a\misc.msg] -> 1
+match [?] [a] -> 1
+match [?] [] -> 0
+match [?] [ab] -> 0
+match [f??.txt] [foo.txt] -> 1
+match [a*c] [ax-yyy.c] -> 1
+match [a[0-9]z] [a1z] -> 1
+match [a[!0-9]z] [aoz] -> 1
+match [a[!0-9]z] [a1z] -> 0
+match [a`?b] [a?b] -> 1
+match [a``b] [a`b] -> 1
+match [!a] [b] -> 1
+match [!a] [a] -> 0
+match [] [] -> 1
+match [*] [] -> 0
+match [] [a] -> 0
+match [ac] [axc] -> 1
+match [ac] [ax-yyy.c] -> 0
+match [a[x-]b] [a-b] -> 0
+match [a[!-]b] [a-b] -> 0
+match [abc] [abc] -> 1
+match [abc] [abd] -> 0
+match [MISC.MSG] [misc.msg] -> 1
+match [text\english\game\misc.msg] [TEXT\ENGLISH\GAME\MISC.MSG] -> 1
+isvalid [a[] -> 0
+isvalid [a] -> 1
+[dbase]
+open-master=1 format=0 entries=23140 errflags=0
+open-patch=1 format=0 entries=489
+open-missing=0
+open-empty=0 errflags=0
+find-msgs count=31 first=[text\english\game\CMBATAI2.msg][text\english\game\COMBAT.MSG][text\english\game\COMBATAI.MSG]
+find-none=0
+entry [text\english\game\misc.msg] size=6728 got=6728 crc=2CFB7ACD eof=0
+entry [text\english\game\misc.msg] tell=16 head=230D0A23204D697363656C6C616E656F
+entry [text\english\game\misc.msg] seek-end=0 seek-size=1
+entry [text\english\game\misc.msg] after-read4 tell=4
+entry [text\english\game\misc.msg] seek100=0 tell=100
+entry [text\english\game\misc.msg] post-seek-read n=4 tell=104 bytes=71756974
+entry [art\intrface\mainmenu.frm] size=307274 got=307274 crc=ACA95567 eof=0
+entry [art\intrface\mainmenu.frm] tell=16 head=00000004000100000001000000000000
+entry [art\intrface\mainmenu.frm] seek-end=0 seek-size=1
+entry [art\intrface\mainmenu.frm] after-read4 tell=4
+entry [art\intrface\mainmenu.frm] seek100=0 tell=100
+entry [art\intrface\mainmenu.frm] post-seek-read n=4 tell=104 bytes=6F6F6F6F
+entry [no\such\file.txt] open=NULL
+textline=[#
+]
+open-write-mode=0
+patch-find-all count=489 first=[Art\intrface\HELPSCRN.FRM]
+[zip]
+open-zip=1 format=1 entries=2 errflags=0
+entry [a.txt] size=11 got=11 crc=614791A0 eof=0
+entry [a.txt] tell=11 head=73746F7265642D64617461
+entry [a.txt] seek-end=0 seek-size=1
+entry [a.txt] after-read4 tell=4
+entry [a.txt] seek100=1 tell=4
+entry [a.txt] post-seek-read n=4 tell=8 bytes=65642D64
+entry [sub\b.txt] size=1400 got=1400 crc=7E3B8A02 eof=0
+entry [sub\b.txt] tell=16 head=6465666C617465642D646174612D6465
+entry [sub\b.txt] seek-end=0 seek-size=1
+entry [sub\b.txt] after-read4 tell=4
+entry [sub\b.txt] seek100=0 tell=100
+entry [sub\b.txt] post-seek-read n=4 tell=104 bytes=666C6174
+open-empty-zip=0 errflags=2
+[fixtureDat]
+open-fixture=1 format=0 entries=6
+entry [medium.txt] size=201 got=201 crc=D872C896 eof=0
+entry [medium.txt] tell=16 head=4A345374272A652D4F6B28613C252C58
+entry [medium.txt] seek-end=0 seek-size=1
+entry [medium.txt] after-read4 tell=4
+entry [medium.txt] seek100=0 tell=4
+entry [medium.txt] post-seek-read n=4 tell=8 bytes=494C794D
+entry [big.txt] size=8200 got=8200 crc=70C09C7F eof=0
+entry [big.txt] tell=16 head=30313233343536373839414243444546
+entry [big.txt] seek-end=0 seek-size=1
+entry [big.txt] after-read4 tell=4
+entry [big.txt] seek100=0 tell=100
+entry [big.txt] post-seek-read n=4 tell=104 bytes=34353637
+entry [empty.txt] size=0 got=0 crc=00000000 eof=0
+entry [empty.txt] tell=0 head=
+entry [empty.txt] seek-end=0 seek-size=1
+entry [empty.txt] after-read4 tell=0
+entry [empty.txt] seek100=1 tell=0
+entry [empty.txt] post-seek-read n=0 tell=0 bytes=00000000
+fixture-find-nested=1 [sub\nested.txt]
+[xbase]
+open-master=1
+open-patch=1
+open-dira=1
+open-dirb=1
+open-missing=0
+open-dup-a=1
+isdir-a=1
+isdir-a-slash=1
+isdir-a-upper=1
+isdir-dat=0
+isdir-missing=0
+isdir-empty=0
+[xfile]
+xfile [shared.txt] size=1 got=1 crc=D3D99E8B
+xfile [/tmp/f2xbase_b/shared.txt] size=1 got=1 crc=4AD0CF31
+xfile [text\english\game\misc.msg] size=6776 got=6776 crc=F6C79331
+xfile [arch.gz] size=0 got=19 crc=45002539
+gzread n=19 tell=19 eof=1 [GZDATA-gzip-content]
+open-missing=0
+vfs-seek tell1=4 tell2=0 eof=0
+vfs-textline=[line1
+]
+vfs-write n=4
+xfile [/tmp/f2xbase_a/wtest.bin] size=4 got=4 crc=B63CFBCD
+[db]
+dbopen=0
+dbopen-missing=-1
+dbtotal=1
+dbsize-misc=0 size=6776
+dbsize-missing=-1
+be-i32=16909060
+zero-i32=0 zero-bool=0
+progress-calls=1694 size=6776 crc=F6C79331
+namelist count=8167
+namelist[0]=[Adobe.frm]
+namelist[1]=[BACK1.FRM]
+namelist[2]=[BACKGRND.LST]
+namelist[last]=[YRT1012.FRM]
+dirlist[0]=[sub/deep]
+dirlist count=1
+[config]
+init=1
+read=1
+get-master=1 [master.dat]
+get-resx=1 800
+get-music=1 1
+get-missing=0
+get-default=[DEF]
+get-int-default=42
+int-hex=16
+int-oct=8
+int-pct=38
+int-trail=12
+int-empty=1 0
+int-huge=-1
+int-base16=16
+double-pi=3.141590
+intlist=1 [1,2,3]
+intlist-short=0 [7,8,-1]
+cli-resx=1024
+cli-kv=[v=w]
+cli-sp=[v2]
+write-std=1
+reread=[nv]
+write-sbs=1
+sbs-line=[; top comment]
+sbs-line=[[screen]]
+sbs-line=[; res comment]
+sbs-line=[resolution_x=1024 ; inline]
+sbs-line=[unknown_key=zzz]
+sbs-line=[]
+sbs-line=[[new]]
+sbs-line=[a=1]
+sbs-line=[]
+sbs-line=[[added]]
+sbs-line=[k=v]
+sbs-line=[]
+[message]
+load-misc=1
+misc-count=125
+misc9=1 [INTRO]
+misc10=1 [NEW GAME]
+misc-huge=0
+INFO: 
+ ** String not found @ getmsg(), MESSAGE.C **
+getmsg-missing=[Error]
+reload-count=125 (was 125)
+badwords=0
+gender-male count=5
+gender-male[0]=[He went]
+gender-male[1]=[plain]
+gender-male[2]=[Aman and boy walked]
+gender-male[3]=[a^b]
+gender-male[4]=[<x^y]
+gender-female count=5
+gender-female[0]=[She went]
+gender-female[1]=[plain]
+gender-female[2]=[Awoman and girl walked]
+gender-female[3]=[a^b]
+gender-female[4]=[<x^y]
+repo-misc10=[NEW GAME]
+repo-extra=12288
+repo-extra9=[INTRO]
+INFO: 
+ ** String not found @ getmsg(), MESSAGE.C **
+repo-unset=[Error]
+[art]
+sizeof-art=88 sizeof-frame=12
+lst-first=[reserved.frm]
+lst-count=192 seek=0 recount=192
+fid-misc fid=83886085 valid=1 type=5 frame=5 rot=0 anim=0 weapon=0
+fid-empty fid=-1 valid=0
+fid-critter fid=16846860 rot=0 weapon=1
+fid-fire fid=19746823
+probe lin=1 bin=1 vfs=1 found=[art\items\ITEMS.LST]
+artinit=0
+listindex-mainmenu=140
+listindex-missing=-1
+listindex-badtype=-1
+typename=intrface
+hidden=0
+hidden-toggled=1
+buildpath=[art\intrface\mainmenu.frm]
+frm [art\intrface\mainmenu.frm] rc=0 ver=4 fps=1 action=0 frames=1 w=640 h=480 x=0 y=0 rx=0 ry=239 crc=E4F6BDB0
+frm [art\intrface\mainmenu.frm] rot=0 w=640 h=480 x=0 y=0 crc=E4F6BDB0
+frm [art\intrface\mainmenu.frm] rot=1 w=640 h=480 x=0 y=0 crc=E4F6BDB0
+frm [art\intrface\mainmenu.frm] rot=2 w=640 h=480 x=0 y=0 crc=E4F6BDB0
+frm [art\intrface\mainmenu.frm] rot=3 w=640 h=480 x=0 y=0 crc=E4F6BDB0
+frm [art\intrface\mainmenu.frm] rot=4 w=640 h=480 x=0 y=0 crc=E4F6BDB0
+frm [art\intrface\mainmenu.frm] rot=5 w=640 h=480 x=0 y=0 crc=E4F6BDB0
+frm [art\intrface\mainmenu.frm] bad-frame=-1 bad-rot=-1 null-art=-1
+listindex-hmjmps=11
+critterpath=[art\critters\hmjmpsab.frm]
+frm [art\critters\hmjmpsab.frm] rc=0 ver=4 fps=10 action=0 frames=8 w=25 h=63 x=3 y=-4 rx=-2 ry=4 crc=12535569
+frm [art\critters\hmjmpsab.frm] rot=0 w=25 h=63 x=3 y=-4 crc=12535569
+frm [art\critters\hmjmpsab.frm] rot=1 w=17 h=62 x=9 y=0 crc=A8B127BB
+frm [art\critters\hmjmpsab.frm] rot=2 w=22 h=62 x=1 y=1 crc=E8511184
+frm [art\critters\hmjmpsab.frm] rot=3 w=26 h=63 x=-3 y=0 crc=54DD4714
+frm [art\critters\hmjmpsab.frm] rot=4 w=17 h=63 x=-9 y=0 crc=79725CB9
+frm [art\critters\hmjmpsab.frm] rot=5 w=22 h=64 x=-2 y=-1 crc=A093D616
+frm [art\critters\hmjmpsab.frm] bad-frame=-1 bad-rot=-1 null-art=-1
+read-tiny-buf=-1
+read-missing=-2
+INFO: ART ERROR: rejected trunc.frm: invalid header
+read-trunc=-3
+INFO: ART ERROR: rejected text\english\game\misc.msg: invalid header
+read-notfrm=-3
+[cache]
+init=1
+lock1=1 byte=11 refs=1 hits=0
+relock1=1 refs=2 hits=1 same=1
+unlock=1
+unlock=1
+unlock-empty=0
+unlock-null=0
+lock-missing=0
+relock-after-flush=1 byte=11
+[cacheEvict]
+lock-big=1
+lock-after-evict=1
+lock-over-max=0
+[artload]
+load=1 frames=1
+load-missing=0
+INFO: ART ERROR: rejected text\english\game\misc.msg: invalid header
+load-notfrm=0
+img-lock=1 w=640 h=480 x=0 y=239 crc=E4F6BDB0
+named-lock=1 w=640
+rel-lock=1 w=640
+lock-badframe=0
+lock-missing=0
+artlock=1 unlock=1 flush=1
+[color]
+load=1 err=[color.c: No errors
+]
+crc-cmap=A28DF92E
+crc-colortable=8D26D2A8
+crc-intensity=C9B21ACD
+crc-mixadd=B9E86010
+crc-mixmul=D94D2D5A
+mapped=228
+red=133 white=220 black=228
+rgb-white=32767
+calc=228
+blend-crc=1629B495
+blend-same=1
+blend-rebuilt=1 crc=1629B495 same=1
+load-missing=0 err=[color.c: color table not found
+]
+[settings]
+INFO: Game config loaded from fallout2.cfg.
+init=1
+res=640x480 windowed=0 music=1 lang=[english]
+init-again=0
+desc-found=1
+get-value=640
+set-800=1
+after-set active=640 configured=800
+INFO: config value screen.resolution_x was clamped.
+set-100=0 err=[Value is outside the allowed range.]
+set-bool=0 err=[Value has the wrong type.]
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+clamped-resx=640
+INFO: Game config loaded from fallout2.cfg.
+init-cli=1
+cli-resx=1024 cli-skip=2
+override=1
+set-overridden=1
+save=1
+saved-resx-lines=1 [resolution_x=100] saved-skip-lines=0
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+reinit=1 resx=1024
+[colorcycle]
+sdl-init=1
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+init-enabled=1
+init-again=1
+speed=1
+set-speed=3
+crc-range0=9BE58BD8
+tick1-crc=6E269B19 slime0=0,27,0 bobber=4
+tick2-same=1
+reset-enabled=1
+tick3-crc=AA26225C changed=1 slime0=10,32,6 bobber=8
+disable=0
+tick-disabled-same=1
+tick4-crc=9656ACF4 changed=1 slime0=6,30,3 bobber=12
+free-enabled=0
+tick-after-free-same=1
+reset-after-free=0
+[fps]
+throttle-delayed=1
+throttle-nodelay=1
+fps1000-delayed=1
+delay-nonpositive-ok=1
+delay50=1
+[svga]
+video-init=1
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+scrblit-preset=1
+zeromem-null=1
+zero-noop=1
+window=1
+renderer=1
+mode640480=0 scr=0,0,639,479
+hooks-set=1
+screen=640x480 visible=380 exclusive=0
+surface=640x480 pitch=640
+pal-crc=A28DF92E
+blit-crc=F2E193D3
+zero-crc=82ECC096
+mode800=0 scr=0,0,799,599 surface=800x600 pal-preserved=1
+scaled=0 scr=0,0,639,479 surface=640x480
+fallback=0 scr=0,0,639,479 surface=640x480
+mode16=-1
+free-pal-crc=A28DF92E
+[draw]
+line-h=CC5680C1
+line-hrev=CC5680C1
+line-v=2A07DB3E
+line-vrev=2A07DB3E
+line-point=93A0D7BF
+line-steep=5124962C
+line-shallow=A7641F4C
+line-shallow-rev=A7641F4C
+rect=4382F7AE
+rect-shadowed=28592A32
+blit=2F456926
+blit-trans=88D6F72E
+blit2d-clip=D3179771
+blit2d-sub=21E12991
+blit2d-outside=2FCB0660
+scaled-up=E0C665BA
+scaled-sub=EBE2D644
+scaled-trans=ACD7F0A3
+fit-up=D518BCFE bounds=0,2,7,5
+fit-flat=81281A9E bounds=2,3,5,4
+fit-down=98CE3B29 bounds=0,0,3,3
+fill2d=39F675C2
+fill2d-null=1
+fill=594B1DE6
+texture-dormant=87E6EC25
+lighten=E3632303
+swap=E9FB8ECF
+outline=DA88249A
+srccopy=EAF16D75
+transsrccopy=6F1F04E4
+[font]
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+init=0 current=0
+font0 height=16 spacing=1 width-Hi=18 charW-H=7 monoW=10 bufsize-Hi=288
+mono-str=30
+draw=0141BCC3
+draw-shadowed=7865E4D9
+draw-mono=8883CBF9
+draw-underlined=66ABC100
+draw-clip4=F1E8BA9E
+draw2d=413CB18E
+current1=1 height1=10 width-Hi1=13
+current4=4 height4=10
+current-still=4
+add-dupe=-1 add-null=-1
+add-edge=0
+load0=0 load9=-1
+[ifacefont]
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+pre width=0
+pre-draw=190A55AD
+init=0
+add-modern=0
+current=100
+font0 height=12 spacing=1 width-Hi=17 charW-A=9 charW-space=4 monoW=10 bufsize=204 mono-str=30
+draw=EB7236D3
+draw-shadowed=0730C59E
+draw-mono=20A0D317
+draw-underlined=D92F0C6D
+draw-clip4=F1E8BA9E
+scaled1=48DA6C5E width1=17
+scaled2=EF8CBBC6 width2=34
+current101=101 height=10
+current109=109 height=10
+reinit=0
+[region]
+create name=[] flags=0 bounds=-2147483648,-2147483648,2147483647,2147483647 centroid=0,0
+square bounds=0,0,10,10 centroid=5,5
+contains inside=1 vertex=1 edge=1 outside=0 neg=0 null=0
+tri bounds=0,0,8,6 centroid=2,2 in=1 out=0
+name=[hello]
+name-null=[]
+name-long=[0123456789abcdef0123456789abcde]
+INFO: regionGetName(): null region ptr
+name-null-region=[<null>]
+userdata-null=1
+userdata-roundtrip=1
+flags=5
+INFO: regionAddPoint(): null region ptr
+INFO: regionDelete(): null region ptr
+deleted=1
+[datafile]
+pcx=6x4 img-crc=0779E7D2 pal-crc=8DE4C36E
+odd=5x3 img-crc=E05588AD
+missing-null=1 dims=-1,-1
+read=6x4 crc=9B14C0FB
+remap6=00716622
+pack=2x2 crc=0E683D67
+pack-degenerate=0,0
+load size=325 crc=F8F934F6
+load-missing=1
+loadpal=1 crc=8DE4C36E
+loadpal-missing=1
+getpal-crc=8DE4C36E
+mangled=6x4
+loaded=2x2 crc=85A3347B palmark=42
+[cfgmig]
+sfall-init=1
+sfall-default=2
+sfall-reinit=0
+sfall-init-file=1
+Misc.OverrideCriticalTable=[5]
+Misc.BooksFile=[bks.ini]
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+content-init=1
+f2res-migrate=1
+screen.resolution_x=[800]
+screen.scale=[2]
+ui.main_menu_scale_mode=[2]
+ui.iface_bar_mode=[1]
+f2res-again=0
+INFO: Migrated settings from ddraw.ini to game.cfg.
+sfall-migrated-file=1
+start.map=[arroyo]
+start.year=[2250]
+worldmap.travel_delay=[100]
+movies.movie1=[custom.mve]
+movies.endgame_movie_male=[10]
+combat.check_weapon_ammo_cost=[1]
+sfall-migrate-again=1
+INFO: Migrated settings from f2_res.ini to /tmp/f2mig3\config\game.cfg.
+f2res-content-file=1
+main_menu.main_menu_panel_offset_x=[50]
+main_menu.scale_buttons_and_text=[1]
+movie0=[iplogo.mve] movie16=[credits.mve] movie-neg=1 movie-17=1 movie-32=1
+[input]
+bk-init=0
+exec1=2,1
+exec2-removed=2 count=1
+exec3-readded=1,2
+disabled=0
+re-enabled=2
+block50=1
+bmp=0 size=1090 crc=B170652F
+png=0 size=120 crc=6E661D43
+[kb]
+esc=27 tab=9 backspace=8 enter=13 space=32 del=127
+a=97 z=122 A=65 Z=90 0=48 9=57
+f1=315 f10=324 f11=389 f12=390
+shift-f1=340 ctrl-f1=350 alt-f1=360
+up=328 down=336 left=331 right=333
+ctrl-up=397 alt-up=408
+home=327 end=335 pgup=329 pgdn=337 ins=338
+alt-c=302 ctrl-c=3 alt-x=301
+ctrl-a=1 alt-m=306 numpad5=332
+first-char=32 last-char=122 queue=64
+mod-shift=8 mod-ctrl=128 mod-alt=32 any-shift=24
+lock-num=1 lock-caps=2 state-up=0 state-down=1
+[dinput]
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+uses-relative=0
+direct-init=1
+acquire-mouse=1 acquire-kbd=1
+getdata=1 pos=0,0 buttons=0,0 wheel=0,0
+wheel=3,-2
+wheel-drained=0,0
+relmode-init=0 uses-relative=1
+absmode-init=1 uses-relative=0
+kbd-reset=1 kbd-data=1 kbd-unacquire=1
+mouse-unacquire=1
+freed=1
+[graph]
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value screen.resolution_x was clamped.
+channels music=1 speech=1 sfx=4 movie=1 script=4 float=4 pipboy=1 total=16
+clamped sfx=16 script=1 bad-type=0 total=25
+high-white=31 high-black=0
+INFO: load_lbm_to_buf: loaded 6x4 OK
+lbm=6 crc=52FF2860
+INFO: load_lbm_to_buf: loaded 6x4 OK
+lbm-clip=6 crc=9AC24FE6
+INFO: load_lbm_to_buf(/tmp/nope.lbm): fileOpen failed
+lbm-missing=-1
+compress=27 crc=798E8D45
+decompress=0 match=1
+decompress-trunc=-1 decompress-null=-1
+grayscale=1AD0173B
+grayscale-pitch=38D4751F
+[options]
+parse-all=1 count=6
+schema id=[debug.show_fps] type=0 cat=7 section=[debug] key=[show_fps] source=[fallout2.cfg] default=0 label=-1:[Show Fps] apply=2 choices=0
+schema id=[preferences.combat_speed] type=4 cat=4 section=[preferences] key=[combat_speed] source=[fallout2.cfg] default=1 label=-1:[Combat Speed] apply=2 choices=3
+schema id=[screen.resolution_x] type=1 cat=2 section=[screen] key=[resolution_x] source=[fallout2.cfg] default=640 label=10:[Resolution Width] apply=2 choices=0
+schema id=[ui.anim_speed] type=2 cat=3 section=[ui] key=[anim_speed] source=[fallout2.cfg] default=1.00 label=-1:[Anim Speed] apply=2 choices=0
+schema id=[ui.hotkey] type=5 cat=3 section=[ui] key=[hotkey] source=[fallout2.cfg] default=13 label=-1:[Hotkey] apply=2 choices=0
+schema id=[ui.motd] type=3 cat=3 section=[ui] key=[motd] source=[fallout2.cfg] default=[hello] label=-1:[Motd] apply=2 choices=0
+parse-bad=0
+parse-nodot=0 parse-null=0
+INFO: Game config loaded from fallout2.cfg.
+INFO: config value sound.sfx_channels was clamped.
+INFO: config value sound.script_channels was clamped.
+model-edits=110 dirty=0
+set-resx=1
+dirty=1 dirty-resx=1 dirty-music=0
+set-unknown=0 err=[Setting is not registered.]
+set-bool=0 err=[Value has the wrong type.]
+rollback-dirty=0
+reset-default=1
+commit=1 active=640 configured=800
+commit-dirty=0
+INFO: Game config loaded from fallout2.cfg.
+set-overridden=0 err=[Setting is overridden by the command line.]
+[ptrreg]
+store-null=0 store-a=1 store-b=2 fetch-a=1 fetch-remove-b=1 fetch-b-gone=1 fetch-zero=1 fetch-missing=1 store-c=3
+[gamedefs]
+stat-count=38 stat-first=0 special=33 saveable=35 primary-count=7 primary-min=1 primary-max=10 primary-range=10 pc-level-max=99 valid-neg=0 valid-first=1 valid-last=1 valid-count=0 post-old=14 post-new=15 pc-count=5 pc-first=0 pc-post-old=4 pc-post-new=5 pc-valid-neg=0 pc-valid-count=0
+skill-count=18 skill-first=0 tagged=4 default-tagged=3 sneak=8 valid-neg=0 valid-count=0 post-old=8 post-new=9
+perk-count=119 perk-first=0 tag=51 mutate=52 jinxed=118 valid-neg=0 valid-count=0 post-old=51 post-new=52
+trait-count=16 trait-first=0 max-selected=2 gifted=15 valid-neg=0 valid-count=0 post-old=15 post-new=16
+elev=3 square=10000 hex=40000 elev-valid2=1 elev-valid3=0 sq-valid9999=1 sq-valid10000=0 hex-valid39999=1 hex-valid40000=0 flags-or=7 flags-and=4 not-saved=-2
+anim-count=65 anim-first=0 anim-stand=0 anim-fire-cont=47 anim-callshot=64 knock-first=20 knock-last=35 sf-first=48 sf-last=63 opts-std=7 opts-ping=768 valid-neg=0 valid-last=1 valid-count=0
+version-default=[FALLOUT II 1.02]
+version-custom=[Custom Build 123456789012345678] len=31
+version-empty=[FALLOUT II 1.02]
+[artdefs]
+weapon-none=0 weapon-sfallt=15 valid-neg=0 valid-none=1 valid-max=1 valid-over=0
+tile-or=3 tile-mask=15 tile-and=2 tile-grid=1 tile-last=4095
+dude-looks=2 bg-vault=10 headfidget-bad=7 misc-scroll=12 scenery-ff3=501
+iface-first=0 iface-last=4095 iface-mainmenu=140 iface-death=309 iface-partyweapup=418 iface-pipnote=130 iface-mvenum=290
+sk-outdoorsman=45 sk-tag=123 sk-jinxed=64 sk-psycho=144 sk-wephandling=173 sk-rep48=48 sk-drug67=67
+[kbfull]
+num-scancodes=512
+sc-a=4 sc-b=5 sc-c=6 sc-d=7 sc-e=8 sc-f=9 sc-g=10 sc-h=11 sc-i=12 sc-j=13 sc-k=14 sc-l=15 sc-m=16
+sc-n=17 sc-o=18 sc-p=19 sc-q=20 sc-r=21 sc-s=22 sc-t=23 sc-u=24 sc-v=25 sc-w=26 sc-x=27 sc-y=28 sc-z=29
+sc-1=30 sc-2=31 sc-3=32 sc-4=33 sc-5=34 sc-6=35 sc-7=36 sc-8=37 sc-9=38 sc-0=39
+sc-return=40 sc-escape=41 sc-backspace=42 sc-tab=43 sc-space=44
+sc-minus=45 sc-equals=46 sc-leftbracket=47 sc-rightbracket=48 sc-backslash=49
+sc-semicolon=51 sc-apostrophe=52 sc-grave=53 sc-comma=54 sc-period=55 sc-slash=56
+sc-capslock=57 sc-f1=58 sc-f2=59 sc-f3=60 sc-f4=61 sc-f5=62 sc-f6=63 sc-f7=64 sc-f8=65 sc-f9=66 sc-f10=67 sc-f11=68 sc-f12=69
+sc-insert=73 sc-home=74 sc-pageup=75 sc-delete=76 sc-end=77 sc-pagedown=78
+sc-right=79 sc-left=80 sc-down=81 sc-up=82 sc-numlock=83 sc-scrolllock=71
+sc-kp-divide=84 sc-kp-multiply=85 sc-kp-minus=86 sc-kp-plus=87 sc-kp-enter=88
+sc-kp-1=89 sc-kp-2=90 sc-kp-3=91 sc-kp-4=92 sc-kp-5=93 sc-kp-6=94 sc-kp-7=95 sc-kp-8=96 sc-kp-9=97 sc-kp-0=98
+sc-kp-decimal=220 sc-lctrl=224 sc-lshift=225 sc-lalt=226 sc-rctrl=228 sc-rshift=229 sc-ralt=230
+kmod-caps=8192 kmod-num=4096 kmod-scroll=32768
+init=0 init-again=-1 layout=0
+layout-bad=0 layout-qwerty=0
+disabled=1 enabled=0
+press-count=41 release-count=0
+reset-empty=-1
+a=97 empty=-1
+shift-ev=-1 shift-a=65
+f1=315
+alt-ev=-1 alt-x=301
+caps-ev=-1 caps-a=65 caps-shift-ev=-1 caps-shift-a=97 caps-ev2=-1 caps-off-a=97
+drain-matches=63 drain-empty=-1
+reset-count=0 reset-getch=-1
+free-getch=-1
+[combatdefs]
+crit-count=6 crit-first=0 valid-neg=0 valid-count=0 post-old=2 post-new=3
+state-or=3 state-and=2 state-andu=0 state-not=-1
+hitmode-count=20 hitmode-first=0 punch-first=8 punch-last=13 kick-first=14 kick-last=19 valid-neg=0 valid-count=0 post-old=4 post-new=5
+hitloc-count=9 hitloc-specific=8 hitloc-first=0 uncalled=8 valid-count=0 post-old=7 post-new=8
+critmember-count=7 critmember-first=0 post-old=1 post-new=2 badshot-ok=0 badshot-arms=7
+critdesc=3,640,0,-2,256,100,101
+runaway-count=7 runaway-first=0 runaway-last=6 post-old=6 post-new=7 postdec-old=0 postdec-new=-1
+area-count=5 area-first=0 best-count=8 best-first=0 dist-count=5 dist-first=0 who-count=5 who-first=0 chem-count=6 chem-first=0 disp-count=6 disp-first=0 disp-postdec-old=1 disp-postdec-new=0 hurt-count=4 hurt-first=0
+[objtypes]
+rot-first=0 rot-last=5 rot-count=6 add=2 sub=1 mod=5 post-old=5 post-new=6 pre-new=-1 valid-neg=0 valid-last=1 valid-count=0
+objtype-count=11 objtype-first=0 proto-count=6 valid-last=1 valid-count=0 post-old=3 post-new=4
+outline-or=17 outline-and=0 outline-andu=32 outline-oru=48 paletted=1073741824 disabled=-2147483648
+objflag-anyhand=50331648 objflag-equipped=117440512 objflag-fc000=1032192 objflag-opendoor=-1610612720 xor=5 not=-1 or=48 xoreq=16 andeq=16
+dude-count=5 dude-valid=1 dude-invalid=0 crit-or=96 crit-not=-1 crit-andeq=512 crit-oreq=1536 container-open=1 door-locked=33554432 obj-locked=33554432 obj-jammed=67108864
+maneuver-fleeing=4 man-or=3 man-not=-1
+dam-cripleg=12 dam-criparm=48 dam-crip=124 dam-or=384 dam-not=-1 dam-oreq=3072 dam-andeq=1024
+bt=1075494110 bt-tile=1752286 bt-elev=2 bt-rot=0 btfull=-134217729 btfull-tile=67108863 btfull-elev=7 btfull-rot=5 tilemask=67108863 elevmask=-536870912 elevshift=29 rotmask=469762048 rotshift=26
+map-transition=-2 map-invalid=-1 map-first=0 map-arroyo-temple=126 map-movie1=149 post-old=149 post-new=150
+[prototypes]
+gender-count=2 item-count=7 item-first=0 post-old=6 post-new=7 scenery-count=6 material-count=8 dmg-count=7 dt-fire=19 dr-plasma=27 dt-valid=0 caliber-count=19 race-count=2 body-count=3 kill-default=19 kill-override=38 kill-player=38 kill-valid=1 kill-invalid=0 kill-over=1 kill-over-out=0
+item-armor=3 item-stimpak=40 item-money=41 item-jet=259 item-scorcher=390 critter-dude=0 critter-dogmeat=342 scenery-car=1009 scenery-goo1=985 misc-blood=4 misc-exit1=16 misc-exitlast=23
+proto-or=24 proto-shoot=-2147483648 ext-or=768 ext-xor=512 ext-hidden=134217728 list-extent=16 list-max=512
+empty-pid=-1 empty-haspid=0 empty-valid=0 stim-pid=40 stim-type=0 stim-protoid=40 dog-pid=16777558 from-pid-type=0 from-pid-protoid=40 from-pid-valid=1 dog-type=1 wide-type=-1 wide-valid=0 stim-eq=1 stim-ne-crit=1 from-eq=1 back-to-item=40
+mapto-item=0 mapto-critter=1 mapto-scenery=2 mapto-wall=3 mapto-tile=4 mapto-misc=5
+exitgrid=1 noexit=0 exitlast=1 exitover=0 itemmember-range=555 itemmember-material=11 critmember-headfid=10 scenerymember-data=10 wallmember-material=9 miscmember-max=7 typemember-int=1 typemember-string=2
+[gametypes]
+radiation-count=6 radiation-first=0 post-old=5 post-new=6 goris-combat=100 goris-robe=99
+attack-invalid=-1 attack-first=0 attack-count=5 healing-first=0 healing-count=3 post-old=2 post-new=3
+hand-count=2 slot-w=64 slot-h=48 barter-extra=1 useitem-error=-1 useitem-ok=0 useitem-remove=1 useitem-drop=2
+[ability]
+stat-err=-5 steal-caught=0 steal-success=1 steal-fail=2 perkprop-first=0 perkprop-last=16 perkprop-count=17
+[uitypes]
+wmerr-ok=0 wmerr-running=9 wmerr-title=10 wmerr-input=11 wminit-none=0 wminit-buffered=1 group-cap=64
+win-defaults=1 win-dontmove=2 win-movetop=4 win-hidden=8 win-modal=16 win-transparent=32 win-draggable=128 win-managed=256
+btn-checkable=1 btn-checkondown=2 btn-notoggleoff=4 btn-disabled=8 btn-drag=16 btn-transparent=32 btn-graphic=65536 btn-checked=131072 btn-radio=262144 btn-rightcfg=524288
+align-left=0 align-right=1 align-center=2 mbev-count=4 mrbev-count=2
+cursor-w=8 cursor-h=8 cursor-size=64 state-left=1 state-right=2 ev-down=3 ev-repeat=12 ev-up=48 ev-anydown=3 ev-wheel=64 repeat-time=250 sens-min=0.25 sens-max=2.50
+gesture-tap=1 gesture-pan=3 gstate-possible=0 gstate-ended=3 mgr-cache=32 mgr-none=0 mgr-static=1 mgr-animated=2
+[mousewin]
+wminit=0
+input-again=-1
+win=1 width=100 height=50
+rect=10,20,109,69
+buf-crc=A73BFA77
+border-crc=357807D8
+text-crc=9A0FA7B9
+draw-crc=BC78F380
+at-shown=1 at-hidden=1
+destroyed=1
+shown-hidden=0 pos=100,80 rect=99,79,106,86 in-all=1 in-small=0 click-in=1 click-out=0
+ev-down=1 last-buttons=1 ev-repeat=4 ev-up=16
+wheel=0,0 nowheel-key=-1 wheel-ev=64 wheel-key=328
+hide-hidden=1 show-hidden=0
+ts-mode=1 pan-mode=1 tap=1 tap-type=1 tap-state=3 tap-n=1 tap-x=64 tap-y=96 tap-again=0
+pan=1 pan-type=3 pan-state=1 pan-n=1 pan-x=332 pan-y=240 panend=1 panend-state=3
+press=1 press-type=2 press-state=1 press-n=1 pressend=1 pressend-state=3
+INFO: Can't find nope.txt
+set-anim=1 found=1 found-name=[cur.anim] found-w=8 found-h=8 found-type=2 found-hot=1,1 set-anim-again=1 set-ptr=1 set-shape=1 set-missing=0 set-bad=0 cur-hot=3,4 cur-type=1
+upd-hot=2,2
+mgr-hide=1 mgr-show=0
+kb-b=98
+[winbtn]
+wminit-again=4
+input-again=-1
+btn1=1 btn2=2 btnwin=1 lastwin=-1
+hover=11 exit=12
+down=13 up=14
+right-unconf=-1 right-up-unconf=-1 right-down-conf=31 right-up-conf=32
+proc-calls=1 proc-code=11 proc-ret=-1
+proc-ret40=21
+check-down=-1 check-up=33 checked=1
+disabled-down=-1 disable-exit=42
+radio=0 rest-checked=1 radio4=0 radio5=0
+rest-code=41
+press-rc=0 press-code1=63 press-code2=13
+textbtn=6 textbtn-crc=69F37E79
+gfxbtn=7 gfxbtn-crc=38A2D861
+mask-hit=81 mask-exit=82 mask-miss=-1
+menu-passthrough=42
+input-code=14 input-empty=55 input-mouse=-2 lastwin=1
+destroyed-lookup=-1
+[winmenu]
+wminit-again=4
+input-again=-1
+nobar-pulldown=-1 bar=0 bar-again=-1 bar-too-wide=-1
+pulldown1=0 pulldown2=0 pulldowns=2 menu-crc=30F44E81
+find-l=1 find-E=2 find-miss=-1 width-needed=32 menu-pass=42
+menu-pass-after=42 bar-re=0
+tm1=0 tm2=0 tmwins=3,4 tmrect1=297,119,341,166 tmrect2=291,178,346,225
+click1-gone=1 click1-other-alive=1
+click2-gone=1
+[winfrm]
+wminit-again=4
+input-again=-1
+badfrm=-1
+frmbtn=9 frm-w=15 frm-h=16 frm-crc=4DDF7C2A
+frm-hover=111 frm-exit=112 frm-down=113 frm-up=114
+dis-bad=-1 dis-rc=0 dis-crc=98B4150A en-crc=98B4150A
+img-lock=1 img-rc=0 img-crc=9BE0C6FD img-bad=-1
+destroyed-lookup=-1
+[windlg]
+wminit-again=4
+input-again=-1
+calc=3,4,2
+pdwin=4 pdrect=300,200,335,263 pdcrc=BFA67474 pdgone=1
+yes=1 no=0
+msg=0
+getstr-rc=0 getstr-val=[ab]
+inesc-rc=-1 inesc-val=[Q] intype-rc=0 intype-val=[Hix]
+num-rc=0 num-val=42 numesc-rc=-1 numesc-val=5
+[winmenu2]
+wminit-again=4
+input-again=-1
+nav=2 navesc=-1
+menuret=101 menuqueued=0 menuswitch=-1
+list-now=0 list-nav=2 list-esc=-1
+listcb-idx=1 listcb-ret=-1 listat=2 listletter=6
+[wintext]
+wminit-again=4
+input-again=-1
+font=0 setfont=1 font-after=1 setflags=1 flags=33685504 setcolor=1 color=133 sethi=1 hi=215 resetflags=33619968 resetcolor=220
+left=7207D814 center=5B10B211 right=B5D710DD guard=B5D710DD
+wrap-n=4 wrap=[aa|bb|cc|dd ee]
+wrapnull-n=0 wrapnull=1
+wrapline=E722C2DA spacing=CA1784B0
+scaled-up=46D01941 scaled-same=8407759B scaled-down=DFD41527
+fill3x3=6452ADE4
+[windbg]
+wminit-again=4
+input-again=-1
+dbg1=0 dbgwin=4 dbg-crc=5831104D dbg2=0 dbg-crc2=5C29DAC8
+dbg-gone=1 dbg-at-after=0 dbg3=0 dbgwin3=4
+[windbox]
+wminit-again=4
+input-again=-1
+dlg-esc=0 dlg-yes=1 dlg-no=0 dlg-clean=0
+inp-ab=[ab] inp-ac=[ac] inp-escnull=1
+[winfile]
+wminit-again=4
+input-again=-1
+load-rc=0 load-dest=[slot3] loadesc-rc=1 loadesc-dest=[?]
+loadempty-rc=1 loadempty-dest=[?]
+save-rc=0 save-dest=[xy] saveempty-rc=1 saveesc-rc=1 saveesc-dest=[?]
+[protodb]
+path40=[proto\items]
+stim-rc=0,0 same=1 pid=40 msgid=4000 fid=15 type=2 material=1 size=0 weight=0 cost=175 light=0,0 flags=8
+INFO: 
+	Error: Unimp'd data member in member in proto_data_member!
+member-pid=1:40 member-weight=1:0 member-cost=1:175 member-bad=1
+empty-rc=-1 huge-rc=-1 badptr=1
+[tilemath]
+INFO: tile_hires_stencil_init
+init=0 init-center=20100 setcenter=0 center=17488
+off=16,32,16,-16,-32,-16 d5=-12,0,12,12,0,-12
+dist=11 dist-same=0 dist-bad=9999 infront=1 toright=0 rot=5
+step1=17487 step3=17285 beyond=17088 beyond0=17488
+edge0=1 edge199=1 edgemid=0 edgebad=0 sq=5050 sqbad=-1
+toscr=0 back=17288 badscr=-1 outside=-1
+[squaremath]
+INFO: tile_hires_stencil_init
+init=0 toscr=0 back=4950 badscr=-1 outside=-1
+roof=0 roofxy=176,362 coord=50,49 roofcoord=50,49
+[eventqueue]
+empty-init=1 next-empty=0 add=0,0,0 next=302450 empty=0 has-knock=1 has-drug=0
+find=1,1,0
+proc-idle=0 next-idle=302450 remtype=0 has-knock-after=0
+save=0 cleared=1 load=0 next-loaded=302450 has-sneak=1
+clear-calls=1 empty-after-clear=1 exit=0
+[lightreact]
+init=0 ambient=65536 base=655 clamped=65536 true=70000 inc=70100 dec=69900 badelev=0 badtile=0 reset=655
+INFO: Reaction: set thresholds neutral=0 good=100
+INFO: Reaction: set thresholds neutral=-10 good=10
+bad=0 edge=0 neutral=1 good=2 custom=0,1,2 reset=1
+[gmouseutil]
+modes=11 first-skill=4 skills=7 items=10 cursors=27 first-anim=25 scroll-invalid-off=8
+msgs=31 first=[CMBATAI2.msg] last=[scrname.msg]
+none=0 nonenull=1
+autorun=1
+[statskill]
+cost=1,1,2,3,4,5,6
+pcmax0=0 npcmax0=0 bad=0 setmax=12 setmin=1
+defsneak=5 defbad=-5 tagged=0 diff=0,0 hard=-10 easy=20
+[combatskill]
+pen0=0 penset=-15 penbad=0 penhead=-40 pentorso=0 highlight=0
+upd=0,0,0 save=0,0,0 load=0 got=216,216,216 crc=E0A24725,94261896,E0A24725
+[gametime]
+t0=302400 date=1/1/0 hour=824 timestr=[8:24]
+set=1000 adv=1660 zero=1
+sched=0 next=864000 has-gametime=1
+ids=268435455,268435456,268435457 restored=268435456 badrestore=268435455 reset=268435455
+[traitselect]
+sel0=-1,-1 sel=15,7 is=1,0 statmod=1 skillmod=-10
+save=0 load=0 back=15,7
+[objcreate]
+stim-rc=0 stim-null=0 pid=40 fid=15 flags=8 sid=-1 id=6
+bad-rc=-1 bad-null=1
+cash-rc=0 cash-id=8 dog-rc=0 dog-null=0
+dog-pid=16777558 dog-fid=16777232 dog-flags=536870912
+[critterstats]
+dog-rc=0 str=6 agi=6 luck=2 bonus=0 clamped=0
+set-rc=-3 str-after=0
+sneak=5 guns=5 stim-skill=0 bad-skill=-5
+[inventory]
+w=0 cost=175 types=2,5 invw0=0 add=0,0 invw1=0 qty=3 slot0=40 slot9null=1 find=41@1
+rem=0 slot0after=41 qtyafter=0
+[equip]
+jacket-rc=0 jacket-type=0 equip-armor=0 worn=1
+gun-rc=0 gun-type=3 gun-skill=2 gun-attack=4
+INFO: 
+inven_wield failed!  ERROR ERROR ERROR!
+equip-gun=-1 hand2=-1
+[ballistics]
+dmg-rc=0 min=20 max=60 dmg-null=-1 radius=0 range=1 ap=1
+armor-ac=25 armor-dt=12 armor-dr=40 worn=3 bare-null=1
+[itemmove]
+move=-1 blocked-q=1 force=0 q=0,1 owned=1 moveall-cash=0,2
+rem=0 destroy=0 destroynull=-1 slot0=40
+[itemdrop]
+drop=0 slot0null=1 qty=0,0
+dropempty=0 dropbadtile=-1 qtykept=1
+[ammocont]
+cap=1 qty=0,1,1,0 guncap=6 gunqty=0 nullcap=0
+maxsize=500 total=0,0,2 gunsize=2 null=0,0
+[explosives]
+dyn=1:0,0 dynis=1 armedis=1 stimis=0 customis=1 custom=1:5,9 activated=1:41 setdyn=1 dyn2=10,20
+book=0 body=1,0 kill=11,-1
+[vitals]
+hp=0 poison=0 rad=0 stimhp=0 adj=0 hp1=0 poisonrc=-1 radrc=-1
+[objfind]
+pre-null=0 count=4 pids=40,41,40
+destroydog=0 count-after-dog=4 destroystim=0 first-after=40
+[objattrs]
+rot0=0 cw=0,0 rot2=2 ccw=0 rot1=1 set=0 nw=5 bad=-1 still=5 null=-1
+owner-free=1 owner-add=0 owner-move=1
+[objvis]
+hide=0 flag=1 hideagain=-1 show=0 showagain=-1 null=-1,-1
+chain=4 disc=0 tile=-1 chain-after=3 again=0
+[objoutline]
+set=0 outline=16 again=-1 has=1 clear=0 cleared=0 clearnull=-1
+xy0=0,0 off=0 xy1=10,-5 offnull=-1
+charges=0 max=0 uses=0 set7=0
+[gamemouse]
+init=0 again=-1 cursor=1 setcross=0 cross=20 crossagain=-1 setarrow=0 arrow=1
+mode=0
+scroll=1,1,0 click=0,1
+vis=1
+[gmouseen]
+init=0 scrolloff=0 dis=0,0 disagain=0,0 en=0,1 enagain=0
+[arthide]
+hide=0 bad=0 on=1 blindnull=0 blindpid=-1 restored=0 sighted=1
+[protonew]
+new-rc=0 newpid=1 get=0 weight=10 cost=0 type=5 material=1
+bad-rc=-1
+[protocopy]
+fresh=0:2 copy=0 weight=0 pid=2 cross=-1 miss=-1
+sub=1,0,1
+objcopy=0 twinpid=40 twinid=102 sametwin=1 objcost=175 barecost=0
+[mapvars]
+INFO: ERROR: attempt to reference map var out of range: 0
+INFO: ERROR: attempt to reference local var out of range: 99
+glob=-1 alloc=0 set=0 get=0:42 bad=-1
+pre=65536 post=655
+[skilltag]
+tagged0=0,1 back=8,0,0,0 tagged1=1
+sneak=5
+[pcstat]
+sp0=0 badget=0 setlevel=0 level=5 toohigh=-3 toolow=-2 setrep=0 rep=7 badset=-5
+[xproll]
+xp=0,1000,10000,210000,4851000,-1,-1
+roll=1:-8 rollmod=2:1 rollnull=1
+[skillroll]
+roll=1:-86 rollmod=2:96 rollbad=1 rollstim=1:-2
+[miscgetters]
+edge=0 zone=0 align=0,0
+movecost=5 bad=0 encumbered=0
+[findcid]
+cid=-1 found=0 from1=1 missing=3
+[nevsevents]
+INFO: nevs_signal( 'nope');
+INFO: nevs_clearevent( 'nope');
+INFO: nevs_clearevent( 'ev1');
+add=0,0 signal=1 clearmiss=1 clear=0
+INFO: nevs_clearevent( 'ev07');
+fillfail=0 over=1 clearslot=0 readd=0
+[sfallvars]
+init=1 store=1 fetch=1:42 miss=0 str=1:99
+save=1 cleared=0 load=1 back=1:42 backstr=99
+[sfallini]
+crit=1:5 books=1:[bks.ini] miss=0:-999 bad=0
+set=1 after=7 cleared=7
+[objplace]
+locbad=-1,-1 null=-1 loc=0 tile=20100 elev=0 find=16777558 missnull=1
+bright=65536 float=65536
+frame=0 bad=-1 null=-1 en=0 dis=0
+[itemnames]
+init=1 load=1 stim=1:[Stimpak] cash=1:[Money] miss=0
+repoinit=1 extra=12288
+[names]
+trait=1:[Gifted] perk=1:[Tag!] stat=1:[Strength] skill=1:[Sneak]
+[morenames]
+dogid=34200 dog=1:[Dogmeat] kill=1:[Dogs]
+stimdesc=1:[A healing chem. When injected, the chem provides immediate healing of minor wounds.] gifteddesc=1:[You have more innate abilities than most, so you have not spent as much time honing your skills.  Your primary statistics are e]
+[moredesc]
+taggeddesc=1:[Your skills have improved to the point where you can pick an additional Tag Skill.  Tag skills increase twice as fast.]
+sneakdesc=1:[Quiet movement, and the ability to remain unnoticed. If successful, you will be much harder to locate. You cannot run and sneak]
+strdesc=1:[Raw physical strength. A high Strength is good for physical characters. Modifies: Hit Points, Melee Damage, and Carry Weight.]
+[scriptprog]
+loaded=1 start=1 miss=-1 pop=7,42
+[programstack]
+float=40961:2.500000 str=[hi] ptrnull=1 int=9
+[progretstack]
+procs=29 retptrnull=1 retpop=11,22
+[statssave]
+ap=4,4 set=6,7
+save=0 load=0 back=5,7
+[frmids]
+sneak=36 skillbad=-1 str=0 statbad=-1 gifted=70
+[partyobjects]
+party=0 objects=0 dude=16777216:18000 egg=-1:130
+dup-add=0
+[isorest]
+INFO: 
+INTRFACE: Custom interface bar width (800) is greater than screen width (640). Using default interface bar.
+INFO: 
+Elevators init: no ElevatorsFile configured, custom elevators disabled
+iface=0 enter=0
+[maptransition]
+rc=0 map=0 tile=5 elev=1 rot=0
+rc=0 map=-1 tile=-1 elev=0 rot=-1
+rc=0 map=-2 tile=0 elev=0 rot=0
+rc-null=-1
+[objplaceontile]
+create=0 pid=-1
+set=0 tile=20100 elev=0
+found=1
+move=0 tile=20517 elev=0
+found-after-move=1
+[mapstart]
+start=20100,0,0 current=0
+[mapnewmap]
+INFO: Game config loaded from fallout2.cfg.
+INFO: tile_hires_stencil_init
+boot mode=0 wminit=0 input=-1 win=1 buf=1 art=0 tile=0 party=0 objects=0 db=0 xb=1,1,1 mouse=0
+newmap elev=0 center=20100 hdr=20,20100,0,0 local=0 global=0 gvarlen=0,0
+square=00010001,00010001,00010001,00010001
+obj pid=16777216 tile=20100 elev=0 rot=0 flags=20000425
+obj pid=-1 tile=20100 elev=0 rot=0 flags=20000405
+obj pid=-1 tile=23702 elev=0 rot=0 flags=A000041C
+objects=3 dude=20100,0,0 light=65536 flags=20000425
+[mapload]
+loadrc=0 ver=20 tile=18492 elev=0 rot=0 local=0 global=0 gvarlen=0,0
+square=00010001,00010001,00010001,00010001
+objects=571 dude=18492,0,0
+[mapsave]
+path=data\MAPS\ARTEMPLE.MAP
+rc=0
+size=92780 crc=BC6A1A0F

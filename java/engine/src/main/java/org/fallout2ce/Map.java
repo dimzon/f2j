@@ -474,6 +474,151 @@ public final class Map {
         return 0;
     }
 
+    // 0x4843B8 mapHeaderWrite.
+    static int mapHeaderWrite(MapHeader ptr, XFile.Handle stream) {
+        if (Db.fileWriteInt32(stream, ptr.version) == -1) return -1;
+        if (Db.fileWriteFixedLengthString(stream, ptr.name, 0, 16) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.enteringTile) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.enteringElevation) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.enteringRotation.value()) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.localVariablesCount) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.scriptIndex) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.flags) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.darkness) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.globalVariablesCount) == -1) return -1;
+        if (Db.fileWriteInt32(stream, ptr.index != null ? ptr.index.id() : -1) == -1) return -1;
+        if (Db.fileWriteUInt32(stream, ptr.lastVisitTime) == -1) return -1;
+        if (Db.fileWriteInt32List(stream, ptr.field3C, 0, 44) == -1) return -1;
+        return 0;
+    }
+
+    // 0x483980 _map_save_file.
+    static int mapSaveFile(XFile.Handle stream) {
+        if (stream == null) {
+            return -1;
+        }
+        // scriptsDisable: seam.
+        int[] elevFlags = { MAP_HEADER_ELEVATION_0, MAP_HEADER_ELEVATION_1, MAP_HEADER_ELEVATION_2 };
+        for (int elevation = 0; elevation < MapDefs.ELEVATION_COUNT; elevation++) {
+            int tile;
+            for (tile = 0; tile < MapDefs.SQUARE_GRID_SIZE; tile++) {
+                int fid = square[elevation].tileFid[tile];
+                if ((fid & HALF_FID_FRAME_MASK) != ArtDefs.TileFrameId.Grid.id()) break;
+                if (((fid >> ROOF_HALF_FID_SHIFT) & HALF_FID_FRAME_MASK) != ArtDefs.TileFrameId.Grid.id()) break;
+            }
+            if (tile == MapDefs.SQUARE_GRID_SIZE) {
+                GameObject object = ObjectSystem.objectFindFirstAtElevation(elevation);
+                if (object != null) {
+                    while (object != null && (object.flags.bits() & ObjectFlags.NO_SAVE.bits()) != 0) {
+                        object = ObjectSystem.objectFindNextAtElevation();
+                    }
+                    if (object != null) {
+                        gMapHeader.flags &= ~elevFlags[elevation];
+                    } else {
+                        gMapHeader.flags |= elevFlags[elevation];
+                    }
+                } else {
+                    gMapHeader.flags |= elevFlags[elevation];
+                }
+            } else {
+                gMapHeader.flags &= ~elevFlags[elevation];
+            }
+        }
+
+        gMapHeader.localVariablesCount = MapVars.localVarsLength();
+        gMapHeader.globalVariablesCount = MapVars.globalVarsLength();
+        gMapHeader.darkness = 1;
+
+        if (mapHeaderWrite(gMapHeader, stream) != 0) return -1;
+        if (gMapHeader.globalVariablesCount != 0) {
+            Db.fileWriteInt32List(stream, MapVars.globalVars(), 0, gMapHeader.globalVariablesCount);
+        }
+        if (gMapHeader.localVariablesCount != 0) {
+            Db.fileWriteInt32List(stream, MapVars.localVars(), 0, gMapHeader.localVariablesCount);
+        }
+        for (int elevation = 0; elevation < MapDefs.ELEVATION_COUNT; elevation++) {
+            if ((gMapHeader.flags & elevFlags[elevation]) == 0) {
+                Db.fileWriteInt32List(stream, square[elevation].tileFid, 0, MapDefs.SQUARE_GRID_SIZE);
+            }
+        }
+
+        // _win_msg: seam.
+        ObjectSystem.scriptSaveAll(stream);
+        ObjectSystem.objectSaveAll(stream);
+        // scriptsEnable: seam.
+        return 0;
+    }
+
+    /**
+     * Port of {@code _map_save} (0x483850): open the save path, write the map
+     * file, and (when not in-game) save the map edges (seam). Header name must
+     * be set.
+     */
+    public static int mapSave(boolean isInGame) {
+        int rc = -1;
+        if (gMapHeader.name[0] != 0) {
+            String name = new String(gMapHeader.name).trim();
+            XFile.Handle stream = Db.fileOpen("MAPS\\" + name, "wb");
+            if (stream != null) {
+                rc = mapSaveFile(stream);
+                Db.fileClose(stream);
+            }
+            if (rc == 0 && !isInGame) {
+                // mapEdgeSave: seam (game phase).
+            }
+        }
+        return rc;
+    }
+
+    /**
+     * Port of {@code _map_save_in_game} (0x483C98): the leaving-map path.
+     * Animation stop / party prep / random-encounter erase / automap are
+     * game-phase seams; the save itself is {@link #mapSave}.
+     */
+    public static int mapSaveInGame(boolean isLeavingMap) {
+        if (gMapHeader.name[0] == '\0') {
+            return 0;
+        }
+        // animationStop / _partyMemberSaveProtos / _queue_leaving_map /
+        // _partyMemberPrepLoad / scriptsExecMapExitProc / _obj_reset_roof:
+        // game-phase seams.
+        gMapHeader.flags |= 0x01; // MAP_HEADER_SAVED
+        gMapHeader.lastVisitTime = GameTime.gameTimeGetTime();
+
+        String name = new String(gMapHeader.name).trim();
+        String savName = replaceExtension(name, "SAV");
+        if (isLeavingMap && !mapIsSaveable()) {
+            // Not saving a RANDOM encounter map: erase the .SAV sibling
+            // (compat_remove; seam — no Java delete API in this slice).
+        } else {
+            byte[] saved = gMapHeader.name.clone();
+            System.arraycopy(savName.getBytes(), 0, gMapHeader.name, 0,
+                    Math.min(savName.length(), gMapHeader.name.length));
+            int rc = mapSave(true);
+            System.arraycopy(saved, 0, gMapHeader.name, 0, saved.length);
+            if (rc == -1) {
+                return -1;
+            }
+        }
+
+        if (isLeavingMap) {
+            gMapHeader.name[0] = '\0';
+            ObjectSystem.objRemoveAll();
+            squareReset();
+        }
+        return 0;
+    }
+
+    static String replaceExtension(String name, String ext) {
+        int dot = name.lastIndexOf('.');
+        return dot == -1 ? name + "." + ext : name.substring(0, dot + 1) + ext;
+    }
+
+    /** Seam for {@code wmMapIsSaveable} (worldmap saveable flag, game phase). */
+    static boolean mapIsSaveable() {
+        return false;
+    }
+
     /**
      * Port of {@code _map_place_dude_and_mouse} (0x48411C): seen-bits clear,
      * dude fid fix-up (already {@code STAND} here), placement on the center

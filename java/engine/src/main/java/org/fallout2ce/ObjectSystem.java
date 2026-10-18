@@ -245,7 +245,10 @@ public final class ObjectSystem {
      * by hex-grid tile). Entries are null until the first
      * {@code objectConnect} to that tile, like the C zeroed array.
      */
-    private static GameObjectListNode[] tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
+    private     static GameObjectListNode[] tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
+
+    /** Port of gObjectListHeadByTile (src/object.cc): connect order. */
+    static GameObjectListNode[] objectListByTile = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
 
     /** Port of {@code gObjectFindLastObjectListNode} (tile-scan cursor). */
     private static GameObjectListNode findCursor = null;
@@ -1797,6 +1800,7 @@ public final class ObjectSystem {
         node.obj.owner = null;
 
         insertNode(node);
+        objectListByTile[tile] = node;
 
         // _obj_adjust_light(obj, 0, null): with a null rect C++ ignores
         // the -1, so the guards-only slice runs bare (vector protos
@@ -2586,6 +2590,18 @@ public final class ObjectSystem {
     static final int SCRIPT_PROC_COUNT = 28;
     static final int SCRIPT_LIST_EXTENT_SIZE = 16;
     static final int MAP_HEADER_SAVED = 0x01;
+    static final int SCRIPT_FLAG_NO_SAVE = 0x08;
+
+    /** Loaded scripts per type (the load boundary; the save path rewrites them). */
+    private static final List<List<Script>> scriptTypeScripts = new java.util.ArrayList<>();
+    /** Valid script count per extent (mirrors ScriptListExtent.length). */
+    private static final List<List<Integer>> scriptTypeExtentLengths = new java.util.ArrayList<>();
+    static {
+        for (int index = 0; index < SCRIPT_TYPE_COUNT; index++) {
+            scriptTypeScripts.add(new java.util.ArrayList<>());
+            scriptTypeExtentLengths.add(new java.util.ArrayList<>());
+        }
+    }
 
     /** Minimal Script holder for the load boundary. */
     static final class Script {
@@ -2671,18 +2687,20 @@ public final class ObjectSystem {
     }
 
     // 0x4A5BE8 scriptListExtentRead.
-    static int scriptListExtentRead(int expectedLength, XFile.Handle stream) {
+    static int scriptListExtentRead(int typeIndex, int expectedLength, XFile.Handle stream) {
         for (int index = 0; index < SCRIPT_LIST_EXTENT_SIZE; index++) {
             Script scr = new Script();
             if (scriptRead(scr, stream) != 0) {
                 return -1;
             }
+            scriptTypeScripts.get(typeIndex).add(scr);
         }
         int[] v = new int[1];
         if (Db.fileReadInt32(stream, v) != 0) return -1;
         if (v[0] != expectedLength) {
             return -1;
         }
+        scriptTypeExtentLengths.get(typeIndex).add(v[0]);
         if (Db.fileReadInt32(stream, v) != 0) return -1;
         return 0;
     }
@@ -2690,6 +2708,8 @@ public final class ObjectSystem {
     // 0x4A5B88 scriptLoadAll.
     static int scriptLoadAll(XFile.Handle stream) {
         for (int index = SCRIPT_TYPE_FIRST; index < SCRIPT_TYPE_COUNT; index++) {
+            scriptTypeScripts.get(index).clear();
+            scriptTypeExtentLengths.get(index).clear();
             int[] v = new int[1];
             if (Db.fileReadInt32(stream, v) == -1) return -1;
             int scriptsCount = v[0];
@@ -2704,10 +2724,266 @@ public final class ObjectSystem {
                 int remaining = scriptsCount;
                 for (int extentIndex = 0; extentIndex < length; extentIndex++) {
                     int expectedLength = Math.min(remaining, SCRIPT_LIST_EXTENT_SIZE);
-                    if (scriptListExtentRead(expectedLength, stream) != 0) {
+                    if (scriptListExtentRead(index, expectedLength, stream) != 0) {
                         return -1;
                     }
                     remaining -= expectedLength;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // ===== object/script write (src/object.cc + src/proto.cc + src/scripts.cc) =====
+
+    // 0x49EF40 objectCritterCombatDataWrite.
+    static int objectCritterCombatDataWrite(ObjTypes.CritterCombatData data, XFile.Handle stream) {
+        if (Db.fileWriteInt32(stream, data.damageLastTurn) == -1) return -1;
+        if (Db.fileWriteInt32(stream, data.maneuver.bits()) == -1) return -1;
+        if (Db.fileWriteInt32(stream, data.ap) == -1) return -1;
+        if (Db.fileWriteInt32(stream, data.results.bits()) == -1) return -1;
+        if (Db.fileWriteInt32(stream, data.aiPacket) == -1) return -1;
+        if (Db.fileWriteInt32(stream, data.team) == -1) return -1;
+        if (Db.fileWriteInt32(stream, data.whoHitMeCid) == -1) return -1;
+        return 0;
+    }
+
+    // 0x49F004 objectDataWrite. Note: the C++ critter branch writes
+    // {@code data->flags}, which overlays {@code critter.reaction} in the union.
+    static int objectDataWrite(GameObject obj, XFile.Handle stream) {
+        ObjTypes.ObjectData data = obj.data;
+        int invLen = data.inventory.items.size();
+        if (Db.fileWriteInt32(stream, invLen) == -1) return -1;
+        if (Db.fileWriteInt32(stream, invLen) == -1) return -1;
+        if (Db.fileWriteInt32(stream, 0) == -1) return -1; // items pointer (meaningless)
+
+        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofGameObject(obj);
+        if (protoId.objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            if (Db.fileWriteInt32(stream, data.critter.reaction) == -1) return -1;
+            if (objectCritterCombatDataWrite(data.critter.combat, stream) == -1) return -1;
+            if (Db.fileWriteInt32(stream, data.critter.hp) == -1) return -1;
+            if (Db.fileWriteInt32(stream, data.critter.radiation) == -1) return -1;
+            if (Db.fileWriteInt32(stream, data.critter.poison) == -1) return -1;
+        } else {
+            if (Db.fileWriteInt32(stream, data.flags) == -1) return -1;
+            switch (protoId.objectType()) {
+            case OBJ_TYPE_ITEM: {
+                ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+                if (ProtoDb.protoGetProto(protoId, slot) == -1) return -1;
+                switch (slot[0].item.type) {
+                case ITEM_TYPE_WEAPON:
+                    if (Db.fileWriteInt32(stream, data.item.weapon.ammoQuantity) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, data.item.weapon.ammoTypePid) == -1) return -1;
+                    break;
+                case ITEM_TYPE_AMMO:
+                    if (Db.fileWriteInt32(stream, data.item.ammo.quantity) == -1) return -1;
+                    break;
+                case ITEM_TYPE_MISC:
+                    if (Db.fileWriteInt32(stream, data.item.misc.charges) == -1) return -1;
+                    break;
+                case ITEM_TYPE_KEY:
+                    if (Db.fileWriteInt32(stream, data.item.key.keyCode) == -1) return -1;
+                    break;
+                default:
+                    break;
+                }
+                break;
+            }
+            case OBJ_TYPE_SCENERY: {
+                ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+                if (ProtoDb.protoGetProto(protoId, slot) == -1) return -1;
+                switch (slot[0].scenery.type) {
+                case SCENERY_TYPE_DOOR:
+                    if (Db.fileWriteInt32(stream, data.scenery.door.openFlags) == -1) return -1;
+                    break;
+                case SCENERY_TYPE_STAIRS:
+                    if (Db.fileWriteInt32(stream, data.scenery.stairs.destinationBuiltTile) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, data.scenery.stairs.destinationMap != null
+                            ? data.scenery.stairs.destinationMap.id() : -1) == -1) return -1;
+                    break;
+                case SCENERY_TYPE_ELEVATOR:
+                    if (Db.fileWriteInt32(stream, data.scenery.elevator.type) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, data.scenery.elevator.level) == -1) return -1;
+                    break;
+                case SCENERY_TYPE_LADDER_UP:
+                case SCENERY_TYPE_LADDER_DOWN:
+                    if (Db.fileWriteInt32(stream, data.scenery.ladder.destinationMap != null
+                            ? data.scenery.ladder.destinationMap.id() : -1) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, data.scenery.ladder.destinationBuiltTile) == -1) return -1;
+                    break;
+                default:
+                    break;
+                }
+                break;
+            }
+            case OBJ_TYPE_MISC:
+                if (ProtoDefs.isExitGridProtoId(protoId)) {
+                    if (Db.fileWriteInt32(stream, data.misc.map != null ? data.misc.map.id() : -1) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, data.misc.tile) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, data.misc.elevation) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, data.misc.rotation.id()) == -1) return -1;
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        return 0;
+    }
+
+    // 0x4890F0 objectWrite.
+    static int objectWrite(GameObject obj, XFile.Handle stream) {
+        if (Db.fileWriteInt32(stream, obj.id) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.tile) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.x) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.y) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.sx) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.sy) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.frame) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.rotation.id()) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.fid) == -1) return -1;
+        if (Db.fileWriteUInt32(stream, obj.flags.bits()) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.elevation) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.pid) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.cid) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.lightDistance) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.lightIntensity) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.outline.bits()) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.sid) == -1) return -1;
+        if (Db.fileWriteInt32(stream, obj.scriptIndex) == -1) return -1;
+        if (objectDataWrite(obj, stream) == -1) return -1;
+        return 0;
+    }
+
+    // 0x489140 _obj_save_obj (recursive).
+    static int objSaveObj(XFile.Handle stream, GameObject object) {
+        if ((object.flags.bits() & ObjTypes.ObjectFlags.NO_SAVE.bits()) != 0) {
+            return 0;
+        }
+
+        if (objectWrite(object, stream) == -1) {
+            return -1;
+        }
+
+        for (ObjTypes.InventoryItem inventoryItem : object.data.inventory.items) {
+            if (Db.fileWriteInt32(stream, inventoryItem.quantity) == -1) return -1;
+            if (objSaveObj(stream, inventoryItem.item) == -1) return -1;
+            if ((inventoryItem.item.flags.bits() & ObjTypes.ObjectFlags.NO_SAVE.bits()) != 0) return -1;
+        }
+
+        return 0;
+    }
+
+    // 0x48935C objectSaveAll: write the count placeholders, patch them after.
+    // C iterates gObjectListHeadByTile (the connect order); tileHeads is a
+    // different structure with a different order, so the save must walk
+    // the connect-order array explicitly.
+    static int objectSaveAll(XFile.Handle stream) {
+        if (stream == null) {
+            return -1;
+        }
+        // _obj_process_seen: no-op headless (no rendering fills _obj_seen).
+        long objectCountPos = Db.fileTell(stream);
+        if (Db.fileWriteInt32(stream, 0) == -1) return -1;
+        int objectCount = 0;
+
+        for (int elevation = 0; elevation < MapDefs.ELEVATION_COUNT; elevation++) {
+            long countPos = Db.fileTell(stream);
+            if (Db.fileWriteInt32(stream, 0) == -1) return -1;
+            int countAtElevation = 0;
+
+            for (int tile = 0; tile < MapDefs.HEX_GRID_SIZE; tile++) {
+                GameObjectListNode node = tileHeads[tile];
+                while (node != null) {
+                    GameObject object = node.obj;
+                    if (object.elevation == elevation && (object.flags.bits() & ObjTypes.ObjectFlags.NO_SAVE.bits()) == 0) {
+                        if (objSaveObj(stream, object) == -1) return -1;
+                        countAtElevation++;
+                    }
+                    node = node.next;
+                }
+            }
+
+            long pos = Db.fileTell(stream);
+            Db.fileSeek(stream, countPos, 0);
+            Db.fileWriteInt32(stream, countAtElevation);
+            Db.fileSeek(stream, pos, 0);
+            objectCount += countAtElevation;
+        }
+
+        long pos = Db.fileTell(stream);
+        Db.fileSeek(stream, objectCountPos, 0);
+        Db.fileWriteInt32(stream, objectCount);
+        Db.fileSeek(stream, pos, 0);
+        return 0;
+    }
+
+    // ===== script write =====
+
+    // 0x4A5B88 scriptWrite.
+    static int scriptWrite(Script scr, XFile.Handle stream) {
+        if (Db.fileWriteInt32(stream, scr.sid) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.field4) == -1) return -1;
+        switch (scriptTypeFromSid(scr.sid)) {
+        case SCRIPT_TYPE_SPATIAL:
+            if (Db.fileWriteInt32(stream, scr.builtTile) == -1) return -1;
+            if (Db.fileWriteInt32(stream, scr.radius) == -1) return -1;
+            break;
+        case SCRIPT_TYPE_TIMED:
+            if (Db.fileWriteInt32(stream, scr.time) == -1) return -1;
+            break;
+        default:
+            break;
+        }
+        if (Db.fileWriteUInt32(stream, scr.flags) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.index) == -1) return -1;
+        if (Db.fileWriteInt32(stream, 0) == -1) return -1; // program pointer
+        if (Db.fileWriteInt32(stream, scr.ownerId) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.localVarsOffset) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.localVarsCount) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.returnValue) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.action) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.fixedParam) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.actionBeingUsed) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.scriptOverrides) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.field48) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.howMuch) == -1) return -1;
+        if (Db.fileWriteInt32(stream, scr.field50) == -1) return -1;
+        return 0;
+    }
+
+    // 0x4A5768 scriptSaveAll: write the loaded scripts (NO_SAVE dropped),
+    // extent by extent (all 16 slots + length + next pointer, like C).
+    static int scriptSaveAll(XFile.Handle stream) {
+        for (int scriptType = SCRIPT_TYPE_FIRST; scriptType < SCRIPT_TYPE_COUNT; scriptType++) {
+            List<Integer> extentLengths = scriptTypeExtentLengths.get(scriptType);
+            List<Script> validScripts = scriptTypeScripts.get(scriptType);
+            int scriptCount = 0;
+            int totalSlots = 0;
+            for (int extentIdx = 0; extentIdx < extentLengths.size(); extentIdx++) {
+                int extentLen = extentLengths.get(extentIdx);
+                for (int slot = 0; slot < extentLen; slot++) {
+                    Script s = validScripts.get(totalSlots + slot);
+                    if ((s.flags & SCRIPT_FLAG_NO_SAVE) == 0) {
+                        scriptCount++;
+                    }
+                }
+                totalSlots += SCRIPT_LIST_EXTENT_SIZE;
+            }
+            if (Db.fileWriteInt32(stream, scriptCount) == -1) return -1;
+            if (scriptCount > 0) {
+                int numExtents = (scriptCount + SCRIPT_LIST_EXTENT_SIZE - 1) / SCRIPT_LIST_EXTENT_SIZE;
+                for (int extentIdx = 0; extentIdx < extentLengths.size(); extentIdx++) {
+                    int extentLen = extentLengths.get(extentIdx);
+                    for (int slot = 0; slot < SCRIPT_LIST_EXTENT_SIZE; slot++) {
+                        Script s = validScripts.get(extentIdx * SCRIPT_LIST_EXTENT_SIZE + slot);
+                        if (scriptWrite(s, stream) == -1) return -1;
+                    }
+                }
+                for (int extent = 0; extent < numExtents; extent++) {
+                    int extentLenOut = Math.min(SCRIPT_LIST_EXTENT_SIZE, scriptCount - extent * SCRIPT_LIST_EXTENT_SIZE);
+                    if (Db.fileWriteInt32(stream, extentLenOut) == -1) return -1;
+                    if (Db.fileWriteInt32(stream, 0) == -1) return -1;
                 }
             }
         }

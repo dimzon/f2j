@@ -112,6 +112,15 @@ public final class MapVars {
         return localVarsLength;
     }
 
+    /** Raw arrays for the map-header save path. */
+    static int[] globalVars() {
+        return globalVars;
+    }
+
+    static int[] localVars() {
+        return localVars;
+    }
+
     // 0x484038 mapGlobalVariablesFree (NOTE: Uninline in C).
     public static void mapGlobalVariablesFree() {
         globalVars = null;
