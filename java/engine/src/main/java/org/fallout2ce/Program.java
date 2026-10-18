@@ -1,8 +1,8 @@
 package org.fallout2ce;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Script-program loading slice, porting the load/find/stack/free domain of
@@ -1065,6 +1065,58 @@ public class Program {
         opCompare(program, Cmp.GE);
     }
 
+    // opJump (0x46B080): set the IP from the top of the value stack.
+    private static void opJump(Program program) {
+        program.instructionPointer = programStackPopInteger(program);
+    }
+
+    // opIf (0x468400): pop the condition; truthy discards the jump target,
+    // falsy pops it into the IP.
+    private static void opIf(Program program) {
+        ProgramValue value = programStackPopValue(program);
+        if (!value.isEmpty()) {
+            programStackPopValue(program);
+        } else {
+            program.instructionPointer = programStackPopInteger(program);
+        }
+    }
+
+    // opWhile (0x4684A4): pop the condition; falsy pops the jump target into
+    // the IP. NOTE: the truthy path leaves the target on the stack, matching
+    // C (the compiler's body is responsible for it).
+    private static void opWhile(Program program) {
+        ProgramValue value = programStackPopValue(program);
+        if (value.isEmpty()) {
+            program.instructionPointer = programStackPopInteger(program);
+        }
+    }
+
+    // opStore (0x468518): store into the frame at framePointer + addr,
+    // dropping the old value's dynamic-string refcount and bumping the new.
+    private static void opStore(Program program) {
+        int addr = programStackPopInteger(program);
+        ProgramValue value = programStackPopValue(program);
+        int pos = program.framePointer + addr;
+
+        ProgramValue oldValue = programStackAt(program, pos);
+        if (oldValue.opcode == VALUE_TYPE_DYNAMIC_STRING) {
+            interpreterStringRefCountDecrease(program, oldValue.opcode, oldValue.integerValue);
+        }
+
+        programStackSet(program, pos, value);
+
+        if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
+            interpreterStringRefCountIncrease(program, VALUE_TYPE_DYNAMIC_STRING, value.integerValue);
+        }
+    }
+
+    // opFetch (0x468678): push the frame value at framePointer + addr.
+    private static void opFetch(Program program) {
+        int addr = programStackPopInteger(program);
+        ProgramValue value = programStackAt(program, program.framePointer + addr);
+        programStackPushValue(program, value);
+    }
+
     // C snprintf("%.5f", ...) under the C locale; Locale.ROOT keeps the
     // decimal point stable regardless of the JVM default locale.
     private static String formatFloat5(float value) {
@@ -1119,6 +1171,11 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_LESS_THAN_EQUAL, Program::opConditionalOperatorLessThanEquals);
         interpreterRegisterOpcode(OPCODE_GREATER_THAN, Program::opConditionalOperatorGreaterThan);
         interpreterRegisterOpcode(OPCODE_GREATER_THAN_EQUAL, Program::opConditionalOperatorGreaterThanEquals);
+        interpreterRegisterOpcode(OPCODE_JUMP, Program::opJump);
+        interpreterRegisterOpcode(OPCODE_IF, Program::opIf);
+        interpreterRegisterOpcode(OPCODE_WHILE, Program::opWhile);
+        interpreterRegisterOpcode(OPCODE_STORE, Program::opStore);
+        interpreterRegisterOpcode(OPCODE_FETCH, Program::opFetch);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
@@ -1328,11 +1385,12 @@ public class Program {
     /** Port of {@code exited} (init false). */
     public boolean exited;
 
-    /** Port of {@code stackValues} (ArrayDeque LIFO from the tail, like vector push_back/pop_back). */
-    public final Deque<ProgramValue> stackValues = new ArrayDeque<>();
+    /** Port of {@code stackValues} (C {@code std::vector<ProgramValue>}: LIFO from the
+     *  tail, with indexed access for STORE/FETCH). */
+    public final List<ProgramValue> stackValues = new ArrayList<>();
 
-    /** Port of {@code returnStackValues} (ArrayDeque LIFO from the tail; return-stack ops below). */
-    public final Deque<ProgramValue> returnStackValues = new ArrayDeque<>();
+    /** Port of {@code returnStackValues} (same shape, on the return stack). */
+    public final List<ProgramValue> returnStackValues = new ArrayList<>();
 
     protected Program() {
     }
@@ -1503,7 +1561,7 @@ public class Program {
         if (program.stackValues.size() >= 0x1000) {
             throw new IllegalStateException("programStackPushValue: Stack overflow.");
         }
-        program.stackValues.addLast(new ProgramValue(value));
+        program.stackValues.add(new ProgramValue(value));
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
             interpreterStringRefCountIncrease(program, VALUE_TYPE_DYNAMIC_STRING, value.integerValue);
         }
@@ -1539,11 +1597,26 @@ public class Program {
         if (program.stackValues.isEmpty()) {
             throw new IllegalStateException("programStackPopValue: Stack underflow.");
         }
-        ProgramValue value = program.stackValues.removeLast();
+        ProgramValue value = program.stackValues.remove(program.stackValues.size() - 1);
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
             interpreterStringRefCountDecrease(program, value.opcode, value.integerValue);
         }
         return value;
+    }
+
+    // Indexed access for STORE/FETCH: C's vector::at(framePointer + addr).
+    static ProgramValue programStackAt(Program program, int index) {
+        if (index < 0 || index >= program.stackValues.size()) {
+            throw new IllegalStateException("programStackAt: index out of range");
+        }
+        return program.stackValues.get(index);
+    }
+
+    static void programStackSet(Program program, int index, ProgramValue value) {
+        if (index < 0 || index >= program.stackValues.size()) {
+            throw new IllegalStateException("programStackSet: index out of range");
+        }
+        program.stackValues.set(index, new ProgramValue(value));
     }
 
     // programStackPopInteger (wrong-type pop is a C fatal; Java throws, same text).
@@ -1586,7 +1659,7 @@ public class Program {
         if (program.returnStackValues.size() >= 0x1000) {
             throw new IllegalStateException("programReturnStackPushValue: Stack overflow.");
         }
-        program.returnStackValues.addLast(new ProgramValue(value));
+        program.returnStackValues.add(new ProgramValue(value));
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
             interpreterStringRefCountIncrease(program, VALUE_TYPE_DYNAMIC_STRING, value.integerValue);
         }
@@ -1607,7 +1680,7 @@ public class Program {
         if (program.returnStackValues.isEmpty()) {
             throw new IllegalStateException("programReturnStackPopValue: Stack underflow.");
         }
-        ProgramValue value = program.returnStackValues.removeLast();
+        ProgramValue value = program.returnStackValues.remove(program.returnStackValues.size() - 1);
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
             interpreterStringRefCountDecrease(program, value.opcode, value.integerValue);
         }

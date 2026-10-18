@@ -9,8 +9,7 @@ import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Deque;
-import java.util.Iterator;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,11 +68,10 @@ class ProgramVmStackTest {
         }
     }
 
-    private static String dump(Deque<Program.ProgramValue> stack) {
+    private static String dump(List<Program.ProgramValue> stack) {
         StringBuilder sb = new StringBuilder();
-        Iterator<Program.ProgramValue> it = stack.descendingIterator();
-        while (it.hasNext()) {
-            Program.ProgramValue value = it.next();
+        for (int i = stack.size() - 1; i >= 0; i--) {
+            Program.ProgramValue value = stack.get(i);
             if (sb.length() > 0) {
                 sb.append(' ');
             }

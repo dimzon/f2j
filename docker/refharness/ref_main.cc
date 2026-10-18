@@ -6679,6 +6679,7 @@ void sectionVm();
 void sectionVmStack();
 void sectionVmArith();
 void sectionVmCompare();
+void sectionVmControl();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6877,6 +6878,7 @@ void sectionMapChild()
     sectionVmStack();
     sectionVmArith();
     sectionVmCompare();
+    sectionVmControl();
 }
 
 
@@ -7598,7 +7600,8 @@ static void vmStackRun(const char* name, const unsigned char* code, int codeLeng
 // Loads a prepared 256-byte blob, runs it from codeOffset and prints the
 // resulting stack: floats as %.5f, dynamic strings by content, the rest as
 // opcode:integerValue.
-static void vmRunProgram(const char* name, const unsigned char* data, int codeOffset, int budget)
+static void vmRunProgram(const char* name, const unsigned char* data, int codeOffset, int budget,
+    bool showFrame = false)
 {
     char path[64];
     snprintf(path, sizeof(path), "/tmp/vm-%s.int", name);
@@ -7618,9 +7621,12 @@ static void vmRunProgram(const char* name, const unsigned char* data, int codeOf
     program->instructionPointer = codeOffset;
     fallout::programInterpret(program, budget);
 
-    std::printf("%s ip=%d flags=%08X stack=%d", name,
-        program->instructionPointer, (unsigned int)program->flags,
-        (int)program->stackValues->size());
+    std::printf("%s ip=%d flags=%08X", name,
+        program->instructionPointer, (unsigned int)program->flags);
+    if (showFrame) {
+        std::printf(" frame=%d base=%d", program->framePointer, program->basePointer);
+    }
+    std::printf(" stack=%d", (int)program->stackValues->size());
     for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
         if (it->opcode == VALUE_TYPE_FLOAT) {
             std::printf(" A001:%.5f", it->floatValue);
@@ -7654,6 +7660,19 @@ static void vmArithRun(const char* name, const char* staticString,
     }
     memcpy(data + codeOffset, code, codeLength);
     vmRunProgram(name, data, codeOffset, budget);
+}
+
+// Control-flow programs: also print the frame/base pointers.
+static void vmControlRun(const char* name, const unsigned char* code, int codeLength, int budget)
+{
+    unsigned char data[256];
+    memset(data, 0, sizeof(data));
+    int32_t zero = 0;
+    memcpy(data + 42, &zero, sizeof(zero));
+    memcpy(data + 46, &zero, sizeof(zero));
+    memcpy(data + 50, &zero, sizeof(zero));
+    memcpy(data + 54, code, codeLength);
+    vmRunProgram(name, data, 54, budget, true);
 }
 
 // A raw static-string table at 54 (offsets index into it), then the code.
@@ -7994,6 +8013,89 @@ void sectionVmCompare()
         0x80, 0x11,
     };
     vmStringCompareRun("gt-str", stringTable, sizeof(stringTable), gtStr, sizeof(gtStr), 32);
+}
+
+void sectionVmControl()
+{
+    std::puts("[vmcontrol]");
+
+    // JUMP / IF / WHILE / STORE / FETCH. Jumps are absolute byte offsets,
+    // so the blobs are laid out so the targets land on the marked opcodes.
+
+    // JUMP to 70, skipping the PUSH int 1 at 62.
+    static const unsigned char jump[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x46, // PUSH int 70
+        0x80, 0x04, // JUMP
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01, // PUSH int 1 (skipped)
+        0x80, 0x11, // STOP_PROGRAM
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (target)
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmControlRun("jump", jump, sizeof(jump), 32);
+
+    // IF pops the condition from the top, so the target goes on the stack
+    // first. A truthy condition discards the target.
+    static const unsigned char ifTrue[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x4C, // PUSH int 76 (target)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH int 5 (condition)
+        0x80, 0x2F, // IF
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01, // PUSH int 1
+        0x80, 0x11, // STOP_PROGRAM
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (target)
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmControlRun("if-true", ifTrue, sizeof(ifTrue), 32);
+
+    // IF with a falsy condition jumps to the target.
+    static const unsigned char ifFalse[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x4C, // PUSH int 76 (target)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH int 0 (condition)
+        0x80, 0x2F, // IF
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01, // PUSH int 1 (skipped)
+        0x80, 0x11, // STOP_PROGRAM
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (target)
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmControlRun("if-false", ifFalse, sizeof(ifFalse), 32);
+
+    // WHILE truthy: the target is left on the stack (C's behavior).
+    static const unsigned char whileTrue[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x46, // PUSH int 70 (target)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01, // PUSH int 1 (condition)
+        0x80, 0x30, // WHILE
+        0x80, 0x11, // STOP_PROGRAM
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (target)
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmControlRun("while-true", whileTrue, sizeof(whileTrue), 32);
+
+    // WHILE falsy: jumps to the target.
+    static const unsigned char whileFalse[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x46, // PUSH int 70 (target)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH int 0 (condition)
+        0x80, 0x30, // WHILE
+        0x80, 0x11, // STOP_PROGRAM
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (target)
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmControlRun("while-false", whileFalse, sizeof(whileFalse), 32);
+
+    // STORE then FETCH at frame+0. A value below the frame makes frame = 1,
+    // so the 5 at index 1 is overwritten by 9 and read back.
+    static const unsigned char storeFetch[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x64, // PUSH int 100 (below frame)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH int 5 (arg0)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x06, // PUSH int 6 (arg1)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (nargs)
+        0x80, 0x2B, // PUSH_BASE (frame = 3 - 2 = 1)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x09, // PUSH int 9
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH int 0 (addr)
+        0x80, 0x31, // STORE
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH int 0 (addr)
+        0x80, 0x32, // FETCH
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmControlRun("store-fetch", storeFetch, sizeof(storeFetch), 32);
 }
 
 void sectionVm()

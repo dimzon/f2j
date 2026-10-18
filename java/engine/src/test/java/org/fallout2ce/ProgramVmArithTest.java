@@ -8,8 +8,7 @@ import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Deque;
-import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -51,11 +50,10 @@ class ProgramVmArithTest {
         return p.toString();
     }
 
-    private static String dump(Program program, Deque<Program.ProgramValue> stack) {
+    private static String dump(Program program, List<Program.ProgramValue> stack) {
         StringBuilder sb = new StringBuilder();
-        Iterator<Program.ProgramValue> it = stack.descendingIterator();
-        while (it.hasNext()) {
-            Program.ProgramValue value = it.next();
+        for (int i = stack.size() - 1; i >= 0; i--) {
+            Program.ProgramValue value = stack.get(i);
             if (sb.length() > 0) {
                 sb.append(' ');
             }
