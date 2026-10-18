@@ -6675,6 +6675,7 @@ void sectionCritterState();
 void sectionPartyPrefs();
 void sectionItemsInit();
 void sectionAutomap();
+void sectionVm();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6869,6 +6870,7 @@ void sectionMapChild()
     sectionPartyPrefs();
     sectionItemsInit();
     sectionAutomap();
+    sectionVm();
 }
 
 
@@ -7533,6 +7535,89 @@ void sectionAutomap()
     fallout::automapSetDisplayMap((fallout::Map)3, true);
     fallout::automapSetDisplayMap((fallout::Map)42, false);
     std::printf("window=%d\n", fallout::automapGetWindow());
+}
+
+void sectionVm()
+{
+    std::puts("[vm]");
+
+    // Build a minimal program in memory: the bytecode region C's programCreate
+    // hands the VM is just data[instructionPointer..], so the header only needs
+    // a procedure count of 0 to parse, and the opcodes go after it.
+    //
+    // Three NOOPs then EXIT_PROGRAM (0x8010): enough to prove the
+    // fetch/decode/dispatch loop runs and terminates, without pulling in the
+    // arithmetic opcodes.
+    unsigned char data[64];
+    memset(data, 0, sizeof(data));
+
+    // procedures (int32 count) at offset 42, identifiers count, strings count.
+    int32_t zero = 0;
+    memcpy(data + 42, &zero, sizeof(zero));
+    memcpy(data + 46, &zero, sizeof(zero));
+    memcpy(data + 50, &zero, sizeof(zero));
+
+    // Opcodes are int16 big-endian, starting at byte 54. Write the bytes
+    // explicitly: memcpy of an int16 would store them little-endian and the
+    // VM's stackReadInt16 would decode 0x8000 as 0x0080.
+    static const unsigned char ops[] = {
+        0x80, 0x00, // NOOP
+        0x80, 0x00, // NOOP
+        0x80, 0x00, // NOOP
+        0x80, 0x10, // EXIT_PROGRAM
+    };
+    memcpy(data + 54, ops, sizeof(ops));
+
+    // programCreateByPath parses from a File*, so round-trip through a temp
+    // file the way a real .int arrives.
+    char path[] = "/tmp/vm-probe.int";
+    FILE* f = fopen(path, "wb");
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::interpreterRegisterOpcodeHandlers();
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::puts("create=null");
+        return;
+    }
+
+    std::printf("procedures=%d\n", program->procedureCount());
+
+    // programCreateByPath memsets the struct, so flags starts at 0 and the
+    // loop's own exit flags are all that show up in the result.
+    program->flags = 0;
+    program->instructionPointer = 54;
+    fallout::programInterpret(program, 4);
+    std::printf("after-run ip=%d exited=%d flags=%02X\n",
+        program->instructionPointer, program->exited ? 1 : 0, (unsigned int)program->flags);
+
+    // A program already flagged EXITED must not run at all: the IP stays put.
+    fallout::Program* second = fallout::programCreateByPath(path);
+    if (second != nullptr) {
+        second->flags = fallout::PROGRAM_FLAG_EXITED;
+        second->instructionPointer = 54;
+        fallout::programInterpret(second, 4);
+        std::printf("pre-exited ip=%d flags=%02X\n",
+            second->instructionPointer, (unsigned int)second->flags);
+        fallout::programFree(second);
+    }
+
+    // 0x0080 has bit 7 of the (opcode >> 8) byte clear, which C treats as a
+    // bad opcode. programFatalError is a longjmp out of the VM, so the
+    // observable effect is the flags, not a propagated error.
+    fallout::Program* third = fallout::programCreateByPath(path);
+    if (third != nullptr) {
+        third->data[54] = 0x00;
+        third->data[55] = 0x80;
+        third->flags = 0;
+        third->instructionPointer = 54;
+        fallout::programInterpret(third, 4);
+        std::printf("bad-opcode flags=%02X\n", (unsigned int)third->flags);
+        fallout::programFree(third);
+    }
+
+    fallout::programFree(program);
 }
 
 int main()

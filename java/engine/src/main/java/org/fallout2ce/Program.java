@@ -152,6 +152,223 @@ public class Program {
     /** Port of {@code PROGRAM_FLAG_CHILD_SPAWN} (0x0100, {@code src/interpreter.h}). */
     public static final int PROGRAM_FLAG_CHILD_SPAWN = 0x0100;
 
+    // Remaining ProgramFlags (src/interpreter.h). Only the VM loop and the
+    // opcode handlers read these, so they arrive with the VM port.
+
+    /** Port of {@code PROGRAM_FLAG_EXITED} (0x01). */
+    static final int PROGRAM_FLAG_EXITED = 0x01;
+
+    /** Port of {@code PROGRAM_FLAG_RUNNING} (0x02). */
+    static final int PROGRAM_FLAG_RUNNING = 0x02;
+
+    /** Port of {@code PROGRAM_FLAG_FATAL_ERROR} (0x04). */
+    static final int PROGRAM_FLAG_FATAL_ERROR = 0x04;
+
+    /** Port of {@code PROGRAM_FLAG_STOPPED} (0x08). */
+    static final int PROGRAM_FLAG_STOPPED = 0x08;
+
+    /** Port of {@code PROGRAM_IS_WAITING} (0x10). */
+    static final int PROGRAM_IS_WAITING = 0x10;
+
+    /** Port of {@code PROGRAM_FLAG_FINISHED} (0x40). */
+    static final int PROGRAM_FLAG_FINISHED = 0x40;
+
+    /** Port of {@code PROGRAM_FLAG_CRITICAL_SECTION} (0x80). */
+    static final int PROGRAM_FLAG_CRITICAL_SECTION = 0x80;
+
+    // Opcode enum (src/interpreter.h). The VM dispatches on
+    // (opcode & 0x3FF), so these double as the handler-table keys.
+    static final int OPCODE_NOOP = 0x8000;
+    static final int OPCODE_PUSH = 0x8001;
+    static final int OPCODE_ENTER_CRITICAL_SECTION = 0x8002;
+    static final int OPCODE_LEAVE_CRITICAL_SECTION = 0x8003;
+    static final int OPCODE_JUMP = 0x8004;
+    static final int OPCODE_CALL = 0x8005;
+    static final int OPCODE_CALL_AT = 0x8006;
+    static final int OPCODE_CALL_WHEN = 0x8007;
+    static final int OPCODE_CALLSTART = 0x8008;
+    static final int OPCODE_EXEC = 0x8009;
+    static final int OPCODE_SPAWN = 0x800A;
+    static final int OPCODE_FORK = 0x800B;
+    static final int OPCODE_A_TO_D = 0x800C;
+    static final int OPCODE_D_TO_A = 0x800D;
+    static final int OPCODE_EXIT = 0x800E;
+    static final int OPCODE_DETACH = 0x800F;
+    static final int OPCODE_EXIT_PROGRAM = 0x8010;
+    static final int OPCODE_STOP_PROGRAM = 0x8011;
+    static final int OPCODE_FETCH_GLOBAL = 0x8012;
+    static final int OPCODE_STORE_GLOBAL = 0x8013;
+    static final int OPCODE_FETCH_EXTERNAL = 0x8014;
+    static final int OPCODE_STORE_EXTERNAL = 0x8015;
+    static final int OPCODE_EXPORT_VARIABLE = 0x8016;
+    static final int OPCODE_EXPORT_PROCEDURE = 0x8017;
+    static final int OPCODE_SWAP = 0x8018;
+    static final int OPCODE_SWAPA = 0x8019;
+    static final int OPCODE_POP = 0x801A;
+    static final int OPCODE_DUP = 0x801B;
+    static final int OPCODE_POP_RETURN = 0x801C;
+    static final int OPCODE_POP_EXIT = 0x801D;
+    static final int OPCODE_POP_ADDRESS = 0x801E;
+    static final int OPCODE_POP_FLAGS = 0x801F;
+    static final int OPCODE_POP_FLAGS_RETURN = 0x8020;
+    static final int OPCODE_POP_FLAGS_EXIT = 0x8021;
+    static final int OPCODE_POP_FLAGS_RETURN_EXTERN = 0x8022;
+    static final int OPCODE_POP_FLAGS_EXIT_EXTERN = 0x8023;
+    static final int OPCODE_POP_FLAGS_RETURN_VAL_EXTERN = 0x8024;
+    static final int OPCODE_POP_FLAGS_RETURN_VAL_EXIT = 0x8025;
+    static final int OPCODE_POP_FLAGS_RETURN_VAL_EXIT_EXTERN = 0x8026;
+    static final int OPCODE_CHECK_PROCEDURE_ARGUMENT_COUNT = 0x8027;
+    static final int OPCODE_LOOKUP_PROCEDURE_BY_NAME = 0x8028;
+    static final int OPCODE_POP_BASE = 0x8029;
+    static final int OPCODE_POP_TO_BASE = 0x802A;
+    static final int OPCODE_PUSH_BASE = 0x802B;
+    static final int OPCODE_SET_GLOBAL = 0x802C;
+    static final int OPCODE_FETCH_PROCEDURE_ADDRESS = 0x802D;
+    static final int OPCODE_DUMP = 0x802E;
+    static final int OPCODE_IF = 0x802F;
+    static final int OPCODE_WHILE = 0x8030;
+    static final int OPCODE_STORE = 0x8031;
+    static final int OPCODE_FETCH = 0x8032;
+    static final int OPCODE_EQUAL = 0x8033;
+    static final int OPCODE_NOT_EQUAL = 0x8034;
+    static final int OPCODE_LESS_THAN_EQUAL = 0x8035;
+    static final int OPCODE_GREATER_THAN_EQUAL = 0x8036;
+    static final int OPCODE_LESS_THAN = 0x8037;
+    static final int OPCODE_GREATER_THAN = 0x8038;
+    static final int OPCODE_ADD = 0x8039;
+    static final int OPCODE_SUB = 0x803A;
+    static final int OPCODE_MUL = 0x803B;
+    static final int OPCODE_DIV = 0x803C;
+    static final int OPCODE_MOD = 0x803D;
+    static final int OPCODE_AND = 0x803E;
+    static final int OPCODE_OR = 0x803F;
+    static final int OPCODE_BITWISE_AND = 0x8040;
+    static final int OPCODE_BITWISE_OR = 0x8041;
+    static final int OPCODE_BITWISE_XOR = 0x8042;
+    static final int OPCODE_BITWISE_NOT = 0x8043;
+    static final int OPCODE_FLOOR = 0x8044;
+    static final int OPCODE_NOT = 0x8045;
+    static final int OPCODE_NEGATE = 0x8046;
+    static final int OPCODE_WAIT = 0x8047;
+    static final int OPCODE_CANCEL = 0x8048;
+    static final int OPCODE_CANCEL_ALL = 0x8049;
+    static final int OPCODE_START_CRITICAL = 0x804A;
+    static final int OPCODE_END_CRITICAL = 0x804B;
+
+    /**
+     * Port of {@code programInterpret} (src/interpreter.cc): the VM loop.
+     *
+     * <p>C wraps the body in {@code setjmp} so {@code programFatalError} can
+     * {@code longjmp} out and stamp {@code PROGRAM_FLAG_FATAL_ERROR}. Java has
+     * no setjmp, so the equivalent is a catch around the loop — same
+     * observable outcome (flags stamped, current program restored), without
+     * needing a jump target.
+     *
+     * <p>{@code numInstructions < 0} runs until the program stops; a
+     * positive budget runs that many steps. A program in a critical section is
+     * lifted to three steps, exactly like C.
+     */
+    static void programInterpret(Program program, int numInstructions) {
+        Program oldCurrentProgram = interpreterCurrentProgram;
+
+        if (!interpreterEnabled || interpreterBusy) {
+            return;
+        }
+
+        if (program.exited
+                || (program.flags & PROGRAM_FLAG_CHILD_CALL) != 0
+                || (program.flags & PROGRAM_FLAG_CHILD_SPAWN) != 0) {
+            return;
+        }
+
+        interpreterCurrentProgram = program;
+
+        try {
+            if ((program.flags & PROGRAM_FLAG_CRITICAL_SECTION) != 0 && numInstructions < 3) {
+                numInstructions = 3;
+            }
+
+            while ((program.flags & PROGRAM_FLAG_CRITICAL_SECTION) != 0 || --numInstructions != -1) {
+                if ((program.flags & (PROGRAM_FLAG_EXITED | PROGRAM_FLAG_FATAL_ERROR
+                        | PROGRAM_FLAG_STOPPED | PROGRAM_FLAG_CHILD_CALL
+                        | PROGRAM_FLAG_FINISHED | PROGRAM_FLAG_CHILD_SPAWN)) != 0) {
+                    break;
+                }
+
+                if (program.exited) {
+                    break;
+                }
+
+                int opcode = programGetNextOpcode(program);
+
+                // NOTE in C: only the low 16 flags survive each step.
+                program.flags &= 0xFFFF;
+                program.flags |= opcode << 16;
+
+                if (((opcode >> 8) & 0x80) == 0) {
+                    programFatalError("Bad opcode " + Integer.toHexString(opcode) + ".");
+                }
+
+                OpcodeHandler handler = INTERPRETER_OPCODE_HANDLERS[opcode & 0x3FF];
+                if (handler == null) {
+                    programFatalError("Undefined opcode " + Integer.toHexString(opcode) + ".");
+                }
+
+                handler.run(program);
+            }
+        } catch (FatalError error) {
+            // longjmp from programFatalError().
+            interpreterCurrentProgram = oldCurrentProgram;
+            program.flags |= PROGRAM_FLAG_EXITED | PROGRAM_FLAG_FATAL_ERROR;
+            return;
+        }
+
+        program.flags &= ~PROGRAM_FLAG_FINISHED;
+        interpreterCurrentProgram = oldCurrentProgram;
+    }
+
+    /** Handler signature: {@code OpcodeHandler} (src/interpreter.h). */
+    interface OpcodeHandler {
+        void run(Program program);
+    }
+
+    /** {@code gInterpreterOpcodeHandlers} (src/interpreter.cc), 1024 entries. */
+    private static final OpcodeHandler[] INTERPRETER_OPCODE_HANDLERS = new OpcodeHandler[1024];
+
+    // 0x467F44 interpreterRegisterOpcode.
+    static void interpreterRegisterOpcode(int opcode, OpcodeHandler handler) {
+        INTERPRETER_OPCODE_HANDLERS[opcode & 0x3FF] = handler;
+    }
+
+    // opNoop.
+    private static void opNoop(Program program) {
+    }
+
+    // opExitProgram: the only thing a run-to-completion script needs.
+    private static void opExitProgram(Program program) {
+        program.flags |= PROGRAM_FLAG_EXITED;
+    }
+
+    /**
+     * Port of {@code interpreterRegisterOpcodeHandlers} for the subset this
+     * slice runs. C registers all 76 handlers here; the rest arrive with
+     * their opcodes.
+     */
+    static void interpreterRegisterOpcodeHandlers() {
+        interpreterEnabled = true;
+        interpreterRegisterOpcode(OPCODE_NOOP, Program::opNoop);
+        interpreterRegisterOpcode(OPCODE_EXIT_PROGRAM, Program::opExitProgram);
+    }
+
+    /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
+    private static Program interpreterCurrentProgram;
+
+    /** {@code interpreterEnabled} (src/interpreter.cc). */
+    private static boolean interpreterEnabled = true;
+
+    /** {@code interpreterBusy} (src/interpreter.cc). */
+    private static boolean interpreterBusy;
+
     /** C {@code data + 42}: byte offset of the procedure table. */
     static final int PROCEDURES_BASE_OFFSET = 42;
 
@@ -286,6 +503,77 @@ public class Program {
     // Port of Program::procedureCount (int32 at the procedure table head).
     public int procedureCount() {
         return stackReadInt32(data, procedures);
+    }
+
+    // 0x4672C0 stackReadInt16 (big-endian, sign-extended like the C short read).
+    public static int stackReadInt16(byte[] data, int pos) {
+        return (short) (((data[pos] & 0xFF) << 8) | (data[pos + 1] & 0xFF));
+    }
+
+    // 0x4672D8 stackWriteInt16.
+    static void stackWriteInt16(int value, byte[] data, int pos) {
+        data[pos] = (byte) (value >> 8);
+        data[pos + 1] = (byte) value;
+    }
+
+    // 0x4672EC stackWriteInt32.
+    static void stackWriteInt32(int value, byte[] data, int pos) {
+        data[pos] = (byte) (value >> 24);
+        data[pos + 1] = (byte) (value >> 16);
+        data[pos + 2] = (byte) (value >> 8);
+        data[pos + 3] = (byte) value;
+    }
+
+    /** Raised where C calls {@code programFatalError} (a longjmp out of the VM). */
+    static final class FatalError extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        FatalError(String message) {
+            super(message);
+        }
+    }
+
+    /** Port of {@code programFatalError} (src/interpreter.cc). */
+    static void programFatalError(String message) {
+        throw new FatalError(message);
+    }
+
+    /** Port of {@code stackPushInt32} (src/interpreter.cc): two big-endian
+     *  shorts, with C's overflow guard at {@code 0x1000}. */
+    static void stackPushInt32(byte[] data, int[] pointer, int value) {
+        if (pointer[0] + 4 >= 0x1000) {
+            // FIXME in C: should be pushLongStack.
+            programFatalError("pushShortStack: Stack overflow.");
+        }
+        int pos = pointer[0];
+        stackWriteInt16(value >> 16, data, pos);
+        stackWriteInt16(value & 0xFFFF, data, pos + 2);
+        pointer[0] = pos + 4;
+    }
+
+    /** Port of {@code stackPopInt32} (src/interpreter.cc). */
+    static int stackPopInt32(byte[] data, int[] pointer) {
+        if (pointer[0] < 4) {
+            programFatalError("Stack underflow long.");
+        }
+        pointer[0] -= 4;
+        return stackReadInt32(data, pointer[0]);
+    }
+
+    /** Port of {@code stackPopInt16} (src/interpreter.cc). */
+    static int stackPopInt16(byte[] data, int[] pointer) {
+        if (pointer[0] < 2) {
+            programFatalError("Stack underflow short.");
+        }
+        pointer[0] -= 2;
+        return stackReadInt16(data, pointer[0]);
+    }
+
+    // 0x4678BC programGetNextOpcode (NOTE: inlined in C).
+    static int programGetNextOpcode(Program program) {
+        int instructionPointer = program.instructionPointer;
+        program.instructionPointer = instructionPointer + 2;
+        return stackReadInt16(program.data, instructionPointer);
     }
 
     // Port of programGetIdentifier (NUL-terminated bytes at identifiers + offset).
