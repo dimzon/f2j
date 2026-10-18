@@ -59,15 +59,15 @@ public final class MapRegistry {
         Rotation rotation;
     }
 
-    /** Port of the {@code MapFlags} bits this slice reads. */
+    /** Port of the {@code MapFlags} bits ({@code src/worldmap.h}). */
     static final class MapFlags {
-        static final int MAP_NONE = 0x0000;
-        static final int MAP_SAVED = 0x0001;
-        static final int MAP_CAN_REST_ELEVATION_0 = 0x0100;
-        static final int MAP_CAN_REST_ELEVATION_1 = 0x0200;
-        static final int MAP_CAN_REST_ELEVATION_2 = 0x0400;
-        static final int MAP_DEAD_BODIES_AGE = 0x0800;
-        static final int MAP_PIPBOY_ACTIVE = 0x1000;
+        static final int MAP_NONE = 0x00;
+        static final int MAP_SAVED = 0x01;
+        static final int MAP_DEAD_BODIES_AGE = 0x02;
+        static final int MAP_PIPBOY_ACTIVE = 0x04;
+        static final int MAP_CAN_REST_ELEVATION_0 = 0x08;
+        static final int MAP_CAN_REST_ELEVATION_1 = 0x10;
+        static final int MAP_CAN_REST_ELEVATION_2 = 0x20;
 
         int bits;
 

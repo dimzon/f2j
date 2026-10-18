@@ -103,6 +103,17 @@ class MapRegistryTest {
         assertFalse(MapRegistry.wmMapIdxIsSaveable(1));
         assertFalse(MapRegistry.wmMapIdxIsSaveable(2));
 
+        // The MapFlags bit layout is part of the on-disk config contract:
+        // wmMapSlotInit seeds the word with all six bits, so a port that picks
+        // wider masks would still answer MAP_SAVED correctly and hide it.
+        assertEquals("saved=1 dead=2 pip=4 rest0=8 rest1=16 rest2=32",
+                "saved=" + MapRegistry.MapFlags.MAP_SAVED
+                        + " dead=" + MapRegistry.MapFlags.MAP_DEAD_BODIES_AGE
+                        + " pip=" + MapRegistry.MapFlags.MAP_PIPBOY_ACTIVE
+                        + " rest0=" + MapRegistry.MapFlags.MAP_CAN_REST_ELEVATION_0
+                        + " rest1=" + MapRegistry.MapFlags.MAP_CAN_REST_ELEVATION_1
+                        + " rest2=" + MapRegistry.MapFlags.MAP_CAN_REST_ELEVATION_2);
+
         // Round-trip: index -> name -> same index, lowercased as the table stores.
         assertEquals(0, MapRegistry.wmMapMatchNameToIdx("desert1.map"));
         assertEquals(1, MapRegistry.wmMapMatchNameToIdx("desert2.map"));

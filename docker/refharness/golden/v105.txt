@@ -1109,6 +1109,7 @@ match arroyo.map -> -1
 saveable 0 -> 0
 saveable 1 -> 0
 saveable 2 -> 0
+flag-bits saved=1 dead=2 pip=4 rest0=8 rest1=16 rest2=32
 roundtrip 0 desert1.map -> 0
 roundtrip 1 desert2.map -> 1
 roundtrip 2 desert3.map -> 2

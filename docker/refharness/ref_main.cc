@@ -7115,6 +7115,16 @@ void sectionMapRegistry()
         std::printf("saveable %d -> %d\n", idx, fallout::wmMapIdxIsSaveable((fallout::Map)idx) ? 1 : 0);
     }
 
+    // wmMapCanRestHere probes the MAP_CAN_REST_ELEVATION_* bits of the
+    // current map's flag word, which pins the bit layout (MAP_SAVED 0x01 ..
+    // MAP_CAN_REST_ELEVATION_2 0x20) through a public entry point. A false
+    // here means the slot was never registered with wmMapInit, so the probe
+    // is only meaningful right after a map load; print the enum values too.
+    std::printf("flag-bits saved=%d dead=%d pip=%d rest0=%d rest1=%d rest2=%d\n",
+        (int)fallout::MAP_SAVED, (int)fallout::MAP_DEAD_BODIES_AGE,
+        (int)fallout::MAP_PIPBOY_ACTIVE, (int)fallout::MAP_CAN_REST_ELEVATION_0,
+        (int)fallout::MAP_CAN_REST_ELEVATION_1, (int)fallout::MAP_CAN_REST_ELEVATION_2);
+
     // Round-trip a real name so the match probe covers a non-zero index too.
     for (int idx = 0; idx < maxCount; idx++) {
         char probeName[64];
