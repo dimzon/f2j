@@ -108,6 +108,7 @@
 #include "file_utils.h"
 #include "fpattern_windows.h"
 #include "xfile.h"
+#include "worldmap.h"
 
 namespace {
 
@@ -6665,6 +6666,7 @@ void sectionIsoRest()
 
 void sectionMapLoad();
 void sectionMapSave();
+void sectionMapRegistry();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6851,6 +6853,7 @@ void sectionMapChild()
         dude != nullptr ? (unsigned int)dude->flags : 0u);
     sectionMapLoad();
     sectionMapSave();
+    sectionMapRegistry();
 }
 
 
@@ -7064,6 +7067,76 @@ void sectionMapSave()
     fallout::fileClose(f);
     free(data);
 }
+
+void sectionMapRegistry()
+{
+    std::puts("[mapregistry]");
+
+    // wmConfigInit reads gGameConfig, so bring the game config up first.
+    fallout::configInit(&fallout::gGameConfig);
+    char gameCfgPath[] = "/game-en/fallout2.cfg";
+    fallout::configRead(&fallout::gGameConfig, gameCfgPath, false);
+
+    int maxCount = fallout::wmMapMaxCount();
+    std::printf("maxmap=%d\n", maxCount);
+
+    // mapIsValid boundaries: MAP_FIRST is 0, one past the end is the first miss.
+    std::printf("valid-min=%d valid-max=%d valid-past=%d\n",
+        fallout::mapIsValid(0) ? 1 : 0,
+        fallout::mapIsValid(maxCount - 1) ? 1 : 0,
+        fallout::mapIsValid(maxCount) ? 1 : 0);
+
+    // wmMapIdxToName across the first entries plus both out-of-range edges.
+    char name[64];
+    for (int idx = 0; idx < maxCount && idx < 3; idx++) {
+        name[0] = '\0';
+        int rc = fallout::wmMapIdxToName((fallout::Map)idx, name, sizeof(name));
+        std::printf("idx-to-name %d rc=%d name=%s\n", idx, rc, name);
+    }
+    name[0] = '\0';
+    int negRc = fallout::wmMapIdxToName((fallout::Map)-1, name, sizeof(name));
+    std::printf("idx-to-name -1 rc=%d name-len=%d\n", negRc, (int)strlen(name));
+    name[0] = '\0';
+    int pastRc = fallout::wmMapIdxToName((fallout::Map)maxCount, name, sizeof(name));
+    std::printf("idx-to-name %d rc=%d name-len=%d\n", maxCount, pastRc, (int)strlen(name));
+
+    // wmMapMatchNameToIdx: extension-insensitive, lowercased, miss = -1.
+    char probe[] = "ARROYO.MAP";
+    std::printf("match ARROYO.MAP -> %d\n", (int)fallout::wmMapMatchNameToIdx(probe));
+    char probe2[] = "ARROYO";
+    std::printf("match ARROYO -> %d\n", (int)fallout::wmMapMatchNameToIdx(probe2));
+    char probe3[] = "NOSUCHMAP.MAP";
+    std::printf("match NOSUCHMAP.MAP -> %d\n", (int)fallout::wmMapMatchNameToIdx(probe3));
+    char probe4[] = "arroyo.map";
+    std::printf("match arroyo.map -> %d\n", (int)fallout::wmMapMatchNameToIdx(probe4));
+
+    // wmMapIdxIsSaveable over the first entries.
+    for (int idx = 0; idx < maxCount && idx < 3; idx++) {
+        std::printf("saveable %d -> %d\n", idx, fallout::wmMapIdxIsSaveable((fallout::Map)idx) ? 1 : 0);
+    }
+
+    // Round-trip a real name so the match probe covers a non-zero index too.
+    for (int idx = 0; idx < maxCount; idx++) {
+        char probeName[64];
+        probeName[0] = '\0';
+        if (fallout::wmMapIdxToName((fallout::Map)idx, probeName, sizeof(probeName)) != 0) {
+            continue;
+        }
+        char lower[64];
+        int c = 0;
+        for (; probeName[c] != '\0'; c++) {
+            lower[c] = (char)((probeName[c] >= 'A' && probeName[c] <= 'Z') ? probeName[c] + 32 : probeName[c]);
+        }
+        lower[c] = '\0';
+        std::printf("roundtrip %d %s -> %d\n", idx, lower, (int)fallout::wmMapMatchNameToIdx(lower));
+        if (idx >= 2) {
+            break;
+        }
+    }
+
+    fallout::configFree(&fallout::gGameConfig);
+}
+
 int main()
 {
     // Unbuffered stdout: engine debug output goes to stderr (SDL_Log),
