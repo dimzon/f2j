@@ -6726,6 +6726,11 @@ void sectionScriptRunGame()
     scriptRunOne("scripts\\CODEDISK.int", 200);
     scriptRunOne("scripts\\ARTIFACT.int", 200);
     scriptRunOne("scripts\\MutFruit.int", 200);
+    // These use the inventory: what an object carries, and a critter's
+    // equipped items.
+    scriptRunOne("scripts\\DOG2.int", 200);
+    scriptRunOne("scripts\\VSGTEAM9.int", 200);
+    scriptRunOne("scripts\\JONATHAN.int", 200);
 }
 
 void sectionScriptProg()

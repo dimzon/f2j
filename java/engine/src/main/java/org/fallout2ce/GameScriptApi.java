@@ -36,6 +36,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80C5, // op_get_global_var
         0x80C6, // op_set_global_var
         0x80BA, // op_obj_is_carrying_obj
+        0x810D, // op_obj_carrying_pid_obj
+        0x8106, // op_critter_inven_obj
     };
 
     @Override
@@ -192,5 +194,66 @@ public class GameScriptApi extends UnsupportedScriptApi {
 
         return Inventory.objectGetCarriedQuantityByProtoId(
             (ObjTypes.GameObject) object, ProtoId.ofPid(protoId));
+    }
+
+    /**
+     * op_obj_carrying_pid_obj (0x810D): the object of a proto the object
+     * carries, looking through what its items carry in turn.
+     *
+     * <p>C answers null for a null object and prints a script error.
+     */
+    @Override
+    public Object objCarryingPidObj(Program program, Object object, int protoId) {
+        if (object == null) {
+            return null;
+        }
+
+        return Inventory.objectGetCarriedObjectByProtoId(
+            (ObjTypes.GameObject) object, ProtoId.ofPid(protoId));
+    }
+
+    /**
+     * op_critter_inven_obj (0x8106): one of a critter's equipped items, or
+     * the number of items it carries.
+     *
+     * <p>The slot tags are the original's: 0 is the armour, 1 the right hand,
+     * 2 the left hand, and -2 asks for the number of items carried. A
+     * critter that is not a critter answers 0.
+     */
+    @Override
+    public Program.ProgramValue critterInvenObj(Program program, Object critter, int type) {
+        if (critter == null) {
+            return new Program.ProgramValue(0);
+        }
+
+        ObjTypes.GameObject object = (ObjTypes.GameObject) critter;
+        if (ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return new Program.ProgramValue(0);
+        }
+
+        if (type == -2) {
+            // kInvenSlotInvCount.
+            return new Program.ProgramValue(object.data.inventory.items.size());
+        }
+
+        ObjTypes.GameObject item = null;
+        switch (type) {
+        case 0:
+            item = Inventory.critterGetArmor(object);
+            break;
+        case 1:
+            item = Inventory.critterGetItem2(object);
+            break;
+        case 2:
+            item = Inventory.critterGetItem1(object);
+            break;
+        default:
+            return new Program.ProgramValue(0);
+        }
+
+        Program.ProgramValue value = new Program.ProgramValue();
+        value.opcode = Program.VALUE_TYPE_PTR;
+        value.pointerValue = item;
+        return value;
     }
 }

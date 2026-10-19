@@ -113,6 +113,28 @@ public final class Inventory {
     }
 
     /**
+     * Port of {@code objectGetCarriedObjectByProtoId} (src/inventory.cc): the
+     * object of a proto the object carries, looking through what its items
+     * carry in turn.
+     */
+    public static GameObject objectGetCarriedObjectByProtoId(GameObject object, ProtoId protoId) {
+        List<InventoryItem> items = object.data.inventory.items;
+        for (int index = 0; index < items.size(); index++) {
+            InventoryItem inventoryItem = items.get(index);
+            if (ProtoId.ofGameObject(inventoryItem.item).equals(protoId)) {
+                return inventoryItem.item;
+            }
+
+            GameObject found = objectGetCarriedObjectByProtoId(inventoryItem.item, protoId);
+            if (found != null) {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Port of {@code objectGetCarriedQuantityByProtoId} (src/inventory.cc): how
      * many of a proto the object carries, counting what its items carry in
      * turn.
