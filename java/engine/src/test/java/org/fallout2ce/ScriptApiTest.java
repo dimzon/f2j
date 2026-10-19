@@ -34,6 +34,7 @@ class ScriptApiTest {
 
     @BeforeEach
     void setup() {
+        GameGlobalVars.reset();
         Db.resetForTests();
         Config.resetLastSectionKey();
         XFile.resetForTests();
@@ -76,6 +77,9 @@ class ScriptApiTest {
         { "scripts\\CATH2MV.int", "20", "80100001", "1", "C001:0" },
         { "scripts\\acdog.int", "20", "80100001", "21", "C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0" },
         { "scripts\\ABEL.int", "20", "80100001", "4", "C001:0 C001:0 C001:1 C001:0" },
+        { "scripts\\doorcode.int", "20", "80100001", "1", "C001:0" },
+        { "scripts\\CODEDISK.int", "20", "80100001", "1", "C001:0" },
+        { "scripts\\ARTIFACT.int", "20", "80100001", "1", "C001:0" },
     };
 
     private static final class State {
@@ -149,6 +153,39 @@ class ScriptApiTest {
         for (String[] reference : REFERENCE) {
             assertMatchesReference(reference[0], new GameScriptApi());
         }
+    }
+
+    @Test
+    void theGlobalVariablesParseTheSameWayAsTheReference() throws Exception {
+        Path master = Paths.get(gameData(), "master.dat");
+        assertTrue(master.toFile().isFile());
+        assertEquals(0, Db.dbOpen(master.toString(), null));
+
+        int[] size = { -1 };
+        assertEquals(0, Db.dbGetFileSize("data\\vault13.gam", size));
+        byte[] data = new byte[size[0]];
+        assertEquals(0, Db.dbGetFileContents("data\\vault13.gam", data, 0));
+
+        GameGlobalVars.reset();
+        GameGlobalVars.load(data);
+
+        // The reference's own parse of the same file: 695 variables and this
+        // checksum of the values.
+        assertEquals(695, GameGlobalVars.length);
+        assertEquals(-1024294307, GameGlobalVars.checksum());
+
+        // The enum and the file agree on the order.
+        assertEquals(696, GameGlobalVars.ENUM_COUNT);
+        assertEquals("GVAR_PLAYER_REPUTATION", GameGlobalVars.NAMES[0]);
+        assertEquals("GVAR_ENEMY_DEN", GameGlobalVars.NAMES[14]);
+
+        // The last enum value is past the end of the file, so it reads as
+        // zero, like the original's range check.
+        assertTrue(!GameGlobalVars.isValid(GameGlobalVars.ENUM_COUNT - 1));
+        assertEquals(0, GameGlobalVars.get(GameGlobalVars.ENUM_COUNT - 1));
+
+        GameGlobalVars.reset();
+        Db.dbCloseAll();
     }
 
     @Test

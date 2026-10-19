@@ -33,6 +33,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80C7, // op_script_action
         0x8102, // op_critter_add_trait
         0x814B, // op_party_member_obj
+        0x80C5, // op_get_global_var
+        0x80C6, // op_set_global_var
     };
 
     @Override
@@ -127,5 +129,51 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public Object partyMemberObj(Program program, int protoId) {
         return PartyMembers.partyMemberFindByProtoId(ProtoId.ofPid(protoId));
+    }
+
+    /**
+     * op_get_global_var (0x80C5): read one of the game's global variables.
+     *
+     * <p>C pushes a pointer when the global holds an object and the value
+     * otherwise, and -1 when the game has no global variables at all. The
+     * globals are read during the engine's startup, so they are empty until
+     * the engine's init is ported.
+     */
+    @Override
+    public Program.ProgramValue getGlobalVar(Program program, int variable) {
+        if (GameGlobalVars.length == 0) {
+            return new Program.ProgramValue(-1);
+        }
+
+        Object pointer = GameGlobalVars.getPointer(variable);
+        if (pointer != null) {
+            Program.ProgramValue value = new Program.ProgramValue();
+            value.opcode = Program.VALUE_TYPE_PTR;
+            value.pointerValue = pointer;
+            return value;
+        }
+
+        return new Program.ProgramValue(GameGlobalVars.get(variable));
+    }
+
+    /**
+     * op_set_global_var (0x80C6): write one of the game's global variables.
+     *
+     * <p>A pointer value goes into the pointer table and zeroes the value;
+     * anything else goes into the value table and clears the pointer.
+     */
+    @Override
+    public void setGlobalVar(Program program, int variable, Program.ProgramValue value) {
+        if (GameGlobalVars.length == 0) {
+            return;
+        }
+
+        if (value.opcode == Program.VALUE_TYPE_PTR) {
+            GameGlobalVars.setPointer(variable, value.pointerValue);
+            GameGlobalVars.set(variable, 0);
+        } else {
+            GameGlobalVars.setPointer(variable, null);
+            GameGlobalVars.set(variable, value.integerValue);
+        }
     }
 }

@@ -6690,6 +6690,26 @@ void sectionScriptRunGame()
 {
     std::puts("[scriptrungame]");
 
+    // The global variables, parsed the way the game parses them at startup.
+    // The game's own tables cannot be filled from here - gGameGlobalPointers
+    // is private to game.cc - so the parse goes into a local array, and the
+    // count and a checksum of the values pin it. A difference in how the file
+    // is read shows up here even when the scripts never look at the values.
+    //
+    // The harness itself has no global variables, so the game's builtins see
+    // an empty table and answer -1, which is the state the Java side has to
+    // reproduce.
+    int gamLength = 0;
+    int* gamVars = nullptr;
+    if (fallout::globalVarsRead("data\\vault13.gam", "GAME_GLOBAL_VARS:", &gamLength, &gamVars) == 0) {
+        int checksum = 0;
+        for (int index = 0; index < gamLength; index++) {
+            checksum = checksum * 31 + gamVars[index];
+        }
+        std::printf("gamvars length=%d checksum=%d\n", gamLength, checksum);
+    }
+    std::printf("globals length=%d\n", fallout::gGameGlobalVarsLength);
+
     // The same scripts with the game's own builtins available. The intlib
     // reaches into the running game, so this is the state the game's scripts
     // see - and the state the Java side has to reproduce once the game
@@ -6700,6 +6720,11 @@ void sectionScriptRunGame()
     scriptRunOne("scripts\\CATH2MV.int", 200);
     scriptRunOne("scripts\\acdog.int", 200);
     scriptRunOne("scripts\\ABEL.int", 200);
+    // These use the game's global variables, so they exercise the globals read
+    // out of vault13.gam.
+    scriptRunOne("scripts\\doorcode.int", 200);
+    scriptRunOne("scripts\\CODEDISK.int", 200);
+    scriptRunOne("scripts\\ARTIFACT.int", 200);
 }
 
 void sectionScriptProg()
