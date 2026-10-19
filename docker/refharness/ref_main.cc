@@ -6685,6 +6685,7 @@ void sectionVmCall();
 void sectionVmProc();
 void sectionVmGlobals();
 void sectionVmDelayed();
+void sectionVmLifecycle();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6889,6 +6890,7 @@ void sectionMapChild()
     sectionVmProc();
     sectionVmGlobals();
     sectionVmDelayed();
+    sectionVmLifecycle();
 }
 
 
@@ -8575,6 +8577,202 @@ static void vmDelayedRun(const char* name, const unsigned char* code, int codeLe
     std::printf("\n");
 
     fallout::programFree(program);
+}
+
+// Program lifecycle: CALLSTART / SPAWN / FORK / EXEC. All four reach
+// runScript, whose name mangler is the identity function, so the pushed
+// string is a path - the harness points it at a child script it writes.
+//
+// The script names come out of the static string table, which is why the
+// PUSH here is 0x9001 and not the 0xC001 the other sections use. programGetNextOpcode
+// reads a 16-bit opcode, the VM requires bit 0x80 of the high byte, and
+// dispatches on `opcode & 0x3FF` - so 0x9001 passes validation and still
+// lands on opPush. opPush copies the opcode into the pushed value's type,
+// which is why VALUE_TYPE_INT is 0xC001 and VALUE_TYPE_STRING is 0x9001:
+// the opcode's high byte IS the value type. programGetString then resolves
+// 0x9001 to `staticStrings + 4 + operand`.
+static void vmLifeRun(const char* name, const char* childPath, bool withChild,
+    const unsigned char* code, int codeLength, int budget, bool attachParent)
+{
+    unsigned char data[1024];
+    memset(data, 0, sizeof(data));
+
+    const int identifiersOffset = 46 + 24;
+    static const char identifiers[] = "main";
+    // Static strings: the child path at offset 0, a missing path after it.
+    static const char missingPath[] = "/tmp/vmlife-missing.int";
+    unsigned char strings[128];
+    memset(strings, 0, sizeof(strings));
+    const int childStringOffset = 0;
+    const int missingStringOffset = (int)strlen(childPath) + 1;
+    memcpy(strings + childStringOffset, childPath, strlen(childPath));
+    memcpy(strings + missingStringOffset, missingPath, sizeof(missingPath));
+    const int stringsLength = missingStringOffset + (int)sizeof(missingPath);
+
+    const int stringTableOffset = identifiersOffset + 4 + sizeof(identifiers);
+    const int codeOffset = stringTableOffset + 4 + stringsLength;
+    const int bodyOffset = codeOffset + codeLength;
+
+    auto writeBE32 = [&](int offset, int value) {
+        data[offset] = (unsigned char)(value >> 24);
+        data[offset + 1] = (unsigned char)(value >> 16);
+        data[offset + 2] = (unsigned char)(value >> 8);
+        data[offset + 3] = (unsigned char)value;
+    };
+
+    if (withChild) {
+        // The child only needs a parseable table; its bodyOffset points just
+        // past the identifiers blob, which is all zero bytes (NOOP), so
+        // runScript's 24-instruction head start does nothing and returns.
+        unsigned char child[1024];
+        memset(child, 0, sizeof(child));
+        const int childProc = 46;
+        const int childBody = 46 + 24 + 4 + (int)sizeof(identifiers);
+        auto writeBE = [](unsigned char* buf, int offset, int value) {
+            buf[offset] = (unsigned char)(value >> 24);
+            buf[offset + 1] = (unsigned char)(value >> 16);
+            buf[offset + 2] = (unsigned char)(value >> 8);
+            buf[offset + 3] = (unsigned char)value;
+        };
+        writeBE(child, 42, 1);
+        writeBE(child, childProc + 0, 4);
+        writeBE(child, childProc + 16, childBody);
+        FILE* cf = fopen(childPath, "wb");
+        if (cf != nullptr) {
+            fwrite(child, 1, sizeof(child), cf);
+            fclose(cf);
+        }
+    }
+
+    writeBE32(42, 1);
+    writeBE32(46 + 0, 4);
+    writeBE32(46 + 16, bodyOffset);
+    writeBE32(46 + 20, 0);
+
+    writeBE32(identifiersOffset, (int)sizeof(identifiers));
+    memcpy(data + identifiersOffset + 4, identifiers, sizeof(identifiers));
+    writeBE32(stringTableOffset, stringsLength);
+    memcpy(data + stringTableOffset + 4, strings, stringsLength);
+    memcpy(data + codeOffset, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmlife-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    program->flags = 0;
+    program->instructionPointer = codeOffset;
+    program->windowId = 77;
+
+    fallout::Program* parent = nullptr;
+    if (attachParent) {
+        parent = fallout::programCreateByPath(path);
+        parent->flags = fallout::PROGRAM_FLAG_CHILD_CALL | fallout::PROGRAM_FLAG_CHILD_SPAWN;
+        parent->child = program;
+        program->parent = parent;
+    }
+
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d flags=%08X window=%d child=%s childParent=%s childWindow=%d exited=%d",
+        name, program->instructionPointer, (unsigned int)program->flags, program->windowId,
+        program->child != nullptr ? "yes" : "none",
+        (program->child != nullptr && program->child->parent == program) ? "self" : "other",
+        program->child != nullptr ? program->child->windowId : -1,
+        program->exited ? 1 : 0);
+
+    if (parent != nullptr) {
+        std::printf(" parentFlags=%08X parentChild=%s", (unsigned int)parent->flags,
+            parent->child != nullptr ? "yes" : "none");
+    }
+    std::printf("\n");
+
+    // Free the child first so the parent keeps a consistent link while doing it.
+    if (program->child != nullptr) {
+        fallout::Program* child = program->child;
+        program->child = nullptr;
+        child->parent = nullptr;
+        fallout::programFree(child);
+    }
+    if (parent != nullptr) {
+        program->parent = nullptr;
+        fallout::programFree(parent);
+    }
+    fallout::programFree(program);
+}
+
+// Emits PUSH_STATIC_STRING (opcode 0x9001) of a static-string offset.
+static int pushStaticString(unsigned char* out, int offset)
+{
+    out[0] = 0x90; out[1] = 0x01;
+    out[2] = (unsigned char)(offset >> 24);
+    out[3] = (unsigned char)(offset >> 16);
+    out[4] = (unsigned char)(offset >> 8);
+    out[5] = (unsigned char)offset;
+    return 6;
+}
+
+void sectionVmLifecycle()
+{
+    std::puts("[vmlifecycle]");
+
+    static const char childPath[] = "/tmp/vmlife-child.int";
+    const int childString = 0;
+    const int missingString = (int)strlen(childPath) + 1;
+
+    unsigned char code[64];
+    int n = pushStaticString(code, childString);
+    code[n++] = 0x80; code[n++] = 0x08; // CALLSTART
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmLifeRun("callstart", childPath, true, code, n, 32, false);
+
+    n = pushStaticString(code, childString);
+    code[n++] = 0x80; code[n++] = 0x0A; // SPAWN
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmLifeRun("spawn", childPath, true, code, n, 32, false);
+
+    // FORK discards its fork, so the parent is left exactly as it was.
+    n = pushStaticString(code, childString);
+    code[n++] = 0x80; code[n++] = 0x0B; // FORK
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmLifeRun("fork", childPath, true, code, n, 32, false);
+
+    // EXEC hands the (attached) parent the fork in place of this program.
+    n = pushStaticString(code, childString);
+    code[n++] = 0x80; code[n++] = 0x09; // EXEC
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmLifeRun("exec", childPath, true, code, n, 32, true);
+
+    // A second CALLSTART with a child already attached hits the guard. This
+    // vector only runs STOP_PROGRAM; the guard belongs to the parent chain,
+    // which attachParent sets up before the program ever executes.
+    n = 0;
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmLifeRun("attached-parent", childPath, false, code, n, 32, true);
+
+    // A missing script makes runScript return null, which forkProgram turns
+    // into a fatal error before any flag is set.
+    n = pushStaticString(code, missingString);
+    code[n++] = 0x80; code[n++] = 0x0B; // FORK
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmLifeRun("fork-missing", childPath, false, code, n, 32, false);
+
+    // CALLSTART with a missing script: the CHILD_CALL flag is set before the
+    // name is popped, so the flag survives the fatal.
+    n = pushStaticString(code, missingString);
+    code[n++] = 0x80; code[n++] = 0x08; // CALLSTART
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmLifeRun("callstart-missing", childPath, false, code, n, 32, false);
 }
 
 void sectionVmDelayed()

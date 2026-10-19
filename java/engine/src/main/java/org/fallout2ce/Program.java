@@ -1379,6 +1379,156 @@ public class Program {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Program lifecycle: CALLSTART / SPAWN / FORK / EXEC.
+    //
+    // All four reach runScript, which loads a script by path and immediately
+    // runs it for 24 instructions. C routes the name through
+    // interpreterFilenameMangler, whose default (defaultFilename) is the
+    // identity function, so the popped string IS the path.
+    // ---------------------------------------------------------------------
+
+    /** Port of {@code ProgramListNode}: a doubly-linked node over programs. */
+    private static final class ProgramListNode {
+        final Program program;
+        ProgramListNode next;
+        ProgramListNode prev;
+
+        ProgramListNode(Program program) {
+            this.program = program;
+        }
+    }
+
+    /** Port of {@code gInterpreterProgramListHead}. */
+    private static ProgramListNode programListHead;
+
+    // programListNodeCreate (0x468248): push onto the front of the list.
+    private static void programListNodeCreate(Program program) {
+        ProgramListNode node = new ProgramListNode(program);
+        node.next = programListHead;
+        node.prev = null;
+
+        if (programListHead != null) {
+            programListHead.prev = node;
+        }
+
+        programListHead = node;
+    }
+
+    // runProgram (0x4682B4).
+    private static void runProgram(Program program) {
+        program.flags |= PROGRAM_FLAG_RUNNING;
+        programListNodeCreate(program);
+    }
+
+    /**
+     * runScript (0x46824C): load a script by name and give it a 24-instruction
+     * head start. Returns null if the file will not load - C lets the callers
+     * turn that into a programFatalError rather than raising here.
+     */
+    static Program runScript(String name) {
+        Program program = programCreateByPath(name);
+        if (program != null) {
+            runProgram(program);
+            programInterpret(program, 24);
+        }
+        return program;
+    }
+
+    // forkProgram (0x469C7C): pop a script name and run a copy of it. Note the
+    // caller drops the result on the floor - only EXEC keeps it.
+    private static Program forkProgram(Program program) {
+        String name = programStackPopString(program);
+        Program forked = runScript(name);
+
+        if (forked == null) {
+            programFatalError("couldn't fork script '" + name + "'");
+        }
+
+        forked.windowId = program.windowId;
+        return forked;
+    }
+
+    // opCallStart (0x46BBFC): run a child script and keep it attached.
+    private static void opCallStart(Program program) {
+        if (program.child != null) {
+            programFatalError("Error, already have a child process\n");
+        }
+
+        program.flags |= PROGRAM_FLAG_CHILD_CALL;
+
+        String name = programStackPopString(program);
+
+        Program child = runScript(name);
+        if (child == null) {
+            programFatalError("Error spawning child " + name);
+        }
+
+        child.parent = program;
+        child.windowId = program.windowId;
+        program.child = child;
+    }
+
+    // opSpawn (0x469C28): opCallStart with the SPAWN flag, and a critical
+    // section runs the child to completion before carrying on.
+    private static void opSpawn(Program program) {
+        if (program.child != null) {
+            programFatalError("Error, already have a child process\n");
+        }
+
+        program.flags |= PROGRAM_FLAG_CHILD_SPAWN;
+
+        String name = programStackPopString(program);
+
+        Program child = runScript(name);
+        if (child == null) {
+            programFatalError("Error spawning child " + name);
+        }
+
+        child.parent = program;
+        child.windowId = program.windowId;
+        program.child = child;
+
+        if ((program.flags & PROGRAM_FLAG_CRITICAL_SECTION) != 0) {
+            child.flags |= PROGRAM_FLAG_CRITICAL_SECTION;
+            programInterpret(child, -1);
+        }
+    }
+
+    // opFork (0x469C70): the fork is deliberately discarded. Only EXEC keeps it.
+    private static void opFork(Program program) {
+        forkProgram(program);
+    }
+
+    // opExec (0x469A74): replace this program with a fork, handing the parent
+    // the new child. The trailing parent re-read is verbatim: C re-assigns
+    // `parent = program->parent` AFTER nulling it, so the CHILD_SPAWN-clearing
+    // branch can never run. The original even flags it as a probable inlining
+    // artefact. Kept so the port matches rather than "fixes" it.
+    private static void opExec(Program program) {
+        Program parent = program.parent;
+        Program fork = forkProgram(program);
+
+        if (parent != null) {
+            fork.parent = parent;
+            parent.child = fork;
+        }
+
+        fork.child = null;
+
+        program.parent = null;
+        program.flags |= PROGRAM_FLAG_EXITED;
+
+        parent = program.parent;
+        if (parent != null) {
+            if ((parent.flags & PROGRAM_FLAG_CHILD_SPAWN) != 0) {
+                parent.flags &= ~PROGRAM_FLAG_CHILD_SPAWN;
+            }
+        }
+
+        purgeProgram(program);
+    }
+
     // opFetchGlobalVariable (0x46BAD0): push the global at basePointer + addr.
     // Globals are addressed by NEGATIVE offsets: opSetGlobal snapshots
     // basePointer = stackValues.size(), so the only in-range addresses are
@@ -1673,6 +1823,10 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_CALL_WHEN, Program::opConditionalCall);
         interpreterRegisterOpcode(OPCODE_CANCEL, Program::opCancel);
         interpreterRegisterOpcode(OPCODE_CANCEL_ALL, Program::opCancelAll);
+        interpreterRegisterOpcode(OPCODE_CALLSTART, Program::opCallStart);
+        interpreterRegisterOpcode(OPCODE_SPAWN, Program::opSpawn);
+        interpreterRegisterOpcode(OPCODE_FORK, Program::opFork);
+        interpreterRegisterOpcode(OPCODE_EXEC, Program::opExec);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
