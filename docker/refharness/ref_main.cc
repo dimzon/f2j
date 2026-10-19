@@ -6507,6 +6507,67 @@ void sectionMoreDesc()
         gotSneakDesc ? 1 : 0, sneakDesc, gotStrDesc ? 1 : 0, strDesc);
 }
 
+// Real game scripts, loaded straight out of master.dat through the VFS and
+// executed.
+//
+// The intlib registers the game's own script API as extra opcodes - the
+// range 0x804C to 0x8281, about 566 of them, all of which need the running
+// game. The core interpreter opcodes are exactly 0x8000 to 0x804B, so the
+// harness clears every handler slot above 0x04B to take the game out of the
+// picture. Both engines then stop at the same place: the first opcode that
+// needs the game.
+//
+// What that compares is the interpreter itself - the DAT read, the file
+// layout, the procedure and identifier tables, and the real opcode mix the
+// game's compiler emitted - up to the boundary where the game takes over.
+static void scriptRunOne(const char* name, int budget)
+{
+    fallout::Program* program = fallout::programCreateByPath((char*)name);
+    if (program == nullptr) {
+        std::printf("%s load-failed\n", name);
+        return;
+    }
+
+    // programCreateByPath leaves the instruction pointer at 0, which is where
+    // a script's top-level code starts.
+    program->flags = 0;
+    program->instructionPointer = 0;
+
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d flags=%08X stack=%d", name, program->instructionPointer,
+        (unsigned int)program->flags, (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
+void sectionScriptRun()
+{
+    std::puts("[scriptrun]");
+
+    // The opcode handlers are registered by sectionVm, which runs after this
+    // section, so register them here too - otherwise the first opcode of a
+    // real script is "Undefined opcode 0x8002".
+    fallout::interpreterRegisterOpcodeHandlers();
+
+    // Take the game out: the intlib's opcodes need a running game, and the
+    // core interpreter opcodes are exactly 0x8000 to 0x804B.
+    for (int index = 0x04C; index < 768; index++) {
+        fallout::gInterpreterOpcodeHandlers[index] = nullptr;
+    }
+
+    // Smallest first: these are the scripts whose top-level code gets
+    // furthest before the game is needed.
+    scriptRunOne("scripts\\miJerky.int", 200);
+    scriptRunOne("scripts\\CATH2MV.int", 200);
+    scriptRunOne("scripts\\acdog.int", 200);
+    scriptRunOne("scripts\\ABEL.int", 200);
+}
+
 void sectionScriptProg()
 {
     std::puts("[scriptprog]");
@@ -9709,6 +9770,7 @@ int main()
     RUN_SECTION(MoreNames);
     RUN_SECTION(MoreDesc);
     RUN_SECTION(ScriptProg);
+    RUN_SECTION(ScriptRun);
     RUN_SECTION(ProgramStack);
     RUN_SECTION(ProgRetStack);
     RUN_SECTION(StatsSave);
