@@ -6686,6 +6686,22 @@ void sectionScriptRun()
     scriptRunOne("scripts\\ABEL.int", 200);
 }
 
+void sectionScriptRunGame()
+{
+    std::puts("[scriptrungame]");
+
+    // The same scripts with the game's own builtins available. The intlib
+    // reaches into the running game, so this is the state the game's scripts
+    // see - and the state the Java side has to reproduce once the game
+    // subsystems are ported.
+    fallout::interpreterRegisterOpcodeHandlers();
+
+    scriptRunOne("scripts\\miJerky.int", 200);
+    scriptRunOne("scripts\\CATH2MV.int", 200);
+    scriptRunOne("scripts\\acdog.int", 200);
+    scriptRunOne("scripts\\ABEL.int", 200);
+}
+
 void sectionScriptProg()
 {
     std::puts("[scriptprog]");
@@ -9889,6 +9905,7 @@ int main()
     RUN_SECTION(MoreDesc);
     RUN_SECTION(ScriptProg);
     RUN_SECTION(ScriptRun);
+    RUN_SECTION(ScriptRunGame);
     RUN_SECTION(ScriptScan);
     RUN_SECTION(ProgramStack);
     RUN_SECTION(ProgRetStack);

@@ -90,7 +90,7 @@ public interface ScriptApi {
     /**
      * {@code op_tile_contains_pid_obj} (0x80A7) - 1221 calls in the shipped scripts.
      */
-    Object tileContainsPidObj(Program program, int a0, int a1);
+    Object tileContainsPidObj(Program program, int a0, int a1, int a2);
 
     /**
      * {@code op_set_map_start} (0x80A8) - 3 calls in the shipped scripts.
@@ -150,7 +150,7 @@ public interface ScriptApi {
     /**
      * {@code op_create_object} (0x80B7) - 6349 calls in the shipped scripts.
      */
-    Object createObject(Program program, int a0, int a1, int a2);
+    Object createObject(Program program, int a0, int a1, int a2, int a3);
 
     /**
      * {@code op_display_msg} (0x80B8) - 17015 calls in the shipped scripts.
@@ -165,12 +165,12 @@ public interface ScriptApi {
     /**
      * {@code op_obj_is_carrying_obj} (0x80BA) - 14686 calls in the shipped scripts.
      */
-    int objIsCarryingObj(Program program, Object a0);
+    int objIsCarryingObj(Program program, Object a0, int a1);
 
     /**
      * {@code op_tile_contains_obj_pid} (0x80BB) - 293 calls in the shipped scripts.
      */
-    int tileContainsObjPid(Program program, int a0, int a1);
+    int tileContainsObjPid(Program program, int a0, int a1, int a2);
 
     /**
      * {@code op_self_obj} (0x80BC) - 97990 calls in the shipped scripts.
@@ -395,7 +395,7 @@ public interface ScriptApi {
     /**
      * {@code op_kill_critter_type} (0x80EE) - 85 calls in the shipped scripts.
      */
-    void killCritterType(Program program, int a0);
+    void killCritterType(Program program, int a0, int a1);
 
     /**
      * {@code op_critter_damage} (0x80EF) - 428 calls in the shipped scripts.
@@ -505,7 +505,7 @@ public interface ScriptApi {
     /**
      * {@code op_proto_data} (0x8104) - 131 calls in the shipped scripts.
      */
-    Program.ProgramValue protoData(Program program, int a0);
+    Program.ProgramValue protoData(Program program, int a0, int a1);
 
     /**
      * {@code op_message_str} (0x8105) - 32040 calls in the shipped scripts.
@@ -545,7 +545,7 @@ public interface ScriptApi {
     /**
      * {@code op_obj_carrying_pid_obj} (0x810D) - 5004 calls in the shipped scripts.
      */
-    Object objCarryingPidObj(Program program, Object a0);
+    Object objCarryingPidObj(Program program, Object a0, int a1);
 
     /**
      * {@code op_reg_anim_func} (0x810E) - 1344 calls in the shipped scripts.
@@ -790,7 +790,7 @@ public interface ScriptApi {
     /**
      * {@code op_party_member_obj} (0x814B) - 55310 calls in the shipped scripts.
      */
-    Object partyMemberObj(Program program);
+    Object partyMemberObj(Program program, int a0);
 
     /**
      * {@code op_rotation_to_tile} (0x814C) - 2149 calls in the shipped scripts.

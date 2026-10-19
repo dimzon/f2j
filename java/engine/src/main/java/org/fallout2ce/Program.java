@@ -2332,6 +2332,18 @@ public class Program {
     /** Port of {@code waitStart} (C {@code unsigned int}; dormant). */
     public long waitStart;
 
+    /**
+     * The object the script runs for ({@code Script::owner}).
+     *
+     * <p>C keeps this in the script registry, next to the program the script
+     * belongs to; here the program carries it, because the program is what
+     * the registry holds.
+     */
+    public ObjTypes.GameObject scriptOwner;
+
+    /** The script's action ({@code Script::action}). */
+    public int scriptAction;
+
     /** Port of {@code startTime} (init -1, never executed marker). */
     public int startTime = -1;
 

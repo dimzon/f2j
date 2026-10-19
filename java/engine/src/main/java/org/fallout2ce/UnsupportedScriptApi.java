@@ -17,7 +17,7 @@ class UnsupportedScriptApi implements ScriptApi {
         return false;
     }
 
-    private static Program.FatalError unsupported(String name) {
+    protected static Program.FatalError unsupported(String name) {
         return new Program.FatalError(
             String.format("\nScript Error: %s: this builtin is not available.", name));
     }
@@ -78,7 +78,7 @@ class UnsupportedScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object tileContainsPidObj(Program program, int a0, int a1) {
+    public Object tileContainsPidObj(Program program, int a0, int a1, int a2) {
         throw unsupported("op_tile_contains_pid_obj");
     }
 
@@ -138,7 +138,7 @@ class UnsupportedScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object createObject(Program program, int a0, int a1, int a2) {
+    public Object createObject(Program program, int a0, int a1, int a2, int a3) {
         throw unsupported("op_create_object");
     }
 
@@ -153,12 +153,12 @@ class UnsupportedScriptApi implements ScriptApi {
     }
 
     @Override
-    public int objIsCarryingObj(Program program, Object a0) {
+    public int objIsCarryingObj(Program program, Object a0, int a1) {
         throw unsupported("op_obj_is_carrying_obj");
     }
 
     @Override
-    public int tileContainsObjPid(Program program, int a0, int a1) {
+    public int tileContainsObjPid(Program program, int a0, int a1, int a2) {
         throw unsupported("op_tile_contains_obj_pid");
     }
 
@@ -383,7 +383,7 @@ class UnsupportedScriptApi implements ScriptApi {
     }
 
     @Override
-    public void killCritterType(Program program, int a0) {
+    public void killCritterType(Program program, int a0, int a1) {
         throw unsupported("op_kill_critter_type");
     }
 
@@ -493,7 +493,7 @@ class UnsupportedScriptApi implements ScriptApi {
     }
 
     @Override
-    public Program.ProgramValue protoData(Program program, int a0) {
+    public Program.ProgramValue protoData(Program program, int a0, int a1) {
         throw unsupported("op_proto_data");
     }
 
@@ -533,7 +533,7 @@ class UnsupportedScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object objCarryingPidObj(Program program, Object a0) {
+    public Object objCarryingPidObj(Program program, Object a0, int a1) {
         throw unsupported("op_obj_carrying_pid_obj");
     }
 
@@ -778,7 +778,7 @@ class UnsupportedScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object partyMemberObj(Program program) {
+    public Object partyMemberObj(Program program, int a0) {
         throw unsupported("op_party_member_obj");
     }
 

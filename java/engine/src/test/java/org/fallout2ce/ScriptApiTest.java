@@ -66,6 +66,91 @@ class ScriptApiTest {
         return mock;
     }
 
+    /**
+     * The reference's final state for the four scripts, from the
+     * {@code [scriptrungame]} section of the harness: the same scripts run
+     * with the game's own builtins available.
+     */
+    private static final String[][] REFERENCE = {
+        { "scripts\\miJerky.int", "20", "80100001", "1", "C001:0" },
+        { "scripts\\CATH2MV.int", "20", "80100001", "1", "C001:0" },
+        { "scripts\\acdog.int", "20", "80100001", "21", "C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0" },
+        { "scripts\\ABEL.int", "20", "80100001", "4", "C001:0 C001:0 C001:1 C001:0" },
+    };
+
+    private static final class State {
+        int ip;
+        int flags;
+        int stackSize;
+        String stack;
+    }
+
+    private State runForState(String name, ScriptApi api) throws Exception {
+        Path master = Paths.get(gameData(), "master.dat");
+        assertTrue(master.toFile().isFile());
+        assertEquals(0, Db.dbOpen(master.toString(), null));
+
+        Program.setScriptApi(api);
+
+        Program program = Program.programCreateByPath(name);
+        assertNotNull(program);
+        program.flags = 0;
+        program.instructionPointer = 0;
+
+        Program.programInterpret(program, 20000);
+
+        State state = new State();
+        state.ip = program.instructionPointer;
+        state.flags = program.flags;
+        state.stackSize = program.stackValues.size();
+        StringBuilder sb = new StringBuilder();
+        for (int i = program.stackValues.size() - 1; i >= 0; i--) {
+            Program.ProgramValue value = program.stackValues.get(i);
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(String.format("%04X:%d", value.opcode & 0xFFFF, value.integerValue));
+        }
+        state.stack = sb.toString();
+
+        Program.programFree(program);
+        Db.dbCloseAll();
+        return state;
+    }
+
+    private void assertMatchesReference(String name, ScriptApi api) throws Exception {
+        String[] expected = null;
+        for (String[] reference : REFERENCE) {
+            if (reference[0].equals(name)) {
+                expected = reference;
+            }
+        }
+        assertNotNull(expected, name);
+
+        State state = runForState(name, api);
+        assertEquals(Integer.parseInt(expected[1]), state.ip, name + " ip");
+        assertEquals((int) Long.parseLong(expected[2], 16), state.flags, name + " flags");
+        assertEquals(Integer.parseInt(expected[3]), state.stackSize, name + " stack size");
+        assertEquals(expected[4], state.stack, name + " stack");
+    }
+
+    @Test
+    void theMockReproducesTheReferenceState() throws Exception {
+        // The game's builtins all fall back to their "no state" answers in a
+        // game-less harness, and so does the mock - so the mock stands in for
+        // the game and the script ends up exactly where the reference ends up.
+        for (String[] reference : REFERENCE) {
+            assertMatchesReference(reference[0], new MockScriptApi());
+        }
+    }
+
+    @Test
+    void theGameApiReproducesTheReferenceState() throws Exception {
+        for (String[] reference : REFERENCE) {
+            assertMatchesReference(reference[0], new GameScriptApi());
+        }
+    }
+
     @Test
     void aScriptRunsAgainstTheMockAndItsCallsAreRecorded() throws Exception {
         MockScriptApi mock = runScript("scripts\\acdog.int");

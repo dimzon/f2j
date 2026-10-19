@@ -203,6 +203,21 @@ public final class PartyMembers {
         return -1;
     }
 
+    /**
+     * Port of {@code partyMemberFindByProtoId} (0x4A2A34): the party member
+     * with the given proto id, or null.
+     */
+    public static GameObject partyMemberFindByProtoId(ProtoId protoId) {
+        for (int index = 0; index < partyMembersLength; index++) {
+            GameObject object = partyMembers.get(index).object;
+            if (object != null && ProtoId.ofGameObject(object).equals(protoId)) {
+                return object;
+            }
+        }
+
+        return null;
+    }
+
     /** Port of {@code partyMemberGetCurrentLevel} (0x495FF0): 0 when not a member. */
     public static int partyMemberGetCurrentLevel(GameObject object) {
         if (object == null) {

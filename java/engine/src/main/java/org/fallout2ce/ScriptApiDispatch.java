@@ -128,7 +128,8 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
-            Object result = api.tileContainsPidObj(program, a1, a0);
+            int a2 = Program.programStackPopInteger(program);
+            Object result = api.tileContainsPidObj(program, a2, a1, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x80A8 op_set_map_start
@@ -262,7 +263,8 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
-            Object result = api.createObject(program, a2, a1, a0);
+            int a3 = Program.programStackPopInteger(program);
+            Object result = api.createObject(program, a3, a2, a1, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x80B8 op_display_msg
@@ -288,8 +290,9 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80BA.", 0x80BA));
             }
-            Object a0 = Program.programStackPopPointer(program);
-            int result = api.objIsCarryingObj(program, a0);
+            int a0 = Program.programStackPopInteger(program);
+            Object a1 = Program.programStackPopPointer(program);
+            int result = api.objIsCarryingObj(program, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80BB op_tile_contains_obj_pid
@@ -300,7 +303,8 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
-            int result = api.tileContainsObjPid(program, a1, a0);
+            int a2 = Program.programStackPopInteger(program);
+            int result = api.tileContainsObjPid(program, a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80BC op_self_obj
@@ -753,7 +757,8 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80EE.", 0x80EE));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.killCritterType(program, a0);
+            int a1 = Program.programStackPopInteger(program);
+            api.killCritterType(program, a1, a0);
         };
         // 0x80EF op_critter_damage
         Program.INTERPRETER_OPCODE_HANDLERS[239] = program -> {
@@ -976,7 +981,8 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8104.", 0x8104));
             }
             int a0 = Program.programStackPopInteger(program);
-            Program.ProgramValue result = api.protoData(program, a0);
+            int a1 = Program.programStackPopInteger(program);
+            Program.ProgramValue result = api.protoData(program, a1, a0);
             Program.programStackPushValue(program, result);
         };
         // 0x8105 op_message_str
@@ -1063,8 +1069,9 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x810D.", 0x810D));
             }
-            Object a0 = Program.programStackPopPointer(program);
-            Object result = api.objCarryingPidObj(program, a0);
+            int a0 = Program.programStackPopInteger(program);
+            Object a1 = Program.programStackPopPointer(program);
+            Object result = api.objCarryingPidObj(program, a1, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x810E op_reg_anim_func
@@ -1550,7 +1557,8 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x814B.", 0x814B));
             }
-            Object result = api.partyMemberObj(program);
+            int a0 = Program.programStackPopInteger(program);
+            Object result = api.partyMemberObj(program, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x814C op_rotation_to_tile

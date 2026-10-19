@@ -137,8 +137,8 @@ public class MockScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object tileContainsPidObj(Program program, int a0, int a1) {
-        record("tileContainsPidObj", a0, a1);
+    public Object tileContainsPidObj(Program program, int a0, int a1, int a2) {
+        record("tileContainsPidObj", a0, a1, a2);
         return null;
     }
 
@@ -209,8 +209,8 @@ public class MockScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object createObject(Program program, int a0, int a1, int a2) {
-        record("createObject", a0, a1, a2);
+    public Object createObject(Program program, int a0, int a1, int a2, int a3) {
+        record("createObject", a0, a1, a2, a3);
         return null;
     }
 
@@ -227,14 +227,14 @@ public class MockScriptApi implements ScriptApi {
     }
 
     @Override
-    public int objIsCarryingObj(Program program, Object a0) {
-        record("objIsCarryingObj", a0);
+    public int objIsCarryingObj(Program program, Object a0, int a1) {
+        record("objIsCarryingObj", a0, a1);
         return 0;
     }
 
     @Override
-    public int tileContainsObjPid(Program program, int a0, int a1) {
-        record("tileContainsObjPid", a0, a1);
+    public int tileContainsObjPid(Program program, int a0, int a1, int a2) {
+        record("tileContainsObjPid", a0, a1, a2);
         return 0;
     }
 
@@ -503,8 +503,8 @@ public class MockScriptApi implements ScriptApi {
     }
 
     @Override
-    public void killCritterType(Program program, int a0) {
-        record("killCritterType", a0);
+    public void killCritterType(Program program, int a0, int a1) {
+        record("killCritterType", a0, a1);
         return;
     }
 
@@ -635,8 +635,8 @@ public class MockScriptApi implements ScriptApi {
     }
 
     @Override
-    public Program.ProgramValue protoData(Program program, int a0) {
-        record("protoData", a0);
+    public Program.ProgramValue protoData(Program program, int a0, int a1) {
+        record("protoData", a0, a1);
         return new Program.ProgramValue(-1);
     }
 
@@ -683,8 +683,8 @@ public class MockScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object objCarryingPidObj(Program program, Object a0) {
-        record("objCarryingPidObj", a0);
+    public Object objCarryingPidObj(Program program, Object a0, int a1) {
+        record("objCarryingPidObj", a0, a1);
         return null;
     }
 
@@ -977,8 +977,8 @@ public class MockScriptApi implements ScriptApi {
     }
 
     @Override
-    public Object partyMemberObj(Program program) {
-        record("partyMemberObj");
+    public Object partyMemberObj(Program program, int a0) {
+        record("partyMemberObj", a0);
         return null;
     }
 
