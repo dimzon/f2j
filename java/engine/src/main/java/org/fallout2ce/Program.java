@@ -376,7 +376,8 @@ public class Program {
     }
 
     /** {@code gInterpreterOpcodeHandlers} (src/interpreter.cc), 1024 entries. */
-    private static final OpcodeHandler[] INTERPRETER_OPCODE_HANDLERS = new OpcodeHandler[1024];
+    /** The opcode table, indexed by {@code opcode & 0x3FF}. */
+    static final OpcodeHandler[] INTERPRETER_OPCODE_HANDLERS = new OpcodeHandler[1024];
 
     // 0x467F44 interpreterRegisterOpcode.
     static void interpreterRegisterOpcode(int opcode, OpcodeHandler handler) {
@@ -2024,6 +2025,9 @@ public class Program {
      */
     static void interpreterRegisterOpcodeHandlers() {
         interpreterEnabled = true;
+        // The game's own builtins come from the script API, so a script can be
+        // run against a mock instead of the game.
+        ScriptApiDispatch.install(scriptApi);
         interpreterRegisterOpcode(OPCODE_NOOP, Program::opNoop);
         interpreterRegisterOpcode(OPCODE_PUSH, Program::opPush);
         interpreterRegisterOpcode(OPCODE_A_TO_D, Program::opAtoD);
@@ -2108,6 +2112,28 @@ public class Program {
 
     /** {@code interpreterEnabled} (src/interpreter.cc). */
     private static boolean interpreterEnabled = true;
+
+    /**
+     * The script API the game's builtins are reached through.
+     *
+     * <p>Swapping it is what makes a script testable: a mock records what the
+     * script asks for instead of needing the game to be running.
+     */
+    private static ScriptApi scriptApi = new UnsupportedScriptApi();
+
+    /** The script API the builtins are dispatched to. */
+    public static ScriptApi scriptApi() {
+        return scriptApi;
+    }
+
+    /**
+     * Replaces the script API and re-registers the opcode table, so the new
+     * API's builtins take the place of the old ones.
+     */
+    public static void setScriptApi(ScriptApi api) {
+        scriptApi = api;
+        interpreterRegisterOpcodeHandlers();
+    }
 
     /** {@code interpreterBusy} (src/interpreter.cc). */
     private static boolean interpreterBusy;
