@@ -6545,6 +6545,124 @@ static void scriptRunOne(const char* name, int budget)
     fallout::programFree(program);
 }
 
+// Opcode census over every .int in the game data.
+//
+// The walk mirrors src/scan_unimplemented_opcodes.h: a script's top-level code
+// is the first 42 bytes, the procedure bodies come after the static string
+// table, and the code is walked linearly - the game's compiler emits it
+// linearly, so no control flow needs following. Each opcode is two bytes,
+// and PUSH carries a four-byte operand.
+//
+// The census is what sizes the remaining work: the intlib registers 448
+// opcodes, but the scripts only use a subset of them, and the subset that
+// actually shows up is the list that has to be ported.
+//
+// The histogram is printed without names so that Java can reproduce it
+// exactly - the names live in the Java disassembler, which is a separate
+// tool.
+static void scriptScanAll()
+{
+    // Read the archive directly instead of through the VFS. The VFS resolves
+    // names case-insensitively across every mounted archive, and master.dat
+    // and patch000.dat both carry scripts whose names differ only in case -
+    // "scripts\\arbridge.int" and "Scripts\\ARBRIDGE.int". Which archive
+    // wins then depends on the mount order, which is a property of the game's
+    // startup rather than of the script format. Scanning master.dat's own
+    // entries keeps the census well defined.
+    int errorFlags = 0;
+    fallout::DBase* db = fallout::dbaseOpen("/game-en/master.dat", &errorFlags);
+    if (db == nullptr) {
+        std::printf("dbaseOpen failed\n");
+        return;
+    }
+
+    int histogram[768];
+    memset(histogram, 0, sizeof(histogram));
+
+    int scriptCount = 0;
+    long long instructionCount = 0;
+    int unknownCount = 0;
+
+    for (int index = 0; index < db->entriesLength; index++) {
+        const char* path = db->entries[index].path;
+        const int nameLength = (int)strlen(path);
+        if (nameLength < 4 || fallout::compat_stricmp(path + nameLength - 4, ".int") != 0) {
+            continue;
+        }
+
+        fallout::DFile* dfile = fallout::dfileOpen(db, path, "rb");
+        if (dfile == nullptr) {
+            continue;
+        }
+
+        const int size = (int)fallout::dfileGetSize(dfile);
+        unsigned char* data = (unsigned char*)malloc(size > 0 ? size : 1);
+        if (data == nullptr) {
+            fallout::dfileClose(dfile);
+            continue;
+        }
+        memset(data, 0, size > 0 ? size : 1);
+        fallout::dfileRead(data, 1, size, dfile);
+        fallout::dfileClose(dfile);
+
+        // Layout: [top-level code][procedure count][table][identifiers][strings][bodies]
+        const int procedureCount = fallout::stackReadInt32(data, 42);
+        const int identifiersPos = 24 * procedureCount + 42 + 4;
+        const int staticStringsPos = identifiersPos + fallout::stackReadInt32(data, identifiersPos) + 4 + 4;
+        int staticStringLen = fallout::stackReadInt32(data, staticStringsPos);
+        if (staticStringLen == -1) {
+            staticStringLen = -4;
+        }
+        const int codePos = staticStringsPos + 4 + staticStringLen + 4;
+
+        auto walk = [&](int from, int to) {
+            int pos = from;
+            while (pos + 2 <= to) {
+                const int opcode = fallout::stackReadInt16(data, pos);
+                if (!((opcode >> 8) & 0x80)) {
+                    break;
+                }
+                const int opcodeIndex = opcode & 0x3FF;
+                histogram[opcodeIndex]++;
+                instructionCount++;
+                if (fallout::gInterpreterOpcodeHandlers[opcodeIndex] == nullptr) {
+                    unknownCount++;
+                }
+                pos += 2;
+                if (opcodeIndex == (fallout::OPCODE_PUSH & 0x3FF)) {
+                    pos += 4;
+                }
+            }
+        };
+
+        walk(0, 0x2A);
+        walk(codePos, size);
+
+        scriptCount++;
+        free(data);
+    }
+
+    fallout::dbaseClose(db);
+
+    std::printf("scripts=%d instructions=%lld unknown=%d\n", scriptCount, instructionCount, unknownCount);
+    for (int index = 0; index < 768; index++) {
+        if (histogram[index] != 0) {
+            std::printf("op=0x%03X count=%d\n", index, histogram[index]);
+        }
+    }
+}
+
+void sectionScriptScan()
+{
+    std::puts("[scriptscan]");
+
+    // The opcode handlers have to be registered for the unknown-count to mean
+    // "not implemented" rather than "not registered yet".
+    fallout::interpreterRegisterOpcodeHandlers();
+
+    scriptScanAll();
+}
+
 void sectionScriptRun()
 {
     std::puts("[scriptrun]");
@@ -9771,6 +9889,7 @@ int main()
     RUN_SECTION(MoreDesc);
     RUN_SECTION(ScriptProg);
     RUN_SECTION(ScriptRun);
+    RUN_SECTION(ScriptScan);
     RUN_SECTION(ProgramStack);
     RUN_SECTION(ProgRetStack);
     RUN_SECTION(StatsSave);
