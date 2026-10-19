@@ -8,6 +8,7 @@ import org.fallout2ce.ObjTypes.GameObject;
 import org.fallout2ce.ObjTypes.InventoryItem;
 import org.fallout2ce.ObjTypes.ObjectFlags;
 import org.fallout2ce.ProtoTypes.ItemProtoTypeId;
+import org.fallout2ce.ProtoTypes.ProtoId;
 import org.fallout2ce.ProtoTypes.ItemType;
 import org.fallout2ce.ProtoTypes.Proto;
 import org.fallout2ce.ProtoTypes.ProtoId;
@@ -111,9 +112,29 @@ public final class Inventory {
         public int weight;
     }
 
+    /**
+     * Port of {@code objectGetCarriedQuantityByProtoId} (src/inventory.cc): how
+     * many of a proto the object carries, counting what its items carry in
+     * turn.
+     */
+    public static int objectGetCarriedQuantityByProtoId(GameObject object, ProtoId protoId) {
+        int quantity = 0;
+
+        List<InventoryItem> items = object.data.inventory.items;
+        for (int index = 0; index < items.size(); index++) {
+            InventoryItem inventoryItem = items.get(index);
+            if (ProtoId.ofGameObject(inventoryItem.item).equals(protoId)) {
+                quantity += inventoryItem.quantity;
+            }
+
+            quantity += objectGetCarriedQuantityByProtoId(inventoryItem.item, protoId);
+        }
+
+        return quantity;
+    }
+
     // 0x472740 inven_item_by_index: out of bounds -> null.
-    public static GameObject inventoryItemByIndex(GameObject obj, int index) {
-        List<InventoryItem> items = obj.data.inventory.items;
+    public static GameObject inventoryItemByIndex(GameObject obj, int index) {        List<InventoryItem> items = obj.data.inventory.items;
 
         if (index < 0 || index >= items.size()) {
             return null;

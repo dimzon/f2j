@@ -35,6 +35,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x814B, // op_party_member_obj
         0x80C5, // op_get_global_var
         0x80C6, // op_set_global_var
+        0x80BA, // op_obj_is_carrying_obj
     };
 
     @Override
@@ -175,5 +176,21 @@ public class GameScriptApi extends UnsupportedScriptApi {
             GameGlobalVars.setPointer(variable, null);
             GameGlobalVars.set(variable, value.integerValue);
         }
+    }
+
+    /**
+     * op_obj_is_carrying_obj (0x80BA): how many of a proto the object
+     * carries, counting what its items carry in turn.
+     *
+     * <p>C answers 0 for a null object and prints a script error.
+     */
+    @Override
+    public int objIsCarryingObj(Program program, Object object, int protoId) {
+        if (object == null) {
+            return 0;
+        }
+
+        return Inventory.objectGetCarriedQuantityByProtoId(
+            (ObjTypes.GameObject) object, ProtoId.ofPid(protoId));
     }
 }

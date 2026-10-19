@@ -6725,6 +6725,7 @@ void sectionScriptRunGame()
     scriptRunOne("scripts\\doorcode.int", 200);
     scriptRunOne("scripts\\CODEDISK.int", 200);
     scriptRunOne("scripts\\ARTIFACT.int", 200);
+    scriptRunOne("scripts\\MutFruit.int", 200);
 }
 
 void sectionScriptProg()

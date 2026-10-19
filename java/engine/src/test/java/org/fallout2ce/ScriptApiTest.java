@@ -80,6 +80,7 @@ class ScriptApiTest {
         { "scripts\\doorcode.int", "20", "80100001", "1", "C001:0" },
         { "scripts\\CODEDISK.int", "20", "80100001", "1", "C001:0" },
         { "scripts\\ARTIFACT.int", "20", "80100001", "1", "C001:0" },
+        { "scripts\\MutFruit.int", "20", "80100001", "1", "C001:0" },
     };
 
     private static final class State {
