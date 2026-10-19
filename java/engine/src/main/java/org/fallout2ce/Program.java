@@ -1335,6 +1335,50 @@ public class Program {
         }
     }
 
+    // opConditionalCall (0x468C78): CALL_WHEN arms a procedure's condition.
+    // Two integers come off the stack in this order: data[0] (the TOP of stack)
+    // is the procedure index, data[1] is the condition offset. So a script
+    // pushes the condition offset first and the index second.
+    private static void opConditionalCall(Program program) {
+        int data0 = programStackPopInteger(program);
+        int data1 = programStackPopInteger(program);
+
+        int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * data0;
+        int flags = stackReadInt32(program.data, procedurePtr + PROCEDURE_FLAGS_OFFSET);
+
+        stackWriteInt32(flags | PROCEDURE_FLAG_CONDITIONAL, program.data, procedurePtr + PROCEDURE_FLAGS_OFFSET);
+        stackWriteInt32(data1, program.data, procedurePtr + PROCEDURE_CONDITION_OFFSET);
+    }
+
+    // opCancel (0x469BA8): drop one procedure's scheduled/conditional state.
+    // Unlike CALL_AT and WAIT this never reads the clock, so it is the one
+    // part of the delayed-call family that vectors deterministically.
+    private static void opCancel(Program program) {
+        int data = programStackPopInteger(program);
+
+        if (data < 0 || data >= program.procedureCount()) {
+            programFatalError("Invalid procedure offset given to cancel");
+        }
+
+        int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * data;
+        stackWriteInt32(0, program.data, procedurePtr + PROCEDURE_FLAGS_OFFSET);
+        stackWriteInt32(0, program.data, procedurePtr + PROCEDURE_TIME_OFFSET);
+        stackWriteInt32(0, program.data, procedurePtr + PROCEDURE_CONDITION_OFFSET);
+    }
+
+    // opCancelAll (0x469CE0): opCancel over every procedure. C's loop starts at
+    // index 0, unlike opLookupStringProc which skips main.
+    private static void opCancelAll(Program program) {
+        int count = program.procedureCount();
+
+        for (int index = 0; index < count; index++) {
+            int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * index;
+            stackWriteInt32(0, program.data, procedurePtr + PROCEDURE_FLAGS_OFFSET);
+            stackWriteInt32(0, program.data, procedurePtr + PROCEDURE_TIME_OFFSET);
+            stackWriteInt32(0, program.data, procedurePtr + PROCEDURE_CONDITION_OFFSET);
+        }
+    }
+
     // opFetchGlobalVariable (0x46BAD0): push the global at basePointer + addr.
     // Globals are addressed by NEGATIVE offsets: opSetGlobal snapshots
     // basePointer = stackValues.size(), so the only in-range addresses are
@@ -1626,6 +1670,9 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_FETCH_GLOBAL, Program::opFetchGlobalVariable);
         interpreterRegisterOpcode(OPCODE_STORE_GLOBAL, Program::opStoreGlobalVariable);
         interpreterRegisterOpcode(OPCODE_DUMP, Program::opDump);
+        interpreterRegisterOpcode(OPCODE_CALL_WHEN, Program::opConditionalCall);
+        interpreterRegisterOpcode(OPCODE_CANCEL, Program::opCancel);
+        interpreterRegisterOpcode(OPCODE_CANCEL_ALL, Program::opCancelAll);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
@@ -1642,6 +1689,14 @@ public class Program {
 
     /** Serialized {@code Procedure}: 6 int32 fields (name/flags/time/condition/body/argc). */
     static final int PROCEDURE_SIZE = 24;
+
+    /** Field offsets inside a serialized {@code Procedure}, i.e. {@code offsetof}. */
+    static final int PROCEDURE_NAME_OFFSET = 0;
+    static final int PROCEDURE_FLAGS_OFFSET = 4;
+    static final int PROCEDURE_TIME_OFFSET = 8;
+    static final int PROCEDURE_CONDITION_OFFSET = 12;
+    static final int PROCEDURE_BODY_OFFSET = 16;
+    static final int PROCEDURE_ARG_COUNT_OFFSET = 20;
 
     /**
      * Full port of {@code ProgramValue} ({@code src/interpreter.h}:

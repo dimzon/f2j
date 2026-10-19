@@ -6684,6 +6684,7 @@ void sectionVmLogic();
 void sectionVmCall();
 void sectionVmProc();
 void sectionVmGlobals();
+void sectionVmDelayed();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6887,6 +6888,7 @@ void sectionMapChild()
     sectionVmCall();
     sectionVmProc();
     sectionVmGlobals();
+    sectionVmDelayed();
 }
 
 
@@ -8496,6 +8498,141 @@ static void vmGlobalsRun(const char* name, const unsigned char* code, int codeLe
     std::printf("\n");
 
     fallout::programFree(program);
+}
+
+// Delayed/conditional-call opcodes that do not read the clock: CALL_WHEN,
+// CANCEL and CANCEL_ALL all just rewrite procedure-table fields, so the
+// procedure rows are printed afterwards to prove the writes landed where C
+// put them. CALL_AT and WAIT are held back - they fold getInterpreterTime()
+// into the stored value and there is no way to pin the timer from outside.
+static void vmDelayedRun(const char* name, const unsigned char* code, int codeLength, int budget,
+    int procedureCount, const int (*initialFlags)[3])
+{
+    unsigned char data[1024];
+    memset(data, 0, sizeof(data));
+
+    const int identifiersOffset = 46 + 24 * procedureCount;
+    static const char identifiers[] = "main\0one\0two\0three";
+    const int stringTableOffset = identifiersOffset + 4 + sizeof(identifiers);
+    static const char strings[] = "s";
+    const int codeOffset = stringTableOffset + 4 + sizeof(strings);
+    const int bodyOffset = codeOffset + codeLength;
+
+    auto writeBE32 = [&](int offset, int value) {
+        data[offset] = (unsigned char)(value >> 24);
+        data[offset + 1] = (unsigned char)(value >> 16);
+        data[offset + 2] = (unsigned char)(value >> 8);
+        data[offset + 3] = (unsigned char)value;
+    };
+
+    writeBE32(42, procedureCount);
+    for (int i = 0; i < procedureCount; i++) {
+        const int row = 46 + 24 * i;
+        writeBE32(row + 0, 4 + i * 4); // nameOffset into the identifier blob
+        writeBE32(row + 4, initialFlags[i][0]);
+        writeBE32(row + 8, initialFlags[i][1]);
+        writeBE32(row + 12, initialFlags[i][2]);
+        writeBE32(row + 16, bodyOffset);
+        writeBE32(row + 20, 0);
+    }
+
+    writeBE32(identifiersOffset, (int)sizeof(identifiers));
+    memcpy(data + identifiersOffset + 4, identifiers, sizeof(identifiers));
+    writeBE32(stringTableOffset, (int)sizeof(strings));
+    memcpy(data + stringTableOffset + 4, strings, sizeof(strings));
+    memcpy(data + codeOffset, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmdelayed-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    program->flags = 0;
+    program->instructionPointer = codeOffset;
+
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d flags=%08X stack=%d procs=%d", name,
+        program->instructionPointer, (unsigned int)program->flags,
+        (int)program->stackValues->size(), (int)procedureCount);
+    for (int i = 0; i < procedureCount; i++) {
+        const int row = 46 + 24 * i;
+        std::printf(" [%d]f=%X t=%d c=%d", i,
+            (unsigned int)fallout::stackReadInt32(program->data, row + 4),
+            fallout::stackReadInt32(program->data, row + 8),
+            fallout::stackReadInt32(program->data, row + 12));
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
+void sectionVmDelayed()
+{
+    std::puts("[vmdelayed]");
+
+    // All rows start clear, so each vector's deltas are unambiguous.
+    static const int clear[4][3] = {
+        { 0x00, 0, 0 }, { 0x00, 0, 0 }, { 0x00, 0, 0 }, { 0x00, 0, 0 },
+    };
+
+    // CALL_WHEN arms procedure 2 with condition offset 0x1234. Note the push
+    // order: the condition offset goes on first and the procedure index second,
+    // because opConditionalCall pops data[0] as the index.
+    static const unsigned char when[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x12, 0x34, // PUSH int 0x1234 (condition)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (procedure index)
+        0x80, 0x07, // CALL_WHEN
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmDelayedRun("call-when", when, sizeof(when), 32, 4, clear);
+
+    // A second CALL_WHEN on the same row ORs the flag in rather than replacing
+    // it, so an already-CRITICAL row keeps that bit.
+    static const int critical[4][3] = {
+        { 0x00, 0, 0 }, { 0x00, 0, 0 }, { 0x10, 0, 0 }, { 0x00, 0, 0 },
+    };
+    vmDelayedRun("call-when-orr", when, sizeof(when), 32, 4, critical);
+
+    // CANCEL zeroes flags, time and condition for one row only.
+    static const int armed[4][3] = {
+        { 0x00, 0, 0 },
+        { 0x01, 1000, 0 },
+        { 0x02, 0, 0x1234 },
+        { 0x03, 2000, 0x5678 },
+    };
+    static const unsigned char cancel[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x03, // PUSH int 3 (procedure index)
+        0x80, 0x48, // CANCEL
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmDelayedRun("cancel", cancel, sizeof(cancel), 32, 4, armed);
+
+    // CANCEL_ALL wipes every row, main (index 0) included.
+    static const unsigned char cancelAll[] = {
+        0x80, 0x49, // CANCEL_ALL
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmDelayedRun("cancel-all", cancelAll, sizeof(cancelAll), 32, 4, armed);
+
+    // CANCEL rejects an out-of-range index through programFatalError, which
+    // the VM loop turns into EXITED|FATAL_ERROR (0x05 in the low flags).
+    static const unsigned char cancelBad[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x04, // PUSH int 4 (== procedureCount)
+        0x80, 0x48, // CANCEL
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmDelayedRun("cancel-range", cancelBad, sizeof(cancelBad), 32, 4, armed);
 }
 
 void sectionVmGlobals()
