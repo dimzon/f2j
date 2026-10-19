@@ -6683,6 +6683,7 @@ void sectionVmControl();
 void sectionVmLogic();
 void sectionVmCall();
 void sectionVmProc();
+void sectionVmGlobals();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6885,6 +6886,7 @@ void sectionMapChild()
     sectionVmLogic();
     sectionVmCall();
     sectionVmProc();
+    sectionVmGlobals();
 }
 
 
@@ -8423,6 +8425,135 @@ void sectionVmCall()
         0x80, 0x1C, // POP_RETURN
     };
     vmCallRun("push-return", pushReturn, sizeof(pushReturn));
+}
+
+// Global variables (FETCH_GLOBAL / STORE_GLOBAL) and DUMP. These index the
+// value stack from basePointer, which SET_GLOBAL snapshots as the stack size,
+// so a self-contained program needs no call frame: push the globals, snapshot,
+// write through them and read them back.
+static void vmGlobalsRun(const char* name, const unsigned char* code, int codeLength, int budget)
+{
+    unsigned char data[1024];
+    memset(data, 0, sizeof(data));
+
+    // One procedure row so the blob parses; bodyOffset points at the NOOP pad.
+    const int identifiersOffset = 46 + 24;
+    const int stringTableOffset = identifiersOffset + 4 + 4; // "proc" + NUL
+    const int codeOffset = stringTableOffset + 4 + 4; // "str" + NUL
+    const int bodyOffset = codeOffset + codeLength;
+
+    auto writeBE32 = [&](int offset, int value) {
+        data[offset] = (unsigned char)(value >> 24);
+        data[offset + 1] = (unsigned char)(value >> 16);
+        data[offset + 2] = (unsigned char)(value >> 8);
+        data[offset + 3] = (unsigned char)value;
+    };
+
+    static const char identifiers[] = "proc";
+    static const char strings[] = "str";
+
+    writeBE32(42, 1);
+    writeBE32(46 + 0, 4);  // nameOffset
+    writeBE32(46 + 4, 0);  // flags
+    writeBE32(46 + 8, 0);  // time
+    writeBE32(46 + 12, -1); // conditionOffset
+    writeBE32(46 + 16, bodyOffset);
+    writeBE32(46 + 20, 0); // argCount
+
+    writeBE32(identifiersOffset, (int)sizeof(identifiers));
+    memcpy(data + identifiersOffset + 4, identifiers, sizeof(identifiers));
+    writeBE32(stringTableOffset, (int)sizeof(strings));
+    memcpy(data + stringTableOffset + 4, strings, sizeof(strings));
+    memcpy(data + codeOffset, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmglobals-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    program->flags = 0;
+    program->instructionPointer = codeOffset;
+
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d flags=%08X frame=%d base=%d stack=%d", name,
+        program->instructionPointer, (unsigned int)program->flags,
+        program->framePointer, program->basePointer,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
+void sectionVmGlobals()
+{
+    std::puts("[vmglobals]");
+
+    // SET_GLOBAL snapshots the stack size, so the three pushed values below
+    // *are* the global variables. The addresses are NEGATIVE: STORE_GLOBAL and
+    // FETCH_GLOBAL index basePointer + addr, and with base == size the only
+    // in-range slots are addr in -(size)..-1, i.e. the pushed values themselves.
+    // Locals go above base as positive offsets, which is why the base snapshot
+    // never moves.
+    static const unsigned char globals[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0A, // PUSH int 10  (global -3)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x14, // PUSH int 20  (global -2)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x1E, // PUSH int 30  (global -1)
+        0x80, 0x2C, // SET_GLOBAL  base = 3
+        // STORE_GLOBAL -1 = 99
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x63, // PUSH int 99
+        0xC0, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, // PUSH int -1 (addr)
+        0x80, 0x13, // STORE_GLOBAL
+        // FETCH_GLOBAL -1 -> pushes 99
+        0xC0, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, // PUSH int -1 (addr)
+        0x80, 0x12, // FETCH_GLOBAL
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmGlobalsRun("store-fetch", globals, sizeof(globals), 32);
+
+    // DUMP 2 discards the top two, leaving the three globals.
+    static const unsigned char dump[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0A, // PUSH int 10
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x14, // PUSH int 20
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x1E, // PUSH int 30
+        0x80, 0x2C, // SET_GLOBAL
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x63, // PUSH int 99
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x64, // PUSH int 100
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (count)
+        0x80, 0x2E, // DUMP
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmGlobalsRun("dump", dump, sizeof(dump), 32);
+
+    // Locals pushed after SET_GLOBAL sit above the base and must not disturb
+    // the globals: after writing global -1 through two pushed operands, the
+    // first global is still reachable at -3.
+    static const unsigned char rebasify[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x0A, // PUSH int 10  (global -3)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x14, // PUSH int 20  (global -2)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x1E, // PUSH int 30  (global -1)
+        0x80, 0x2C, // SET_GLOBAL  base = 3
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x63, // PUSH int 99  (operand)
+        0xC0, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, // PUSH int -1 (addr)
+        0x80, 0x13, // STORE_GLOBAL  (global -1 = 99)
+        0xC0, 0x01, 0xFF, 0xFF, 0xFF, 0xFD, // PUSH int -3 (addr)
+        0x80, 0x12, // FETCH_GLOBAL  -> pushes the first global, 10
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    vmGlobalsRun("locals-above-base", rebasify, sizeof(rebasify), 32);
 }
 
 void sectionVmProc()

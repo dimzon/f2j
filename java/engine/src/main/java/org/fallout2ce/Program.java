@@ -1335,6 +1335,46 @@ public class Program {
         }
     }
 
+    // opFetchGlobalVariable (0x46BAD0): push the global at basePointer + addr.
+    // Globals are addressed by NEGATIVE offsets: opSetGlobal snapshots
+    // basePointer = stackValues.size(), so the only in-range addresses are
+    // -(size)..-1 - the values that were already on the stack when SET_GLOBAL
+    // ran. Locals are positive offsets from framePointer, which is why the base
+    // never moves as locals come and go.
+    private static void opFetchGlobalVariable(Program program) {
+        int addr = programStackPopInteger(program);
+        ProgramValue value = programStackAt(program, program.basePointer + addr);
+        programStackPushValue(program, value);
+    }
+
+    // opStoreGlobalVariable (0x46BB5C): opStore's refcount discipline against
+    // the global slot at basePointer + addr.
+    private static void opStoreGlobalVariable(Program program) {
+        int addr = programStackPopInteger(program);
+        ProgramValue value = programStackPopValue(program);
+        int pos = program.basePointer + addr;
+
+        ProgramValue oldValue = programStackAt(program, pos);
+        if (oldValue.opcode == VALUE_TYPE_DYNAMIC_STRING) {
+            interpreterStringRefCountDecrease(program, oldValue.opcode, oldValue.integerValue);
+        }
+
+        programStackSet(program, pos, value);
+
+        if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
+            interpreterStringRefCountIncrease(program, VALUE_TYPE_DYNAMIC_STRING, value.integerValue);
+        }
+    }
+
+    // opDump (0x467DEC): discard the top N values. NOTE the loop is verbatim -
+    // C comments that the original walked backwards to -1.
+    private static void opDump(Program program) {
+        int data = programStackPopInteger(program);
+        for (int index = 0; index < data; index++) {
+            programStackPopValue(program);
+        }
+    }
+
     // opFetch (0x468678): push the frame value at framePointer + addr.
     private static void opFetch(Program program) {
         int addr = programStackPopInteger(program);
@@ -1583,6 +1623,9 @@ public class Program {
         // The extended set aliases the same two critical-section handlers.
         interpreterRegisterOpcode(OPCODE_START_CRITICAL, Program::opEnterCriticalSection);
         interpreterRegisterOpcode(OPCODE_END_CRITICAL, Program::opLeaveCriticalSection);
+        interpreterRegisterOpcode(OPCODE_FETCH_GLOBAL, Program::opFetchGlobalVariable);
+        interpreterRegisterOpcode(OPCODE_STORE_GLOBAL, Program::opStoreGlobalVariable);
+        interpreterRegisterOpcode(OPCODE_DUMP, Program::opDump);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
