@@ -6682,6 +6682,7 @@ void sectionVmCompare();
 void sectionVmControl();
 void sectionVmLogic();
 void sectionVmCall();
+void sectionVmProc();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6883,6 +6884,7 @@ void sectionMapChild()
     sectionVmControl();
     sectionVmLogic();
     sectionVmCall();
+    sectionVmProc();
 }
 
 
@@ -7740,6 +7742,177 @@ static void vmCallRun(const char* name, const unsigned char* body, int bodyLengt
     fallout::programFree(program);
 }
 
+// One procedure-table row, as the compiler emits it. nameOffset indexes the
+// identifiers blob, bodyOffset indexes the code region.
+struct VmProc {
+    int nameOffset;
+    int flags;
+    int argCount;
+};
+
+// Builds a full program image - procedure table, identifiers blob, static
+// string table, then the top-level code - and runs programInterpret over it.
+// procedureCount includes the always-present index 0 ("main"), which is the
+// row opLookupStringProc skips. attachParent wires a second program as the
+// child's parent so DETACH has something to detach from.
+//
+// Layout mirrors programCreateByPath: procedures = 42,
+// identifiers = 24 * count + procedures + 4,
+// staticStrings = identifiers + int32(identifiers) + 4. Every int32 header is
+// big-endian (stackReadInt32 reads BE).
+static void vmProcRun(const char* name, const VmProc* procs, int procedureCount,
+    const char* identifiers, int identifiersLength,
+    const char* stringTable, int stringTableLength,
+    const unsigned char* code, int codeLength, int budget, bool attachParent)
+{
+    unsigned char data[1024];
+    memset(data, 0, sizeof(data));
+
+    const int identifiersOffset = 46 + 24 * procedureCount;
+    const int stringTableOffset = identifiersOffset + 4 + identifiersLength;
+    const int codeOffset = stringTableOffset + 4 + stringTableLength;
+
+    auto writeBE32 = [&](int offset, int value) {
+        data[offset] = (unsigned char)(value >> 24);
+        data[offset + 1] = (unsigned char)(value >> 16);
+        data[offset + 2] = (unsigned char)(value >> 8);
+        data[offset + 3] = (unsigned char)value;
+    };
+
+    // Procedure bodies all point at the same NOOP pad just past the code, so
+    // FETCH_PROCEDURE_ADDRESS reads a valid offset without running anything.
+    const int bodyOffset = codeOffset + codeLength;
+    for (int i = 0; i < procedureCount; i++) {
+        writeBE32(42, procedureCount);
+        const int row = 46 + 24 * i;
+        writeBE32(row + 0, procs[i].nameOffset);
+        writeBE32(row + 4, procs[i].flags);
+        writeBE32(row + 8, 0); // time
+        writeBE32(row + 12, -1); // conditionOffset
+        writeBE32(row + 16, bodyOffset);
+        writeBE32(row + 20, procs[i].argCount);
+    }
+
+    writeBE32(identifiersOffset, identifiersLength);
+    memcpy(data + identifiersOffset + 4, identifiers, identifiersLength);
+    writeBE32(stringTableOffset, stringTableLength);
+    memcpy(data + stringTableOffset + 4, stringTable, stringTableLength);
+    memcpy(data + codeOffset, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmproc-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    program->flags = 0;
+    program->instructionPointer = codeOffset;
+
+    fallout::Program* parent = nullptr;
+    if (attachParent) {
+        parent = fallout::programCreateByPath(path);
+        if (parent == nullptr) {
+            std::printf("%s parent-null\n", name);
+            fallout::programFree(program);
+            return;
+        }
+        parent->flags = fallout::PROGRAM_FLAG_CHILD_CALL | fallout::PROGRAM_FLAG_CHILD_SPAWN;
+        parent->child = program;
+        program->parent = parent;
+    }
+
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d flags=%08X frame=%d base=%d stack=%d", name,
+        program->instructionPointer, (unsigned int)program->flags,
+        program->framePointer, program->basePointer,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf(" ret=%d", (int)program->returnStackValues->size());
+    for (auto it = program->returnStackValues->rbegin(); it != program->returnStackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    if (parent != nullptr) {
+        std::printf(" parentFlags=%08X parentChild=%s",
+            (unsigned int)parent->flags, parent->child == program ? "self" : "none");
+    }
+    std::printf("\n");
+
+    // Break both links first: programFree walks and frees the child chain.
+    if (parent != nullptr) {
+        parent->child = nullptr;
+        program->parent = nullptr;
+        fallout::programFree(parent);
+    }
+    fallout::programFree(program);
+}
+
+// Runs code on a program pre-seeded with the frame
+// programSetupCallWithReturnVal builds: return stack holding one resume
+// address, value stack holding flags / checkWaitFunc / windowId bottom-up.
+// POP_FLAGS_* needs exactly this shape - no trailing zero - so this is the
+// pairing that [vmcall]'s push-return shows programSetupCall breaking.
+static void vmReturnValRun(const char* name, const unsigned char* code, int codeLength, int resumeAddress)
+{
+    unsigned char data[256];
+    memset(data, 0, sizeof(data));
+    int32_t zero = 0;
+    memcpy(data + 42, &zero, sizeof(zero));
+    memcpy(data + 46, &zero, sizeof(zero));
+    memcpy(data + 50, &zero, sizeof(zero));
+    memcpy(data + 54, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmretval-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    program->flags = 0;
+    program->instructionPointer = 54;
+
+    fallout::programReturnStackPushInteger(program, resumeAddress);
+    fallout::programStackPushInteger(program, program->flags & 0xFFFF);
+    fallout::programStackPushPointer(program, (void*)program->checkWaitFunc);
+    fallout::programStackPushInteger(program, program->windowId);
+
+    fallout::programInterpret(program, -1);
+
+    std::printf("%s ip=%d flags=%08X stack=%d", name,
+        program->instructionPointer, (unsigned int)program->flags,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf(" ret=%d", (int)program->returnStackValues->size());
+    for (auto it = program->returnStackValues->rbegin(); it != program->returnStackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
 // A raw static-string table at 54 (offsets index into it), then the code.
 static void vmStringCompareRun(const char* name, const char* stringTable, int tableLength,
     const unsigned char* code, int codeLength, int budget)
@@ -8250,6 +8423,157 @@ void sectionVmCall()
         0x80, 0x1C, // POP_RETURN
     };
     vmCallRun("push-return", pushReturn, sizeof(pushReturn));
+}
+
+void sectionVmProc()
+{
+    std::puts("[vmproc]");
+
+    // Procedure metadata and critical-section opcodes, on a program with a
+    // real procedure table, identifier blob and static-string table.
+    //
+    // Identifiers blob. Note the asymmetry: programGetIdentifier returns
+    // identifiers + offset with NO +4, so nameOffset is measured from the
+    // block's own length field, whereas programGetString returns
+    // staticStrings + 4 + offset. Verified against a real script
+    // (scripts\gl_highlighting.int: 15 procedures, identifiers length 538 at
+    // 406, proc0 nameOffset 6 -> "........").
+    //
+    // The blob starts at identifiersOffset + 4, so with "main\0alpha\0beta"
+    // laid out there the nameOffsets are 4, 9 and 15.
+    static const char identifiers[] = "main\0alpha\0beta";
+    // Static strings (offsets are relative to the first byte after the
+    // length field): "beta" at 0, "gamma" at 5, "BETA" at 11.
+    static const char strings[] = "beta\0gamma\0BETA";
+
+    static const VmProc procs[] = {
+        { 4, 0x00, 0 }, // 0: main
+        { 9, 0x00, 2 }, // 1: alpha, 2 args
+        { 15, 0x00, 1 }, // 2: beta, 1 arg
+        { 15, 0x00, 3 }, // 3: beta again, 3 args
+    };
+
+    auto run = [&](const char* caseName, const unsigned char* code, int codeLength,
+                       int budget, bool attachParent = false) {
+        vmProcRun(caseName, procs, 4, identifiers, (int)sizeof(identifiers),
+            strings, (int)sizeof(strings), code, codeLength, budget, attachParent);
+    };
+
+    // Critical sections: the 0x80 flag bit survives the per-step
+    // `flags &= 0xFFFF; flags |= opcode << 16` rewrite in programInterpret.
+    static const unsigned char enter[] = {
+        0x80, 0x02, // ENTER_CRITICAL_SECTION
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x2A, // PUSH int 42
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("critical-enter", enter, sizeof(enter), 32);
+
+    static const unsigned char enterLeave[] = {
+        0x80, 0x02, // ENTER_CRITICAL_SECTION
+        0x80, 0x03, // LEAVE_CRITICAL_SECTION
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x2A, // PUSH int 42
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("critical-leave", enterLeave, sizeof(enterLeave), 32);
+
+    // START_CRITICAL / END_CRITICAL are the extended-set aliases of the same
+    // two handlers.
+    static const unsigned char startEnd[] = {
+        0x80, 0x4A, // START_CRITICAL
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x2A, // PUSH int 42
+        0x80, 0x4B, // END_CRITICAL
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x2B, // PUSH int 43
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("critical-startend", startEnd, sizeof(startEnd), 32);
+
+    // FETCH_PROCEDURE_ADDRESS pushes procedure 2's bodyOffset.
+    static const unsigned char fetchAddr[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2
+        0x80, 0x2D, // FETCH_PROCEDURE_ADDRESS
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("fetch-proc-addr", fetchAddr, sizeof(fetchAddr), 32);
+
+    // CHECK_PROCEDURE_ARGUMENT_COUNT pops (index, expected) and compares
+    // against the table's argCount. Proc 1 has 2 args.
+    static const unsigned char checkOk[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01, // PUSH int 1 (index)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x02, // PUSH int 2 (expected)
+        0x80, 0x27, // CHECK_PROCEDURE_ARGUMENT_COUNT
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x07, // PUSH int 7
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("check-args-ok", checkOk, sizeof(checkOk), 32);
+
+    // Mismatch: the name read is part of the fatal message, so the IP stays
+    // past the already-fetched opcode and EXITED|FATAL_ERROR lands on top of
+    // it.
+    static const unsigned char checkBad[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x01, // PUSH int 1 (index)
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x09, // PUSH int 9 (expected)
+        0x80, 0x27, // CHECK_PROCEDURE_ARGUMENT_COUNT
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("check-args-bad", checkBad, sizeof(checkBad), 32);
+
+    // LOOKUP_PROCEDURE_BY_NAME skips index 0 and returns the first match, so
+    // "beta" resolves to 2 even though index 3 shares the name. The lookup is
+    // case-insensitive (SDL_strcasecmp).
+    static const unsigned char lookupHit[] = {
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x00, // PUSH static string "beta"
+        0x80, 0x28, // LOOKUP_PROCEDURE_BY_NAME
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("lookup-hit", lookupHit, sizeof(lookupHit), 32);
+
+    static const unsigned char lookupCase[] = {
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x0B, // PUSH static string "BETA"
+        0x80, 0x28, // LOOKUP_PROCEDURE_BY_NAME
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("lookup-case", lookupCase, sizeof(lookupCase), 32);
+
+    // "gamma" matches no identifier -> fatal.
+    static const unsigned char lookupMiss[] = {
+        0x90, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH static string "gamma"
+        0x80, 0x28, // LOOKUP_PROCEDURE_BY_NAME
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("lookup-miss", lookupMiss, sizeof(lookupMiss), 32);
+
+    // DETACH with no parent is a no-op.
+    static const unsigned char detachNull[] = {
+        0x80, 0x0F, // DETACH
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x2A, // PUSH int 42
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("detach-null", detachNull, sizeof(detachNull), 32, false);
+
+    // DETACH clears both child flags on the parent and unlinks it.
+    static const unsigned char detachChild[] = {
+        0x80, 0x0F, // DETACH
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x2A, // PUSH int 42
+        0x80, 0x11, // STOP_PROGRAM
+    };
+    run("detach-child", detachChild, sizeof(detachChild), 32, true);
+
+    // POP_FLAGS_RETURN_VAL_EXIT pops its value before restoring the frame, so
+    // the value is already gone by the time opPopFlags reads the three frame
+    // cells and the return value lands back on the caller's stack.
+    static const unsigned char returnVal[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x4D, // PUSH int 77
+        0x80, 0x25, // POP_FLAGS_RETURN_VAL_EXIT
+    };
+    vmReturnValRun("return-val", returnVal, sizeof(returnVal), 200);
+
+    // POP_FLAGS_EXIT reads the three frame cells directly, so the code must
+    // not leave a value on top of them - the plain [vmcall] push-return case,
+    // which fatals because programSetupCall's trailing zero is still there.
+    static const unsigned char plainExit[] = {
+        0x80, 0x21, // POP_FLAGS_EXIT
+    };
+    vmReturnValRun("flags-exit", plainExit, sizeof(plainExit), 200);
 }
 
 void sectionVm()

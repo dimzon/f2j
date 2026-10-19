@@ -1427,6 +1427,85 @@ public class Program {
         programInterpret(program, -1);
     }
 
+    // opPopFlagsReturnValExit (0x46B6BC): return a value to the caller. The
+    // value is popped first and re-pushed after the frame is restored, so it
+    // lands on top of whatever the caller had left. Pairs with
+    // programSetupCallWithReturnVal (no trailing zero), unlike the plain
+    // POP_FLAGS_* pair.
+    private static void opPopFlagsReturnValExit(Program program) {
+        ProgramValue value = programStackPopValue(program);
+        opPopFlags(program);
+        program.instructionPointer = programReturnStackPopInteger(program);
+        program.flags |= PROGRAM_FLAG_FINISHED;
+        programStackPushValue(program, value);
+    }
+
+    // opDetach (0x46C1A0): unlink from the parent, clearing both child flags.
+    private static void opDetach(Program program) {
+        Program parent = program.parent;
+        if (parent == null) {
+            return;
+        }
+
+        parent.flags &= ~PROGRAM_FLAG_CHILD_CALL;
+        parent.flags &= ~PROGRAM_FLAG_CHILD_SPAWN;
+        if (parent.child == program) {
+            parent.child = null;
+        }
+    }
+
+    // opCheckProcedureArgumentCount (0x46C574): pops (index, expected) and
+    // compares against the table's argCount; a mismatch is a fatal that
+    // names the procedure.
+    private static void opCheckProcedureArgumentCount(Program program) {
+        int expectedArgumentCount = programStackPopInteger(program);
+        int procedureIndex = programStackPopInteger(program);
+        int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * procedureIndex;
+        if (stackReadInt32(program.data, procedurePtr + 20) != expectedArgumentCount) {
+            programFatalError("Wrong number of args to procedure "
+                + programGetIdentifier(program, stackReadInt32(program.data, procedurePtr)) + "\n");
+        }
+    }
+
+    // opLookupStringProc (0x46C6B4): pops a procedure name and pushes its
+    // index. Index 0 (main) is skipped - it cannot be looked up - so the
+    // search starts at 1 and the first match wins even when a later
+    // procedure repeats the name. The compare is compat_stricmp
+    // (SDL_strcasecmp), i.e. ASCII case-insensitive; equalsIgnoreCase is the
+    // Java analogue.
+    private static void opLookupStringProc(Program program) {
+        String nameToLookup = programStackPopString(program);
+        int procedureCount = program.procedureCount();
+        for (int index = 1; index < procedureCount; index++) {
+            int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * index;
+            String name = programGetIdentifier(program, stackReadInt32(program.data, procedurePtr));
+            if (name.equalsIgnoreCase(nameToLookup)) {
+                programStackPushInteger(program, index);
+                return;
+            }
+        }
+
+        programFatalError("Couldn't find string procedure " + nameToLookup + "\n");
+    }
+
+    // opFetchProcedureAddress (0x46BD60): push a procedure's bodyOffset.
+    private static void opFetchProcedureAddress(Program program) {
+        int procedureIndex = programStackPopInteger(program);
+        int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * procedureIndex;
+        programStackPushInteger(program, stackReadInt32(program.data, procedurePtr + 16));
+    }
+
+    // opEnterCriticalSection / opLeaveCriticalSection (0x46B078 / 0x46B06C).
+    // START_CRITICAL / END_CRITICAL (0x804A / 0x804B) are the extended-set
+    // aliases registered to the same two handlers.
+    private static void opEnterCriticalSection(Program program) {
+        program.flags |= PROGRAM_FLAG_CRITICAL_SECTION;
+    }
+
+    private static void opLeaveCriticalSection(Program program) {
+        program.flags &= ~PROGRAM_FLAG_CRITICAL_SECTION;
+    }
+
     // C snprintf("%.5f", ...) under the C locale; Locale.ROOT keeps the
     // decimal point stable regardless of the JVM default locale.
     private static String formatFloat5(float value) {
@@ -1494,6 +1573,16 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN, Program::opPopFlagsReturn);
         interpreterRegisterOpcode(OPCODE_POP_FLAGS_EXIT, Program::opPopFlagsExit);
         interpreterRegisterOpcode(OPCODE_POP_ADDRESS, Program::opPopAddress);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN_VAL_EXIT, Program::opPopFlagsReturnValExit);
+        interpreterRegisterOpcode(OPCODE_DETACH, Program::opDetach);
+        interpreterRegisterOpcode(OPCODE_CHECK_PROCEDURE_ARGUMENT_COUNT, Program::opCheckProcedureArgumentCount);
+        interpreterRegisterOpcode(OPCODE_LOOKUP_PROCEDURE_BY_NAME, Program::opLookupStringProc);
+        interpreterRegisterOpcode(OPCODE_FETCH_PROCEDURE_ADDRESS, Program::opFetchProcedureAddress);
+        interpreterRegisterOpcode(OPCODE_ENTER_CRITICAL_SECTION, Program::opEnterCriticalSection);
+        interpreterRegisterOpcode(OPCODE_LEAVE_CRITICAL_SECTION, Program::opLeaveCriticalSection);
+        // The extended set aliases the same two critical-section handlers.
+        interpreterRegisterOpcode(OPCODE_START_CRITICAL, Program::opEnterCriticalSection);
+        interpreterRegisterOpcode(OPCODE_END_CRITICAL, Program::opLeaveCriticalSection);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
