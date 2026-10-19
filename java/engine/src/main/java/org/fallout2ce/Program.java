@@ -323,6 +323,25 @@ public class Program {
                     break;
                 }
 
+                // The waiting state. C's checkWait returns TRUE while the wait
+                // is still in the future, and the loop keeps waiting only when
+                // it returns FALSE - so the sense is inverted, and it is
+                // ported that way.
+                if ((program.flags & PROGRAM_IS_WAITING) != 0) {
+                    interpreterBusy = true;
+
+                    if (program.checkWaitFunc != null) {
+                        if (program.checkWaitFunc.check(program) == 0) {
+                            interpreterBusy = false;
+                            continue;
+                        }
+                    }
+
+                    interpreterBusy = false;
+                    program.checkWaitFunc = null;
+                    program.flags &= ~PROGRAM_IS_WAITING;
+                }
+
                 int opcode = programGetNextOpcode(program);
 
                 // NOTE in C: only the low 16 flags survive each step.
@@ -1703,6 +1722,64 @@ public class Program {
         programStackPushValue(program, value);
     }
 
+    // opDelayedCall (0x468A38): CALL_AT schedules a procedure to run later.
+    // The two popped integers are the procedure index (on top) and the delay
+    // in seconds.
+    private static void opDelayedCall(Program program) {
+        int data0 = programStackPopInteger(program);
+        int data1 = programStackPopInteger(program);
+
+        int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * data0;
+
+        int delay = 1000 * data1;
+
+        if (!interpreterEventsSuspended) {
+            delay += (int) getInterpreterTime();
+        }
+
+        int flags = stackReadInt32(program.data, procedurePtr + PROCEDURE_FLAGS_OFFSET);
+
+        stackWriteInt32(delay, program.data, procedurePtr + PROCEDURE_TIME_OFFSET);
+        stackWriteInt32(flags | PROCEDURE_FLAG_TIMED, program.data, procedurePtr + PROCEDURE_FLAGS_OFFSET);
+    }
+
+    // opWait (0x46B0DC): suspend until the interpreter clock passes waitEnd.
+    private static void opWait(Program program) {
+        int data = programStackPopInteger(program);
+
+        program.waitStart = getInterpreterTime();
+        program.waitEnd = program.waitStart + data;
+        program.checkWaitFunc = Program::checkWait;
+        program.flags |= PROGRAM_IS_WAITING;
+    }
+
+    /**
+     * checkWait (0x46B0A4). Note the sense: it returns TRUE while the wait is
+     * still in the future, and the VM loop keeps waiting when it returns
+     * FALSE - so a program waits past its deadline and does not wait at all
+     * before it. Ported as C has it.
+     */
+    private static int checkWait(Program program) {
+        return getInterpreterTime() <= program.waitEnd ? 1 : 0;
+    }
+
+    /**
+     * getInterpreterTime (0x4670A4): {@code 1000 * timerFunc() / 1000} over
+     * unsigned 32-bit arithmetic, so the multiply wraps.
+     */
+    static long getInterpreterTime() {
+        long ticks = Ticks.getTicks() & 0xFFFFFFFFL;
+        long scaled = (1000L * ticks) & 0xFFFFFFFFL;
+        return scaled / 1000L;
+    }
+
+    /**
+     * Port of the file-static {@code interpreterEventsSuspended}. C never
+     * writes it, so the branch that would skip the clock in opDelayedCall is
+     * dead there too.
+     */
+    static boolean interpreterEventsSuspended = false;
+
     // opFetchGlobalVariable (0x46BAD0): push the global at basePointer + addr.
     // Globals are addressed by NEGATIVE offsets: opSetGlobal snapshots
     // basePointer = stackValues.size(), so the only in-range addresses are
@@ -2022,6 +2099,8 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_POP_FLAGS_EXIT_EXTERN, Program::opPopFlagsExitExtern);
         interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN_VAL_EXTERN, Program::opPopFlagsReturnValExtern);
         interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN_VAL_EXIT_EXTERN, Program::opPopFlagsReturnValExitExtern);
+        interpreterRegisterOpcode(OPCODE_CALL_AT, Program::opDelayedCall);
+        interpreterRegisterOpcode(OPCODE_WAIT, Program::opWait);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */

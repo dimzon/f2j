@@ -6687,6 +6687,7 @@ void sectionVmGlobals();
 void sectionVmDelayed();
 void sectionVmLifecycle();
 void sectionVmExternal();
+void sectionVmTimed();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6893,6 +6894,7 @@ void sectionMapChild()
     sectionVmDelayed();
     sectionVmLifecycle();
     sectionVmExternal();
+    sectionVmTimed();
 }
 
 
@@ -8901,6 +8903,160 @@ static void vmExternCallRun(const char* name, const unsigned char* code, int cod
     callee->parent = nullptr;
     fallout::programFree(caller);
     fallout::programFree(callee);
+}
+
+// CALL_AT and WAIT, the two opcodes that fold the interpreter clock into a
+// stored value.
+//
+// getInterpreterTime() is 1000 * getTicks() / 1000, and getTicks is the SDL
+// millisecond clock, so the absolute value is wall-clock and cannot go into a
+// golden file. What CAN is pinned:
+//
+//   CALL_AT stores 1000 * delay + now in the procedure's time field, where now
+//   is the clock reading taken while the opcode ran. The harness brackets the
+//   call with its own clock readings and checks that now falls inside the
+//   bracket - which pins the delay term exactly and still proves the clock
+//   was consulted once.
+//
+//   WAIT stores waitEnd = waitStart + duration, so the SPAN is exact even
+//   though both endpoints are wall-clock.
+static void vmTimedRun(const char* name, const unsigned char* code, int codeLength, int budget,
+    int procedureCount, int waitProc, bool hasWait)
+{
+    unsigned char data[1024];
+    memset(data, 0, sizeof(data));
+
+    static const char identifiers[] = "main\0one";
+    const int identifiersOffset = 46 + 24 * procedureCount;
+    static const char strings[] = "s";
+    const int stringTableOffset = identifiersOffset + 4 + sizeof(identifiers);
+    const int codeOffset = stringTableOffset + 4 + sizeof(strings);
+    const int bodyOffset = codeOffset + codeLength;
+
+    auto writeBE32 = [&](int offset, int value) {
+        data[offset] = (unsigned char)(value >> 24);
+        data[offset + 1] = (unsigned char)(value >> 16);
+        data[offset + 2] = (unsigned char)(value >> 8);
+        data[offset + 3] = (unsigned char)value;
+    };
+
+    writeBE32(42, procedureCount);
+    for (int i = 0; i < procedureCount; i++) {
+        const int row = 46 + 24 * i;
+        writeBE32(row + 0, 4 + i * 4);
+        writeBE32(row + 4, 0);
+        writeBE32(row + 8, 0);
+        writeBE32(row + 12, -1);
+        writeBE32(row + 16, bodyOffset);
+        writeBE32(row + 20, 0);
+    }
+
+    writeBE32(identifiersOffset, (int)sizeof(identifiers));
+    memcpy(data + identifiersOffset + 4, identifiers, sizeof(identifiers));
+    writeBE32(stringTableOffset, (int)sizeof(strings));
+    memcpy(data + stringTableOffset + 4, strings, sizeof(strings));
+    memcpy(data + codeOffset, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmtimed-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    program->flags = 0;
+    program->instructionPointer = codeOffset;
+
+    const unsigned int t0 = fallout::getTicks();
+    fallout::programInterpret(program, budget);
+    const unsigned int t1 = fallout::getTicks();
+
+    // 1000 * getTicks() / 1000 in unsigned 32-bit arithmetic, same as
+    // getInterpreterTime.
+    auto interpreterTime = [](unsigned int ticks) {
+        return (1000u * ticks / 1000u);
+    };
+
+    std::printf("%s ip=%d flags=%08X stack=%d", name,
+        program->instructionPointer, (unsigned int)program->flags,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+
+    if (waitProc >= 0) {
+        // The scheduled procedure's time field holds 1000 * delay + now. The
+        // absolute value is wall-clock and cannot go into a golden file, so
+        // the vector records the delay term and checks that the embedded
+        // clock reading fell inside the bracket around the call. That still
+        // has teeth: dropping the delay term, or adding it twice, pushes the
+        // embedded reading outside the bracket.
+        const int row = 46 + 24 * waitProc;
+        const int stored = fallout::stackReadInt32(program->data, row + 8);
+        const int delayTerm = 1000 * 2; // the 1000 * delay term CALL_AT adds
+        const unsigned int now = (unsigned int)(stored - delayTerm);
+        std::printf(" procFlags=%X delayTerm=%d nowInWindow=%s",
+            (unsigned int)fallout::stackReadInt32(program->data, row + 4),
+            delayTerm,
+            (now >= interpreterTime(t0) && now <= interpreterTime(t1)) ? "yes" : "no");
+    }
+
+    if (hasWait) {
+        // waitStart / waitEnd persist even after the VM clears checkWaitFunc,
+        // so the span is observable in both wait cases.
+        std::printf(" waitSpan=%d waiting=%s",
+            (int)(program->waitEnd - program->waitStart),
+            (program->flags & fallout::PROGRAM_IS_WAITING) != 0 ? "yes" : "no");
+    }
+
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
+void sectionVmTimed()
+{
+    std::puts("[vmtimed]");
+
+    unsigned char code[64];
+    int n;
+
+    // CALL_AT: push the delay, then the procedure index (it is popped first).
+    n = 0;
+    code[n++] = 0xC0; code[n++] = 0x01; code[n++] = 0; code[n++] = 0; code[n++] = 0; code[n++] = 2;
+    code[n++] = 0xC0; code[n++] = 0x01; code[n++] = 0; code[n++] = 0; code[n++] = 0; code[n++] = 1;
+    code[n++] = 0x80; code[n++] = 0x06; // CALL_AT
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmTimedRun("call-at", code, n, 32, 2, 1, false);
+
+    // WAIT with a positive duration. checkWait returns TRUE while the wait is
+    // still in the future, and the VM loop keeps waiting only when it returns
+    // FALSE - so a positive wait is skipped entirely and the program carries
+    // on to the next instruction.
+    n = 0;
+    code[n++] = 0xC0; code[n++] = 0x01; code[n++] = 0; code[n++] = 0; code[n++] = 0x13; code[n++] = 0x88;
+    code[n++] = 0x80; code[n++] = 0x47; // WAIT 5000
+    code[n++] = 0xC0; code[n++] = 0x01; code[n++] = 0; code[n++] = 0; code[n++] = 0; code[n++] = 0x2A;
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmTimedRun("wait-positive", code, n, 32, 2, -1, true);
+
+    // WAIT with a negative duration puts waitEnd in the past, so checkWait
+    // returns FALSE and the VM loop spins on the waiting state until the
+    // instruction budget runs out. The code after the WAIT never runs.
+    n = 0;
+    code[n++] = 0xC0; code[n++] = 0x01; code[n++] = 0xFF; code[n++] = 0xFF; code[n++] = 0xFF; code[n++] = 0xFF;
+    code[n++] = 0x80; code[n++] = 0x47; // WAIT -1
+    code[n++] = 0xC0; code[n++] = 0x01; code[n++] = 0; code[n++] = 0; code[n++] = 0; code[n++] = 0x2A;
+    code[n++] = 0x80; code[n++] = 0x11; // STOP_PROGRAM
+    vmTimedRun("wait-negative", code, n, 32, 2, -1, true);
 }
 
 void sectionVmExternal()
