@@ -6681,6 +6681,7 @@ void sectionVmArith();
 void sectionVmCompare();
 void sectionVmControl();
 void sectionVmLogic();
+void sectionVmCall();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6881,6 +6882,7 @@ void sectionMapChild()
     sectionVmCompare();
     sectionVmControl();
     sectionVmLogic();
+    sectionVmCall();
 }
 
 
@@ -7677,6 +7679,67 @@ static void vmControlRun(const char* name, const unsigned char* code, int codeLe
     vmRunProgram(name, data, 54, budget, true);
 }
 
+// Builds a program with one procedure and runs programExecuteProcedure.
+// The top-level code (bytes 0-41) is NOOPs except POP, POP_FLAGS_EXIT at
+// offset 24 - the fixed return address the compiler emits (verified against
+// scripts\ABEL.int). The procedure table follows at 42, the body at 78.
+static void vmCallRun(const char* name, const unsigned char* body, int bodyLength)
+{
+    unsigned char data[256];
+    memset(data, 0, sizeof(data));
+    for (int i = 0; i < 42; i += 2) {
+        data[i] = 0x80;
+        data[i + 1] = 0x00;
+    }
+    data[24] = 0x80;
+    data[25] = 0x1A; // POP
+    data[26] = 0x80;
+    data[27] = 0x21; // POP_FLAGS_EXIT
+
+    // Header fields are big-endian (stackReadInt32 reads BE).
+    data[42] = 0;
+    data[43] = 0;
+    data[44] = 0;
+    data[45] = 1; // procedure count
+    data[62] = 0;
+    data[63] = 0;
+    data[64] = 0;
+    data[65] = 78; // body offset
+    // identifiers count (70) and strings count (74) stay zero.
+    memcpy(data + 78, body, bodyLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vm-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, 256, f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    fallout::programExecuteProcedure(program, 0);
+
+    std::printf("%s ip=%d flags=%08X stack=%d", name,
+        program->instructionPointer, (unsigned int)program->flags,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf(" ret=%d", (int)program->returnStackValues->size());
+    for (auto it = program->returnStackValues->rbegin(); it != program->returnStackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
 // A raw static-string table at 54 (offsets index into it), then the code.
 static void vmStringCompareRun(const char* name, const char* stringTable, int tableLength,
     const unsigned char* code, int codeLength, int budget)
@@ -8156,6 +8219,37 @@ void sectionVmLogic()
         0x80, 0x11,
     };
     vmArithRun("or-float", nullptr, orFloat, sizeof(orFloat), 32);
+}
+
+void sectionVmCall()
+{
+    std::puts("[vmcall]");
+
+    // programExecuteProcedure on a one-procedure program. POP_EXIT returns to
+    // the top-level code at 24 and stamps PROGRAM_FLAG_FINISHED, so the VM
+    // stops there with the call frame still on the value stack.
+    //
+    // POP_RETURN does not stamp FINISHED, so the VM keeps running into the
+    // top-level POP_FLAGS_EXIT at 26 - and that fatals. programSetupCall
+    // pushes flags/checkWaitFunc/windowId and then one extra zero for the
+    // callee's return-value slot, but opPopFlags pops only three, so the
+    // windowId read steals the extra zero and the flags read lands on the
+    // checkWaitFunc PTR cell: programStackPopInteger faults, the longjmp stamps
+    // EXITED|FATAL_ERROR, and the IP stays at 28 (the opcode was already
+    // fetched). POP_FLAGS_* pairs with programSetupCallWithReturnVal, which has
+    // no trailing zero.
+
+    static const unsigned char pushExit[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH int 5
+        0x80, 0x1D, // POP_EXIT
+    };
+    vmCallRun("push-exit", pushExit, sizeof(pushExit));
+
+    static const unsigned char pushReturn[] = {
+        0xC0, 0x01, 0x00, 0x00, 0x00, 0x05, // PUSH int 5
+        0x80, 0x1C, // POP_RETURN
+    };
+    vmCallRun("push-return", pushReturn, sizeof(pushReturn));
 }
 
 void sectionVm()

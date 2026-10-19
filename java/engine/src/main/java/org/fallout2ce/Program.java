@@ -59,9 +59,12 @@ import java.util.List;
  * <li>Stacks: C {@code std::vector<ProgramValue>} push_back/pop_back
  * becomes {@link ArrayDeque} addLast/removeLast (LIFO from the tail,
  * same order). The 0x1000 overflow / empty-underflow / wrong-type pops
- * are C fatal errors; Java throws {@link IllegalStateException} with the
- * same message text (untestable in vectors, never hit on the golden
- * path).</li>
+ * are C fatal errors; they go through the same
+ * {@link #programFatalError} longjmp the VM loop catches, so a fault
+ * stamps {@code PROGRAM_FLAG_EXITED|PROGRAM_FLAG_FATAL_ERROR} and
+ * unwinds instead of propagating. The v120 {@code push-return} vector
+ * pins that path: {@code programStackPopInteger} lands on a PTR cell
+ * and faults with the IP left past the already-fetched opcode.</li>
  * <li>Missing-file divergence (deliberate, headless-safe): C
  * {@code programCreateByPath} calls the noreturn
  * {@code programFatalError} when {@code fileOpen} misses, which is
@@ -72,12 +75,14 @@ import java.util.List;
  * {@code null} rather than reading out of bounds.</li>
  * <li>Dormant execution fields: {@code instructionPointer},
  * {@code waitEnd} / {@code waitStart} (C {@code unsigned int}, widened
- * to {@code long}), {@code flags}, {@code windowId} and
- * {@code dynamicStrings} (null until the string-heap phase) are
- * transcribed and zero/null-initialized like C {@code memset}, but no
- * bytecode executes in this slice. {@code jmp_buf env} and the
- * {@code checkWaitFunc} function pointer have no headless Java form and
- * are omitted until the execution phase.</li>
+ * to {@code long}), {@code flags} and {@code dynamicStrings} (null
+ * until the string-heap phase) are transcribed and zero/null-initialized
+ * like C {@code memset}. {@code jmp_buf env} has no headless Java form
+ * and is omitted; its save/restore around {@code programInterpret} is
+ * covered by the catch in {@link #programInterpret}. {@code windowId} is
+ * restored by {@code opPopFlags}, and {@code checkWaitFunc} is carried
+ * as a null-by-default {@link InterpretCheckWaitFunc} field (still only
+ * set by the unported WAIT opcode).</li>
  * <li>{@code programFree} purge: C {@code _purgeProgram} calls
  * {@code intLibRemoveProgramReferences}, whose port is
  * {@link Nevs#removeProgramReferences} (explicitly public for future
@@ -110,11 +115,10 @@ import java.util.List;
   * ({@code 0x9001}) and dynamic ({@code 0x9801}) cells via the
   * {@code (opcode & VALUE_TYPE_MASK) != VALUE_TYPE_STRING} gate and
   * resolves through {@code programGetString} (dynamic flag wins, offset
-  * biased past the 4-byte header); {@code programStackPopPointer} maps
-  * an INT 0 cell (uninitialized exported object var) to null. Empty /
-  * mismatched pops are C noreturn fatals; Java throws
-  * {@code IllegalStateException} with the same message text and those
-  * paths are deliberately untested.</li>
+   * biased past the 4-byte header); {@code programStackPopPointer} maps
+ * an INT 0 cell (uninitialized exported object var) to null. Empty /
+ * mismatched pops are C noreturn fatals, ported as the same
+ * {@link #programFatalError} longjmp.</li>
  * </ul>
  */
 public class Program {
@@ -254,6 +258,26 @@ public class Program {
     static final int OPCODE_CANCEL_ALL = 0x8049;
     static final int OPCODE_START_CRITICAL = 0x804A;
     static final int OPCODE_END_CRITICAL = 0x804B;
+
+    /** Port of {@code PROCEDURE_FLAG_TIMED} (0x01, {@code src/interpreter.h}). */
+    static final int PROCEDURE_FLAG_TIMED = 0x01;
+
+    /** Port of {@code PROCEDURE_FLAG_CONDITIONAL} (0x02). */
+    static final int PROCEDURE_FLAG_CONDITIONAL = 0x02;
+
+    /** Port of {@code PROCEDURE_FLAG_IMPORTED} (0x04). */
+    static final int PROCEDURE_FLAG_IMPORTED = 0x04;
+
+    /** Port of {@code PROCEDURE_FLAG_EXPORTED} (0x08). */
+    static final int PROCEDURE_FLAG_EXPORTED = 0x08;
+
+    /** Port of {@code PROCEDURE_FLAG_CRITICAL} (0x10). */
+    static final int PROCEDURE_FLAG_CRITICAL = 0x10;
+
+    /** Port of {@code InterpretCheckWaitFunc} (src/interpreter.h). */
+    interface InterpretCheckWaitFunc {
+        int check(Program program);
+    }
 
     /**
      * Port of {@code programInterpret} (src/interpreter.cc): the VM loop.
@@ -1318,6 +1342,91 @@ public class Program {
         programStackPushValue(program, value);
     }
 
+    // opPopExit (0x46B658): return from a procedure, marking FINISHED.
+    private static void opPopExit(Program program) {
+        program.instructionPointer = programReturnStackPopInteger(program);
+        program.flags |= PROGRAM_FLAG_FINISHED;
+    }
+
+    // opPopFlags (0x46B590): restore windowId / checkWaitFunc / flags from the
+    // value stack (the frame programSetupCall pushed).
+    private static void opPopFlags(Program program) {
+        program.windowId = programStackPopInteger(program);
+        program.checkWaitFunc = (InterpretCheckWaitFunc) programStackPopPointer(program);
+        program.flags = programStackPopInteger(program) & 0xFFFF;
+    }
+
+    // opPopFlagsReturn (0x46B67C).
+    private static void opPopFlagsReturn(Program program) {
+        opPopFlags(program);
+        program.instructionPointer = programReturnStackPopInteger(program);
+    }
+
+    // opPopFlagsExit (0x46B698).
+    private static void opPopFlagsExit(Program program) {
+        opPopFlags(program);
+        program.instructionPointer = programReturnStackPopInteger(program);
+        program.flags |= PROGRAM_FLAG_FINISHED;
+    }
+
+    // opPopAddress (0x46BA10): discard the top return-stack cell.
+    private static void opPopAddress(Program program) {
+        programReturnStackPopValue(program);
+    }
+
+    // opCall (0x46B108): jump to a procedure body by index. Imported
+    // procedures are a TODO in C too.
+    private static void opCall(Program program) {
+        int value = programStackPopInteger(program);
+        int ptr = program.procedures + 4 + PROCEDURE_SIZE * value;
+        int flags = stackReadInt32(program.data, ptr + 4);
+        if ((flags & PROCEDURE_FLAG_IMPORTED) != 0) {
+            // TODO: Incomplete (matches C).
+        } else {
+            program.instructionPointer = stackReadInt32(program.data, ptr + 16);
+            if ((flags & PROCEDURE_FLAG_CRITICAL) != 0) {
+                program.flags |= PROGRAM_FLAG_CRITICAL_SECTION;
+            }
+        }
+    }
+
+    // programSetupCallWithReturnVal (0x46CED0): save the caller's IP and the
+    // return address on the return stack, save flags/windowId/checkWaitFunc on
+    // the value stack, then jump to the callee.
+    static void programSetupCallWithReturnVal(Program program, int address, int returnAddress) {
+        programReturnStackPushInteger(program, program.instructionPointer);
+        programReturnStackPushInteger(program, returnAddress);
+        programStackPushInteger(program, program.flags & 0xFFFF);
+        programStackPushPointer(program, program.checkWaitFunc);
+        programStackPushInteger(program, program.windowId);
+        program.flags &= ~0xFFFF;
+        program.instructionPointer = address;
+    }
+
+    // programSetupCall (0x46CF78): the same, plus a trailing zero.
+    static void programSetupCall(Program program, int address, int returnAddress) {
+        programSetupCallWithReturnVal(program, address, returnAddress);
+        programStackPushInteger(program, 0);
+    }
+
+    // programExecuteProcedure (0x46DD2C), local branch. The return address 24
+    // is the fixed offset of the compiler's POP, POP_FLAGS_EXIT sequence in a
+    // script's top-level code (verified against scripts\ABEL.int). The C
+    // jmp_buf save/restore around programInterpret has no Java form; the catch
+    // in programInterpret is the equivalent.
+    public static void programExecuteProcedure(Program program, int procedureIndex) {
+        int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * procedureIndex;
+        int procedureFlags = stackReadInt32(program.data, procedurePtr + 4);
+        if ((procedureFlags & PROCEDURE_FLAG_IMPORTED) != 0) {
+            // External procedure: needs intlib, not ported.
+            return;
+        }
+
+        int procedureAddress = stackReadInt32(program.data, procedurePtr + 16);
+        programSetupCall(program, procedureAddress, 24);
+        programInterpret(program, -1);
+    }
+
     // C snprintf("%.5f", ...) under the C locale; Locale.ROOT keeps the
     // decimal point stable regardless of the JVM default locale.
     private static String formatFloat5(float value) {
@@ -1379,6 +1488,12 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_FETCH, Program::opFetch);
         interpreterRegisterOpcode(OPCODE_AND, Program::opLogicalOperatorAnd);
         interpreterRegisterOpcode(OPCODE_OR, Program::opLogicalOperatorOr);
+        interpreterRegisterOpcode(OPCODE_CALL, Program::opCall);
+        interpreterRegisterOpcode(OPCODE_POP_EXIT, Program::opPopExit);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS, Program::opPopFlags);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN, Program::opPopFlagsReturn);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS_EXIT, Program::opPopFlagsExit);
+        interpreterRegisterOpcode(OPCODE_POP_ADDRESS, Program::opPopAddress);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
@@ -1585,6 +1700,9 @@ public class Program {
     /** Port of {@code windowId} (dormant). */
     public int windowId;
 
+    /** Port of {@code checkWaitFunc} (null until the WAIT opcode sets it). */
+    public InterpretCheckWaitFunc checkWaitFunc;
+
     /** Port of {@code exited} (init false). */
     public boolean exited;
 
@@ -1756,13 +1874,13 @@ public class Program {
         return -1;
     }
 
-    // programStackPushValue (overflow is a C fatal; Java throws, same text).
-    // C bumps the dynamic-string refcount on push (exact-opcode gate on
-    // VALUE_TYPE_DYNAMIC_STRING); mirrored here so push/pop balance and the
+    // programStackPushValue (overflow is a C fatal; same programFatalError
+    // longjmp). C bumps the dynamic-string refcount on push (exact-opcode gate
+    // on VALUE_TYPE_DYNAMIC_STRING); mirrored here so push/pop balance and the
     // heap accounting matches C on every path.
     public static void programStackPushValue(Program program, ProgramValue value) {
         if (program.stackValues.size() >= 0x1000) {
-            throw new IllegalStateException("programStackPushValue: Stack overflow.");
+            programFatalError("programStackPushValue: Stack overflow.");
         }
         program.stackValues.add(new ProgramValue(value));
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
@@ -1794,11 +1912,12 @@ public class Program {
         programStackPushValue(program, new ProgramValue(value));
     }
 
-    // programStackPopValue (underflow is a C fatal; Java throws, same text).
-    // C drops the dynamic-string refcount on pop (same exact-opcode gate).
+    // programStackPopValue (underflow is a C fatal; same programFatalError
+    // longjmp). C drops the dynamic-string refcount on pop (same exact-opcode
+    // gate).
     public static ProgramValue programStackPopValue(Program program) {
         if (program.stackValues.isEmpty()) {
-            throw new IllegalStateException("programStackPopValue: Stack underflow.");
+            programFatalError("programStackPopValue: Stack underflow.");
         }
         ProgramValue value = program.stackValues.remove(program.stackValues.size() - 1);
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
@@ -1822,36 +1941,37 @@ public class Program {
         program.stackValues.set(index, new ProgramValue(value));
     }
 
-    // programStackPopInteger (wrong-type pop is a C fatal; Java throws, same text).
+    // programStackPopInteger (wrong-type pop is a C fatal; same programFatalError
+    // longjmp).
     public static int programStackPopInteger(Program program) {
         ProgramValue value = programStackPopValue(program);
         if (value.opcode != VALUE_TYPE_INT) {
-            throw new IllegalStateException("integer expected, got " + Integer.toHexString(value.opcode));
+            programFatalError("integer expected, got " + Integer.toHexString(value.opcode));
         }
         return value.integerValue;
     }
 
     // programStackPopString: mask gate admits both static (0x9001) and
     // dynamic (0x9801) strings since 0x9801 & 0xF7FF == 0x9001; resolves via
-    // programGetString. Mismatch is a C fatal; Java throws (untested path).
+    // programGetString. Mismatch is a C fatal.
     public static String programStackPopString(Program program) {
         ProgramValue value = programStackPopValue(program);
         if ((value.opcode & VALUE_TYPE_MASK) != VALUE_TYPE_STRING) {
-            throw new IllegalStateException("string expected, got " + Integer.toHexString(value.opcode));
+            programFatalError("string expected, got " + Integer.toHexString(value.opcode));
         }
         return programGetString(program, value.opcode, value.integerValue);
     }
 
     // programStackPopPointer: an INT 0 cell (uninitialized exported object
     // var) reads back as null instead of faulting; any other non-PTR cell
-    // is a C fatal (Java throws, untested path).
+    // is a C fatal.
     public static Object programStackPopPointer(Program program) {
         ProgramValue value = programStackPopValue(program);
         if (value.opcode == VALUE_TYPE_INT && value.integerValue == 0) {
             return null;
         }
         if (value.opcode != VALUE_TYPE_PTR) {
-            throw new IllegalStateException("pointer expected, got " + Integer.toHexString(value.opcode));
+            programFatalError("pointer expected, got " + Integer.toHexString(value.opcode));
         }
         return value.pointerValue;
     }
@@ -1860,7 +1980,7 @@ public class Program {
     // value stack, but on returnStackValues).
     public static void programReturnStackPushValue(Program program, ProgramValue value) {
         if (program.returnStackValues.size() >= 0x1000) {
-            throw new IllegalStateException("programReturnStackPushValue: Stack overflow.");
+            programFatalError("programReturnStackPushValue: Stack overflow.");
         }
         program.returnStackValues.add(new ProgramValue(value));
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
@@ -1878,10 +1998,11 @@ public class Program {
         programReturnStackPushValue(program, new ProgramValue(value));
     }
 
-    // programReturnStackPopValue (underflow is a C fatal; Java throws, same text).
+    // programReturnStackPopValue (underflow is a C fatal; same programFatalError
+    // longjmp).
     public static ProgramValue programReturnStackPopValue(Program program) {
         if (program.returnStackValues.isEmpty()) {
-            throw new IllegalStateException("programReturnStackPopValue: Stack underflow.");
+            programFatalError("programReturnStackPopValue: Stack underflow.");
         }
         ProgramValue value = program.returnStackValues.remove(program.returnStackValues.size() - 1);
         if (value.opcode == VALUE_TYPE_DYNAMIC_STRING) {
