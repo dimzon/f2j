@@ -8794,6 +8794,115 @@ static void vmExternRun(const char* caseName, const char* path, const char* iden
     fallout::programFree(program);
 }
 
+// The "return from an external call" opcodes (POP_FLAGS_*_EXTERN). They
+// restore the caller's state from the callee's return stack.
+//
+// The return stack is built here by hand, in the order the CONSUMERS pop it:
+// caller, checkWaitFunc, flags, returnAddress. That is NOT the order
+// setupExternalCallWithReturnVal pushes it - C pushes returnAddress last, so
+// the real producer leaves the consumers reading the wrong slots. Since
+// PROCEDURE_FLAG_IMPORTED is never set anywhere, the real path is dead, and
+// this is the only way to exercise the opcodes' own logic.
+//
+// The callee's VALUE stack carries the frame opPopFlags restores: windowId on
+// top, then checkWaitFunc, then flags.
+static void vmExternCallRun(const char* name, const unsigned char* code, int codeLength,
+    int budget, bool withValue, int value)
+{
+    unsigned char data[1024];
+    memset(data, 0, sizeof(data));
+
+    static const char identifiers[] = "main";
+    const int identifiersOffset = 46 + 24;
+    static const char strings[] = "s";
+    const int stringTableOffset = identifiersOffset + 4 + sizeof(identifiers);
+    const int codeOffset = stringTableOffset + 4 + sizeof(strings);
+    const int bodyOffset = codeOffset + codeLength;
+
+    auto writeBE32 = [&](int offset, int value) {
+        data[offset] = (unsigned char)(value >> 24);
+        data[offset + 1] = (unsigned char)(value >> 16);
+        data[offset + 2] = (unsigned char)(value >> 8);
+        data[offset + 3] = (unsigned char)value;
+    };
+
+    writeBE32(42, 1);
+    writeBE32(46 + 0, 4);
+    writeBE32(46 + 16, bodyOffset);
+    writeBE32(46 + 20, 0);
+
+    writeBE32(identifiersOffset, (int)sizeof(identifiers));
+    memcpy(data + identifiersOffset + 4, identifiers, sizeof(identifiers));
+    writeBE32(stringTableOffset, (int)sizeof(strings));
+    memcpy(data + stringTableOffset + 4, strings, sizeof(strings));
+    memcpy(data + codeOffset, code, codeLength);
+
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/vmexterncall-%s.int", name);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", name);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* callee = fallout::programCreateByPath(path);
+    fallout::Program* caller = fallout::programCreateByPath(path);
+    if (callee == nullptr || caller == nullptr) {
+        std::printf("%s create=null\n", name);
+        return;
+    }
+    callee->flags = 0;
+    callee->instructionPointer = codeOffset;
+    callee->windowId = 5;
+    caller->flags = 0;
+    caller->instructionPointer = 1234;
+    caller->windowId = 9;
+
+    // Callee value stack: [flags, checkWaitFunc, windowId] with windowId on top.
+    // The flags must carry no bit the VM loop breaks on (EXITED, FATAL_ERROR,
+    // STOPPED, CHILD_CALL, FINISHED, CHILD_SPAWN), otherwise the loop stops
+    // before the opcode's effect on the instruction pointer can be seen.
+    // PROGRAM_FLAG_RUNNING is the one flag that is inert here.
+    fallout::programStackPushInteger(callee, 0x0002);
+    fallout::programStackPushPointer(callee, nullptr);
+    fallout::programStackPushInteger(callee, 77); // windowId
+    if (withValue) {
+        // The return value is popped BEFORE opPopFlags, so it goes on top.
+        fallout::programStackPushInteger(callee, value);
+    }
+
+    // Callee return stack, in the order the consumers pop it. The return
+    // address points at the STOP_PROGRAM that follows the opcode in the code,
+    // so an opcode that does NOT set FINISHED resumes there and runs it -
+    // which is how the two variants are told apart.
+    fallout::programReturnStackPushInteger(callee, codeOffset + 2); // returnAddress
+    fallout::programReturnStackPushInteger(callee, 0x0123); // caller's flags
+    fallout::programReturnStackPushPointer(callee, nullptr); // caller's checkWaitFunc
+    fallout::programReturnStackPushPointer(callee, caller);
+
+    // The caller's own return stack holds the address the caller resumes at.
+    fallout::programReturnStackPushInteger(caller, 2222);
+
+    fallout::programInterpret(callee, budget);
+
+    std::printf("%s ip=%d flags=%08X window=%d stack=%d ret=%d callerIp=%d callerFlags=%08X callerStack=%d",
+        name, callee->instructionPointer, (unsigned int)callee->flags, callee->windowId,
+        (int)callee->stackValues->size(), (int)callee->returnStackValues->size(),
+        caller->instructionPointer,
+        (unsigned int)caller->flags, (int)caller->stackValues->size());
+    for (auto it = caller->stackValues->rbegin(); it != caller->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf("\n");
+
+    caller->child = nullptr;
+    callee->parent = nullptr;
+    fallout::programFree(caller);
+    fallout::programFree(callee);
+}
+
 void sectionVmExternal()
 {
     std::puts("[vmexternal]");
@@ -8883,6 +8992,33 @@ void sectionVmExternal()
     code[n++] = 0x80; code[n++] = 0x14; // FETCH_EXTERNAL
     code[n++] = 0x80; code[n++] = 0x11;
     vmExternRun("long-name-unfindable", path, longIdentifiers, (int)sizeof(longIdentifiers), code, n, 32);
+
+    // The four external-call return opcodes.
+    unsigned char xcode[32];
+    int xn;
+
+    xn = 0;
+    xcode[xn++] = 0x80; xcode[xn++] = 0x22; // POP_FLAGS_RETURN_EXTERN
+    xcode[xn++] = 0x80; xcode[xn++] = 0x11; // STOP_PROGRAM
+    vmExternCallRun("return-extern", xcode, xn, 32, false, 0);
+
+    xn = 0;
+    xcode[xn++] = 0x80; xcode[xn++] = 0x23; // POP_FLAGS_EXIT_EXTERN
+    xcode[xn++] = 0x80; xcode[xn++] = 0x11;
+    vmExternCallRun("exit-extern", xcode, xn, 32, false, 0);
+
+    // The return value is popped before opPopFlags, so it sits on top of the
+    // frame. It ends up on the CALLER's stack.
+    xn = 0;
+    xcode[xn++] = 0x80; xcode[xn++] = 0x24; // POP_FLAGS_RETURN_VAL_EXTERN
+    xcode[xn++] = 0x80; xcode[xn++] = 0x11;
+    vmExternCallRun("return-val-extern", xcode, xn, 32, true, 55);
+
+    // This one puts the value back on the CALLEE's stack instead.
+    xn = 0;
+    xcode[xn++] = 0x80; xcode[xn++] = 0x26; // POP_FLAGS_RETURN_VAL_EXIT_EXTERN
+    xcode[xn++] = 0x80; xcode[xn++] = 0x11;
+    vmExternCallRun("return-val-exit-extern", xcode, xn, 32, true, 66);
 }
 
 void sectionVmLifecycle()

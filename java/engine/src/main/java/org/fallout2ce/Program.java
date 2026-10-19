@@ -1580,6 +1580,129 @@ public class Program {
         }
     }
 
+    // setupExternalCallWithReturnVal (0x46D0B0): prepare the callee for a
+    // cross-program call. The callee's return stack receives the caller's
+    // saved state and the callee's VALUE stack receives the frame that
+    // opPopFlags will restore.
+    //
+    // NOTE the push order on the return stack. The four consumers below pop
+    // them as caller, checkWaitFunc, flags, returnAddress - so a LIFO stack
+    // needs returnAddress pushed FIRST. C pushes it LAST, which leaves the
+    // consumers reading the wrong slots. Ported verbatim, bug and all; see
+    // the opPopFlags*Extern comments.
+    private static void setupExternalCallWithReturnVal(Program caller, Program callee,
+        int address, int returnAddress) {
+        programReturnStackPushInteger(callee, callee.instructionPointer);
+
+        programReturnStackPushInteger(callee, caller.flags & 0xFFFF);
+
+        programReturnStackPushPointer(callee, caller.checkWaitFunc);
+
+        programReturnStackPushPointer(callee, caller);
+
+        programReturnStackPushInteger(callee, returnAddress);
+
+        programStackPushInteger(callee, callee.flags & 0xFFFF);
+
+        programStackPushPointer(callee, callee.checkWaitFunc);
+
+        programStackPushInteger(callee, callee.windowId);
+
+        callee.flags &= ~0xFFFF;
+        callee.instructionPointer = address;
+        callee.windowId = caller.windowId;
+
+        caller.flags |= PROGRAM_FLAG_CHILD_CALL;
+    }
+
+    // setupExternalCall (0x46DB18): the above plus a trailing zero, which the
+    // callee sees as the "no return value" slot.
+    private static void setupExternalCall(Program caller, Program callee, int address,
+        int returnAddress) {
+        setupExternalCallWithReturnVal(caller, callee, address, returnAddress);
+        programStackPushInteger(callee, 0);
+    }
+
+    // The four "return from an external call" opcodes. They restore the
+    // caller's state from the callee's return stack, in the order caller,
+    // checkWaitFunc, flags, returnAddress.
+    //
+    // C pops them with programReturnStackPopPointer / PopInteger, which read
+    // a union - so an int read as a pointer yields the int's bits. Java's
+    // ProgramValue keeps the two apart, so an int read as a pointer is null
+    // here. Only the order matters for the port: see setupExternalCall.
+
+    // opPopFlagsReturnExtern (0x46C250): return to the caller.
+    private static void opPopFlagsReturnExtern(Program program) {
+        opPopFlags(program);
+
+        Program caller = (Program) programReturnStackPopPointer(program);
+        caller.checkWaitFunc = (InterpretCheckWaitFunc) programReturnStackPopPointer(program);
+        caller.flags = programReturnStackPopInteger(program);
+
+        program.instructionPointer = programReturnStackPopInteger(program);
+    }
+
+    // opPopFlagsExitExtern (0x46C2C0): return to the caller and finish.
+    private static void opPopFlagsExitExtern(Program program) {
+        opPopFlags(program);
+
+        Program caller = (Program) programReturnStackPopPointer(program);
+        caller.checkWaitFunc = (InterpretCheckWaitFunc) programReturnStackPopPointer(program);
+        caller.flags = programReturnStackPopInteger(program);
+
+        program.instructionPointer = programReturnStackPopInteger(program);
+
+        program.flags |= PROGRAM_FLAG_FINISHED;
+    }
+
+    // opPopFlagsReturnValExtern (0x46C330): return to the caller, handing a
+    // value to the CALLER's stack. A string is re-interned into the caller's
+    // own heap, because the callee's offset means nothing there.
+    private static void opPopFlagsReturnValExtern(Program program) {
+        ProgramValue value = programStackPopValue(program);
+
+        opPopFlags(program);
+
+        Program caller = (Program) programReturnStackPopPointer(program);
+        caller.checkWaitFunc = (InterpretCheckWaitFunc) programReturnStackPopPointer(program);
+        caller.flags = programReturnStackPopInteger(program);
+        if ((value.opcode & 0xF7FF) == VALUE_TYPE_STRING) {
+            String string = programGetString(program, value.opcode, value.integerValue);
+            ProgramValue otherValue = new ProgramValue();
+            otherValue.integerValue = programPushString(caller, string);
+            otherValue.opcode = VALUE_TYPE_DYNAMIC_STRING;
+            programStackPushValue(caller, otherValue);
+        } else {
+            programStackPushValue(caller, value);
+        }
+
+        if ((caller.flags & PROGRAM_FLAG_CRITICAL_SECTION) != 0) {
+            program.flags &= ~PROGRAM_FLAG_CRITICAL_SECTION;
+        }
+
+        program.instructionPointer = programReturnStackPopInteger(program);
+        caller.instructionPointer = programReturnStackPopInteger(caller);
+    }
+
+    // opPopFlagsReturnValExitExtern (0x46C3B8): unlike the variant above, the
+    // value goes back on the CALLEE's stack, not the caller's.
+    private static void opPopFlagsReturnValExitExtern(Program program) {
+        ProgramValue value = programStackPopValue(program);
+
+        opPopFlags(program);
+
+        Program caller = (Program) programReturnStackPopPointer(program);
+        caller.checkWaitFunc = (InterpretCheckWaitFunc) programReturnStackPopPointer(program);
+        caller.flags = programReturnStackPopInteger(program);
+
+        program.instructionPointer = programReturnStackPopInteger(program);
+
+        program.flags |= PROGRAM_FLAG_FINISHED;
+
+        programStackPushValue(program, value);
+    }
+
     // opFetchGlobalVariable (0x46BAD0): push the global at basePointer + addr.
     // Globals are addressed by NEGATIVE offsets: opSetGlobal snapshots
     // basePointer = stackValues.size(), so the only in-range addresses are
@@ -1703,7 +1826,20 @@ public class Program {
         int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * procedureIndex;
         int procedureFlags = stackReadInt32(program.data, procedurePtr + 4);
         if ((procedureFlags & PROCEDURE_FLAG_IMPORTED) != 0) {
-            // External procedure: needs intlib, not ported.
+            // External procedure: resolved through the shared registry.
+            String procedureIdentifier = programGetIdentifier(program,
+                stackReadInt32(program.data, procedurePtr + PROCEDURE_NAME_OFFSET));
+            Export.ExternalProcedure external = Export.lookupProcedure(procedureIdentifier);
+            if (external == null || external.program == null) {
+                return;
+            }
+            if (external.argumentCount != 0) {
+                // C refuses an external procedure with arguments here.
+                return;
+            }
+
+            setupExternalCall(program, external.program, external.address, 32);
+            programInterpret(external.program, -1);
             return;
         }
 
@@ -1882,6 +2018,10 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_EXPORT_PROCEDURE, Program::opExportProcedure);
         interpreterRegisterOpcode(OPCODE_FETCH_EXTERNAL, Program::opFetchExternalVariable);
         interpreterRegisterOpcode(OPCODE_STORE_EXTERNAL, Program::opStoreExternalVariable);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN_EXTERN, Program::opPopFlagsReturnExtern);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS_EXIT_EXTERN, Program::opPopFlagsExitExtern);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN_VAL_EXTERN, Program::opPopFlagsReturnValExtern);
+        interpreterRegisterOpcode(OPCODE_POP_FLAGS_RETURN_VAL_EXIT_EXTERN, Program::opPopFlagsReturnValExitExtern);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
