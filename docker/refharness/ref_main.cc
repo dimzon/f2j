@@ -6686,6 +6686,7 @@ void sectionVmProc();
 void sectionVmGlobals();
 void sectionVmDelayed();
 void sectionVmLifecycle();
+void sectionVmExternal();
 
 // A fresh process for the map sections. The main run's object churn leaves
 // freed objects linked (itemAdd never unlinks, _obj_inven_free frees), so
@@ -6891,6 +6892,7 @@ void sectionMapChild()
     sectionVmGlobals();
     sectionVmDelayed();
     sectionVmLifecycle();
+    sectionVmExternal();
 }
 
 
@@ -8720,6 +8722,167 @@ static int pushStaticString(unsigned char* out, int offset)
     out[4] = (unsigned char)(offset >> 8);
     out[5] = (unsigned char)offset;
     return 6;
+}
+
+// External variable / procedure registry (src/export.cc). EXPORT_VARIABLE and
+// EXPORT_PROCEDURE publish names into the two shared 1013-slot tables that
+// FETCH_EXTERNAL and STORE_EXTERNAL read back. The popped operand is an
+// identifier-table OFFSET, not the name.
+//
+// Two properties of the registry shape the harness. The tables are global and
+// never reset, so entries leak from one case into the next - the cases are
+// therefore ordered with the genuinely-missing ones first, before anything has
+// been exported. And externalVariableCreate compares program->name, not the
+// Program pointer, so every case must load from the SAME path or a second
+// EXPORT_VARIABLE of a live name would collide with a different owner.
+static void vmExternRun(const char* caseName, const char* path, const char* identifiers,
+    int identifiersLength, const unsigned char* code, int codeLength, int budget)
+{
+    unsigned char data[1024];
+    memset(data, 0, sizeof(data));
+
+    const int identifiersOffset = 46 + 24;
+    static const char strings[] = "hello";
+    const int stringTableOffset = identifiersOffset + 4 + identifiersLength;
+    const int codeOffset = stringTableOffset + 4 + sizeof(strings);
+    const int bodyOffset = codeOffset + codeLength;
+
+    auto writeBE32 = [&](int offset, int value) {
+        data[offset] = (unsigned char)(value >> 24);
+        data[offset + 1] = (unsigned char)(value >> 16);
+        data[offset + 2] = (unsigned char)(value >> 8);
+        data[offset + 3] = (unsigned char)value;
+    };
+
+    writeBE32(42, 1);
+    writeBE32(46 + 0, 4);
+    writeBE32(46 + 16, bodyOffset);
+    writeBE32(46 + 20, 0);
+
+    writeBE32(identifiersOffset, identifiersLength);
+    memcpy(data + identifiersOffset + 4, identifiers, identifiersLength);
+    writeBE32(stringTableOffset, (int)sizeof(strings));
+    memcpy(data + stringTableOffset + 4, strings, sizeof(strings));
+    memcpy(data + codeOffset, code, codeLength);
+
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) {
+        std::printf("%s fopen-failed\n", caseName);
+        return;
+    }
+    fwrite(data, 1, sizeof(data), f);
+    fclose(f);
+
+    fallout::Program* program = fallout::programCreateByPath(path);
+    if (program == nullptr) {
+        std::printf("%s create=null\n", caseName);
+        return;
+    }
+    program->flags = 0;
+    program->instructionPointer = codeOffset;
+
+    fallout::programInterpret(program, budget);
+
+    std::printf("%s ip=%d flags=%08X stack=%d", caseName,
+        program->instructionPointer, (unsigned int)program->flags,
+        (int)program->stackValues->size());
+    for (auto it = program->stackValues->rbegin(); it != program->stackValues->rend(); ++it) {
+        std::printf(" %04X:%d", (unsigned int)it->opcode, it->integerValue);
+    }
+    std::printf("\n");
+
+    fallout::programFree(program);
+}
+
+void sectionVmExternal()
+{
+    std::puts("[vmexternal]");
+
+    // Identifier offsets. programGetIdentifier is `identifiers + offset` with
+    // NO +4, and `identifiers` points AT the block's own length field - so the
+    // blob bytes start at offset 4 and "main\0shared\0thing" puts "main" at 4,
+    // "shared" at 9 and "thing" at 16.
+    static const char identifiers[] = "main\0shared\0thing";
+    const int sharedOffset = 9;
+    const int thingOffset = 16;
+
+    // One path for every case, so program->name matches across them.
+    static const char path[] = "/tmp/vmextern-shared.int";
+
+    auto pushInt = [](unsigned char* out, int& n, int value) {
+        out[n++] = 0xC0; out[n++] = 0x01;
+        out[n++] = (unsigned char)(value >> 24);
+        out[n++] = (unsigned char)(value >> 16);
+        out[n++] = (unsigned char)(value >> 8);
+        out[n++] = (unsigned char)value;
+    };
+
+    unsigned char code[96];
+    int n;
+
+    // Must run first: the table is empty, so fetching an unexported name is
+    // fatal. Everything below depends on this ordering.
+    n = 0;
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x14; // FETCH_EXTERNAL
+    code[n++] = 0x80; code[n++] = 0x11;
+    vmExternRun("fetch-missing", path, identifiers, (int)sizeof(identifiers), code, n, 32);
+
+    n = 0;
+    pushInt(code, n, 42);
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x15; // STORE_EXTERNAL
+    code[n++] = 0x80; code[n++] = 0x11;
+    vmExternRun("store-missing", path, identifiers, (int)sizeof(identifiers), code, n, 32);
+
+    // export, store 42, fetch it back.
+    n = 0;
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x16; // EXPORT_VARIABLE
+    pushInt(code, n, 42);
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x15; // STORE_EXTERNAL
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x14; // FETCH_EXTERNAL
+    code[n++] = 0x80; code[n++] = 0x11;
+    vmExternRun("export-store-fetch", path, identifiers, (int)sizeof(identifiers), code, n, 32);
+
+    // A second name lives beside it in the same table, untouched by the first.
+    n = 0;
+    pushInt(code, n, thingOffset);
+    code[n++] = 0x80; code[n++] = 0x16; // EXPORT_VARIABLE thing
+    pushInt(code, n, 7);
+    pushInt(code, n, thingOffset);
+    code[n++] = 0x80; code[n++] = 0x15; // STORE_EXTERNAL thing = 7
+    pushInt(code, n, thingOffset);
+    code[n++] = 0x80; code[n++] = 0x14; // FETCH_EXTERNAL thing
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x14; // FETCH_EXTERNAL shared (still 42)
+    code[n++] = 0x80; code[n++] = 0x11;
+    vmExternRun("two-names", path, identifiers, (int)sizeof(identifiers), code, n, 32);
+
+    // Re-exporting from the same programName is allowed and resets to 0.
+    n = 0;
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x16; // EXPORT_VARIABLE shared (again)
+    pushInt(code, n, sharedOffset);
+    code[n++] = 0x80; code[n++] = 0x14; // FETCH_EXTERNAL
+    code[n++] = 0x80; code[n++] = 0x11;
+    vmExternRun("re-export-resets", path, identifiers, (int)sizeof(identifiers), code, n, 32);
+
+    // strncpy(name, id, 31) into char[32] truncates the STORED name, but the
+    // lookup compares the stored name against the FULL identifier. A name
+    // longer than 31 characters is therefore exported successfully and can
+    // never be found again - exporting and then fetching it is fatal.
+    static const char longIdentifiers[] = "main\0abcdefghijklmnopqrstuvwxyz0123456789";
+    const int longOffset = 9;
+    n = 0;
+    pushInt(code, n, longOffset);
+    code[n++] = 0x80; code[n++] = 0x16; // EXPORT_VARIABLE
+    pushInt(code, n, longOffset);
+    code[n++] = 0x80; code[n++] = 0x14; // FETCH_EXTERNAL
+    code[n++] = 0x80; code[n++] = 0x11;
+    vmExternRun("long-name-unfindable", path, longIdentifiers, (int)sizeof(longIdentifiers), code, n, 32);
 }
 
 void sectionVmLifecycle()

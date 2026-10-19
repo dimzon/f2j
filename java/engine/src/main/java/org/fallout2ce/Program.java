@@ -1529,6 +1529,57 @@ public class Program {
         purgeProgram(program);
     }
 
+    // opFetchExternalVariable (0x46C0F4): read a shared variable by identifier.
+    // The popped value supplies the identifier offset, not the name itself.
+    private static void opFetchExternalVariable(Program program) {
+        ProgramValue addr = programStackPopValue(program);
+        String identifier = programGetIdentifier(program, addr.integerValue);
+
+        ProgramValue value = new ProgramValue();
+        if (Export.getValue(program, identifier, value) != 0) {
+            programFatalError("External variable " + identifier + " does not exist\n");
+        }
+
+        programStackPushValue(program, value);
+    }
+
+    // opStoreExternalVariable (0x46C13C): identifier offset on top, value under.
+    private static void opStoreExternalVariable(Program program) {
+        ProgramValue addr = programStackPopValue(program);
+        ProgramValue value = programStackPopValue(program);
+        String identifier = programGetIdentifier(program, addr.integerValue);
+
+        if (Export.setValue(program, identifier, value) != 0) {
+            programFatalError("External variable " + identifier + " does not exist\n");
+        }
+    }
+
+    // opExportVariable (0x46C0A0): declare a shared variable, initialised to 0.
+    private static void opExportVariable(Program program) {
+        ProgramValue addr = programStackPopValue(program);
+        String identifier = programGetIdentifier(program, addr.integerValue);
+
+        if (Export.createVariable(program, identifier) != 0) {
+            programFatalError("External variable " + identifier + " already exists");
+        }
+    }
+
+    // opExportProcedure (0x46C084): publish a procedure so another script can
+    // call it. Pops the argument count first, then the procedure index.
+    private static void opExportProcedure(Program program) {
+        int procedureIndex = programStackPopInteger(program);
+        int argumentCount = programStackPopInteger(program);
+
+        int procedurePtr = program.procedures + 4 + PROCEDURE_SIZE * procedureIndex;
+        String procedureName = programGetIdentifier(program,
+            stackReadInt32(program.data, procedurePtr + PROCEDURE_NAME_OFFSET));
+        int procedureAddress = stackReadInt32(program.data, procedurePtr + PROCEDURE_BODY_OFFSET);
+
+        if (Export.createProcedure(program, procedureName, procedureAddress, argumentCount) != 0) {
+            programFatalError("Error exporting procedure " + procedureName);
+        }
+    }
+
     // opFetchGlobalVariable (0x46BAD0): push the global at basePointer + addr.
     // Globals are addressed by NEGATIVE offsets: opSetGlobal snapshots
     // basePointer = stackValues.size(), so the only in-range addresses are
@@ -1827,6 +1878,10 @@ public class Program {
         interpreterRegisterOpcode(OPCODE_SPAWN, Program::opSpawn);
         interpreterRegisterOpcode(OPCODE_FORK, Program::opFork);
         interpreterRegisterOpcode(OPCODE_EXEC, Program::opExec);
+        interpreterRegisterOpcode(OPCODE_EXPORT_VARIABLE, Program::opExportVariable);
+        interpreterRegisterOpcode(OPCODE_EXPORT_PROCEDURE, Program::opExportProcedure);
+        interpreterRegisterOpcode(OPCODE_FETCH_EXTERNAL, Program::opFetchExternalVariable);
+        interpreterRegisterOpcode(OPCODE_STORE_EXTERNAL, Program::opStoreExternalVariable);
     }
 
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
