@@ -27,6 +27,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * claimed.
      */
     private static final int[] PROVIDED_OPCODES = {
+        0x80EA, // op_game_time
+        0x80EC, // op_elevation
+        0x80F6, // op_game_time_hour
         0x80B4, // op_random
         0x80C3, // op_get_map_var
         0x80C4, // op_set_map_var
@@ -119,6 +122,36 @@ public class GameScriptApi extends UnsupportedScriptApi {
     public int gameTicks(int a0) {
         int ticks = a0 < 0 ? 0 : a0;
         return ticks * 10;
+    }
+
+    /**
+     * op_game_time (0x80EA): the game's clock, in ticks.
+     */
+    @Override
+    public int gameTime() {
+        return GameTime.gameTimeGetTime();
+    }
+
+    /**
+     * op_game_time_hour (0x80F6): the hour of the game's clock.
+     */
+    @Override
+    public int gameTimeHour() {
+        return GameTime.gameTimeGetHour();
+    }
+
+    /**
+     * op_elevation (0x80EC): the elevation of the object's tile.
+     *
+     * <p>The original reports a script error for an object that is not
+     * there, and the elevation of nothing is zero.
+     */
+    @Override
+    public int elevation(Object a0) {
+        if (a0 instanceof ObjTypes.GameObject object) {
+            return object.elevation;
+        }
+        return 0;
     }
 
     @Override
