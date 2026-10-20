@@ -239,7 +239,9 @@ final class GameApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80B4.", 0x80B4));
             }
-            int result = api.random();
+            int a0 = Program.programStackPopInteger(program);
+            int a1 = Program.programStackPopInteger(program);
+            int result = api.random(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80B6 op_move_to
@@ -499,7 +501,12 @@ final class GameApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80CF.", 0x80CF));
             }
-            int result = api.tileInTileRect();
+            int a0 = Program.programStackPopInteger(program);
+            int a1 = Program.programStackPopInteger(program);
+            int a2 = Program.programStackPopInteger(program);
+            int a3 = Program.programStackPopInteger(program);
+            int a4 = Program.programStackPopInteger(program);
+            int result = api.tileInTileRect(a4, a3, a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80D0 op_attack
@@ -508,7 +515,15 @@ final class GameApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80D0.", 0x80D0));
             }
-            api.attack();
+            int a0 = Program.programStackPopInteger(program);
+            int a1 = Program.programStackPopInteger(program);
+            int a2 = Program.programStackPopInteger(program);
+            int a3 = Program.programStackPopInteger(program);
+            int a4 = Program.programStackPopInteger(program);
+            int a5 = Program.programStackPopInteger(program);
+            int a6 = Program.programStackPopInteger(program);
+            Object a7 = Program.programStackPopPointer(program);
+            api.attack(a7, a6, a5, a4, a3, a2, a1, a0);
         };
         // 0x80D2 op_tile_distance
         Program.INTERPRETER_OPCODE_HANDLERS[210] = program -> {

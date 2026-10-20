@@ -128,7 +128,7 @@ class UnsupportedScriptApi implements GameApi {
     }
 
     @Override
-    public int random() {
+    public int random(int a0, int a1) {
         throw unsupported("op_random");
     }
 
@@ -258,12 +258,12 @@ class UnsupportedScriptApi implements GameApi {
     }
 
     @Override
-    public int tileInTileRect() {
+    public int tileInTileRect(int a0, int a1, int a2, int a3, int a4) {
         throw unsupported("tile_in_tile_rect");
     }
 
     @Override
-    public void attack() {
+    public void attack(Object a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7) {
         throw unsupported("op_attack");
     }
 

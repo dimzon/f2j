@@ -197,8 +197,8 @@ public class MockScriptApi implements GameApi {
     }
 
     @Override
-    public int random() {
-        record("random");
+    public int random(int a0, int a1) {
+        record("random", a0, a1);
         return 0;
     }
 
@@ -353,14 +353,14 @@ public class MockScriptApi implements GameApi {
     }
 
     @Override
-    public int tileInTileRect() {
-        record("tileInTileRect");
+    public int tileInTileRect(int a0, int a1, int a2, int a3, int a4) {
+        record("tileInTileRect", a0, a1, a2, a3, a4);
         return 0;
     }
 
     @Override
-    public void attack() {
-        record("attack");
+    public void attack(Object a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7) {
+        record("attack", a0, a1, a2, a3, a4, a5, a6, a7);
         return;
     }
 

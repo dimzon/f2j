@@ -27,6 +27,10 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * claimed.
      */
     private static final int[] PROVIDED_OPCODES = {
+        0x80B4, // op_random
+        0x80C3, // op_get_map_var
+        0x80C4, // op_set_map_var
+        0x80F2, // op_game_ticks
         0x80BC, // op_self_obj
         0x80C1, // op_get_local_var
         0x80C2, // op_set_local_var
@@ -65,6 +69,58 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * opGetDude (0x80BF): the player character. The object system models the
      * dude as a null holder for now.
      */
+    /**
+     * op_random (0x80B4): a number between the two.
+     *
+     * <p>The original takes the bounds the other way round than they are
+     * written, and asks the random number generator for a number in the
+     * range.
+     */
+    @Override
+    public int random(int a0, int a1) {
+        return GameRandom.randomBetween(a0, a1);
+    }
+
+    /**
+     * op_get_map_var (0x80C3): one of the map's variables.
+     *
+     * <p>A variable the map does not have answers -1.
+     */
+    @Override
+    public Program.ProgramValue getMapVar(int a0) {
+        MapVars.ProgramValue value = new MapVars.ProgramValue();
+        if (MapVars.mapGetGlobalVar(a0, value) == -1) {
+            value.opcode = MapVars.VALUE_TYPE_INT;
+            value.integerValue = -1;
+        }
+        return value;
+    }
+
+    /**
+     * op_set_map_var (0x80C4): write one of the map's variables.
+     */
+    @Override
+    public void setMapVar(int a0, Program.ProgramValue a1) {
+        MapVars.ProgramValue value = new MapVars.ProgramValue();
+        value.opcode = a1.opcode;
+        value.integerValue = a1.integerValue;
+        value.floatValue = a1.floatValue;
+        value.pointerValue = a1.pointerValue;
+        MapVars.mapSetGlobalVar(a0, value);
+    }
+
+    /**
+     * op_game_ticks (0x80F2): the game's clock, in tenths of a second.
+     *
+     * <p>The original multiplies the ticks by ten, and a negative number
+     * of ticks is no ticks at all.
+     */
+    @Override
+    public int gameTicks(int a0) {
+        int ticks = a0 < 0 ? 0 : a0;
+        return ticks * 10;
+    }
+
     @Override
     public Object opGetDude() {
         return null;

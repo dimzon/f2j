@@ -154,8 +154,8 @@ final class GameApiSlots {
     }
     static {
         METHOD[180] = "random";
-        ARGS[180] = 0;
-        KINDS[180] = "";
+        ARGS[180] = 2;
+        KINDS[180] = "int,int";
         RESULTS[180] = "int";
     }
     static {
@@ -310,14 +310,14 @@ final class GameApiSlots {
     }
     static {
         METHOD[207] = "tileInTileRect";
-        ARGS[207] = 0;
-        KINDS[207] = "";
+        ARGS[207] = 5;
+        KINDS[207] = "int,int,int,int,int";
         RESULTS[207] = "int";
     }
     static {
         METHOD[208] = "attack";
-        ARGS[208] = 0;
-        KINDS[208] = "";
+        ARGS[208] = 8;
+        KINDS[208] = "ptr,int,int,int,int,int,int,int";
         RESULTS[208] = "";
     }
     static {

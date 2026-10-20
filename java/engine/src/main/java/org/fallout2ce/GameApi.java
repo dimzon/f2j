@@ -140,7 +140,7 @@ public interface GameApi {
     /**
      * {@code op_random} (0x80B4) - 9127 calls in the shipped scripts.
      */
-    int random();
+    int random(int a0, int a1);
 
     /**
      * {@code op_move_to} (0x80B6) - 823 calls in the shipped scripts.
@@ -270,12 +270,12 @@ public interface GameApi {
     /**
      * {@code tile_in_tile_rect} (0x80CF) - 1073 calls in the shipped scripts.
      */
-    int tileInTileRect();
+    int tileInTileRect(int a0, int a1, int a2, int a3, int a4);
 
     /**
      * {@code op_attack} (0x80D0) - 1184 calls in the shipped scripts.
      */
-    void attack();
+    void attack(Object a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7);
 
     /**
      * {@code op_tile_distance} (0x80D2) - 839 calls in the shipped scripts.
