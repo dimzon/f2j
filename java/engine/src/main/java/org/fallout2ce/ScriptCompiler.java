@@ -130,6 +130,18 @@ final class ScriptCompiler {
     private static final int OP_PUSH_BASE = 0x02B;
     private static final int OP_IF = 0x02F;
     private static final int OP_WHILE = 0x030;
+    private static final int OP_EXIT_PROGRAM = 0x010;
+    private static final int OP_STOP_PROGRAM = 0x011;
+    private static final int OP_POP_RETURN = 0x01C;
+    private static final int OP_POP_EXIT = 0x01D;
+
+    /**
+     * The opcodes that come back through the return stack: the return
+     * address comes off it, and the execution goes there.
+     */
+    private static final int[] OP_RETURNS = {
+        0x01C, 0x01D, 0x020, 0x021, 0x022, 0x023, 0x024, 0x025, 0x026,
+    };
 
     /** The value stack's slots, each a known constant or null. */
     private static final int MAX_STACK = 1024;
@@ -317,8 +329,14 @@ final class ScriptCompiler {
             if (first != null) {
                 if (first.depth() != state.depth()) {
                     // A procedure that calls itself is entered with a deeper
-                    // stack every time, and that is right, so the mismatch
-                    // is only a problem when the procedure is not recursive.
+                    // stack every time, and that is right. The original's
+                    // calls are a jump with the return address on the
+                    // return stack, so the recursion is not always a call
+                    // opcode, and the procedure's own entry is where it
+                    // shows.
+                    if (item.index == 0) {
+                        procedure.recursive = true;
+                    }
                     if (!procedure.recursive) {
                         mismatches.add(script.name + ": the stack does not match at "
                             + instruction.offset);
@@ -388,11 +406,53 @@ final class ScriptCompiler {
                         + instruction.offset);
                 } else {
                     instruction.target = target;
+                    // The condition is empty: the target comes off the
+                    // stack too and the execution goes back.
                     State back = next.copy();
                     back.pop();
                     branch(script, work, owner, position, target, back);
                 }
                 addFallthrough(work, procedure, item.index + 1, next);
+                break;
+            }
+
+            case OP_POP_RETURN:
+            case OP_POP_EXIT:
+            case 0x020:
+            case 0x021:
+            case 0x022:
+            case 0x023:
+            case 0x024:
+            case 0x025:
+            case 0x026: {
+                // The return address comes off the return stack, and the
+                // execution goes there. The code under the return is not
+                // reached.
+                Integer address = next.returns == null ? null : next.returns.value;
+                next.returnPop();
+                int pops = ScriptOpcodeShapes.POP_COUNT[slot];
+                for (int i = 0; i < pops; i++) {
+                    next.pop();
+                }
+                if (ScriptOpcodeShapes.PUSH_KIND[slot] != -1) {
+                    next.push(null);
+                }
+                instruction.depthAfter = next.depth();
+                if (address == null) {
+                    script.analysisProblems.add(script.name
+                        + ": a return with an unknown address at " + instruction.offset);
+                } else {
+                    branch(script, work, owner, position, address, next);
+                }
+                break;
+            }
+
+            case OP_EXIT_PROGRAM:
+            case OP_STOP_PROGRAM: {
+                // The program ends here. The code under it is not reached,
+                // and the original's exit sequence is exactly that: code
+                // that never runs.
+                instruction.depthAfter = next.depth();
                 break;
             }
 
