@@ -85,6 +85,7 @@ class ScriptApiTest {
         { "scripts\\DOG2.int", "20", "80100001", "7", "C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0" },
         { "scripts\\VSGTEAM9.int", "20", "80100001", "3", "C001:0 C001:1 C001:0" },
         { "scripts\\JONATHAN.int", "20", "80100001", "5", "C001:0 C001:0 C001:0 C001:0 C001:1" },
+        { "scripts\\FREEZER.int", "20", "80100001", "1", "C001:0" },
     };
 
     private static final class State {

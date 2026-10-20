@@ -39,6 +39,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x810D, // op_obj_carrying_pid_obj
         0x8106, // op_critter_inven_obj
         0x8105, // op_message_str
+        0x80B8, // op_display_msg
+        0x8154, // op_debug_msg
     };
 
     @Override
@@ -274,6 +276,28 @@ public class GameScriptApi extends UnsupportedScriptApi {
         }
 
         return text != null ? text : "Error";
+    }
+
+    /**
+     * op_display_msg (0x80B8): put a message on the message monitor.
+     */
+    @Override
+    public void displayMsg(Program program, String message) {
+        DisplayMonitor.addMessage(message);
+
+        if (Settings.settings.debug.show_script_messages) {
+            Debug.print("\n%s", message);
+        }
+    }
+
+    /**
+     * op_debug_msg (0x8154): write a message to the debug log.
+     */
+    @Override
+    public void debugMsg(Program program, String message) {
+        if (Settings.settings.debug.show_script_messages) {
+            Debug.print("\n%s", message);
+        }
     }
 
     /**

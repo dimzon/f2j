@@ -6755,6 +6755,8 @@ void sectionScriptRunGame()
     scriptRunOne("scripts\\DOG2.int", 200);
     scriptRunOne("scripts\\VSGTEAM9.int", 200);
     scriptRunOne("scripts\\JONATHAN.int", 200);
+    // This one writes to the message monitor and the debug log.
+    scriptRunOne("scripts\\FREEZER.int", 200);
 }
 
 void sectionScriptProg()
