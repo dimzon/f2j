@@ -168,15 +168,16 @@ final class ScriptEmitter {
                 out.append("                ").append(statement).append("\n");
             }
             // The block falls through to the next one, unless its last
-            // instruction left the method.
+            // instruction already transferred the control.
             Instruction last = piece.code.isEmpty() ? null : piece.code.get(piece.code.size() - 1);
-            if (last != null && !leavesTheMethod(last) && !leavesTheBlock(last)) {
-                if (isTailJump(procedure, last)) {
+            if (last != null && !leavesTheMethod(last) && !leavesTheBlock(procedure, last)) {
+                if (isTailJump(procedure, last) && last.targetProcedure != -1) {
                     // The original jumps into another procedure and does
                     // not come back here, so the compiled code leaves the
-                    // method when the procedure it called returns. The
-                    // jump itself already returns, so there is nothing
-                    // to fall through to.
+                    // method when the procedure it called returns. A jump
+                    // into the launcher ends the program, and the jump
+                    // itself says so.
+                    out.append("                return;\n");
                 } else {
                     int next = piece.id + 1;
                     if (next < blocks.size()) {
@@ -277,10 +278,16 @@ final class ScriptEmitter {
         return false;
     }
 
-    /** Whether an instruction already transfers the control elsewhere. */
-    private static boolean leavesTheBlock(Instruction instruction) {
-        int slot = instruction.slot;
-        return slot == 0x004 || instruction.branch;
+    /**
+     * Whether an instruction already transfers the control elsewhere.
+     *
+     * <p>A jump to another block of the same procedure does: it names the
+     * block it goes to. A jump to another procedure does not: it calls the
+     * procedure, and the call comes back. A branch does not either: the path
+     * the condition does not take falls through to the next block.
+     */
+    private static boolean leavesTheBlock(Procedure procedure, Instruction instruction) {
+        return instruction.slot == 0x004 && instruction.targetProcedure == procedure.index;
     }
 
     /** Whether an instruction leaves the method. */
