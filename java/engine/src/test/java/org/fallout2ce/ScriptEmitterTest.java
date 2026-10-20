@@ -229,6 +229,42 @@ class ScriptEmitterTest {
     }
 
     @Test
+    void everyReferenceScriptBehavesTheSameCompiledAgainstTheGame() throws Exception {
+        Path master = Paths.get(gameData(), "master.dat");
+        assertTrue(master.toFile().isFile());
+        assertEquals(0, Db.dbOpen(master.toString(), null));
+
+        for (String name : REFERENCE_SCRIPTS) {
+            // The script, compiled.
+            byte[] data = ScriptScanner.readScript(name);
+            assertNotNull(data, name);
+            ScriptCompiler.CompiledScript script = ScriptCompiler.compile(name, data);
+            ScriptEmitter.Emitted emitted = ScriptEmitter.emit(script);
+            Class<?> type = compile(emitted);
+
+            // The script, through the VM and the game's own API.
+            GameScriptApi game = new GameScriptApi();
+            Program.setGameApi(game);
+            Program program = Program.programCreateByPath(name);
+            assertNotNull(program);
+            program.flags = 0;
+            program.instructionPointer = 0;
+            Program.programInterpret(program, 20000);
+            String vmStack = stack(program.stackValues);
+            Program.programFree(program);
+
+            // The script, through the compiled code and the game's API.
+            ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class)
+                .newInstance(new GameScriptApi());
+            instance.run();
+
+            assertEquals(vmStack, stack(instance.stack), name);
+        }
+
+        Db.dbCloseAll();
+    }
+
+    @Test
     void theEmitterCoversTheShippedScripts() {
         // How much of the game's scripts the emitter can turn into code.
         Path master = Paths.get(gameData(), "master.dat");
