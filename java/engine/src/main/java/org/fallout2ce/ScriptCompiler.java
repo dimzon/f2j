@@ -99,6 +99,19 @@ final class ScriptCompiler {
         final List<String> problems = new ArrayList<>();
 
         /**
+         * The instructions the analysis reached with two different stack
+         * depths.
+         *
+         * <p>That is the original's own doing and not a problem: a builtin
+         * that leaves a result behind is not always followed by a pop, so
+         * the two paths into a join point can carry different stacks. The
+         * VM does not care, and neither does the compiler: the stack of a
+         * compiled script is a list, and the locals are addressed through
+         * the frame pointer, which is known at the time.
+         */
+        final List<String> stackMismatches = new ArrayList<>();
+
+        /**
          * What the analysis could not make sense of.
          *
          * <p>The analysis follows the stack and the branches, and it is not
@@ -557,9 +570,7 @@ final class ScriptCompiler {
 
         // A procedure that is entered with different stacks is recursive,
         // and that is not a problem: the stack grows with the recursion.
-        for (String mismatch : mismatches) {
-            script.analysisProblems.add(mismatch);
-        }
+        script.stackMismatches.addAll(mismatches);
     }
 
     /** The stack, cut down to the given depth. */

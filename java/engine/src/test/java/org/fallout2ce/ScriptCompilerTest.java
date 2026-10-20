@@ -60,6 +60,7 @@ class ScriptCompilerTest {
 
         List<String> problems = new ArrayList<>();
         List<String> analysis = new ArrayList<>();
+        List<String> mismatches = new ArrayList<>();
         int procedures = 0;
         int instructions = 0;
         for (String name : names) {
@@ -72,13 +73,18 @@ class ScriptCompilerTest {
             }
             problems.addAll(script.problems);
             analysis.addAll(script.analysisProblems);
+            mismatches.addAll(script.stackMismatches);
         }
         Db.dbCloseAll();
 
         assertTrue(problems.isEmpty(),
             problems.size() + " problems, first: " + (problems.isEmpty() ? "" : problems.get(0)));
+        assertTrue(analysis.isEmpty(),
+            analysis.size() + " analysis problems, first: "
+                + (analysis.isEmpty() ? "" : analysis.get(0)));
         System.out.println("scripts=" + names.size() + " procedures=" + procedures
-            + " instructions=" + instructions + " analysis problems=" + analysis.size());
+            + " instructions=" + instructions + " analysis problems=" + analysis.size()
+            + " stack mismatches=" + mismatches.size());
         for (int i = 0; i < Math.min(analysis.size(), 20); i++) {
             System.out.println("  " + analysis.get(i));
         }
