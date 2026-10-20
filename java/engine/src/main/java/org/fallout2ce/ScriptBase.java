@@ -46,6 +46,18 @@ public abstract class ScriptBase {
     /** The script's owner, the object it runs for. */
     protected Object self;
 
+    /** Where the script's globals are, as the VM keeps them. */
+    protected int basePointer;
+
+    /** The wait function the original keeps together with the flags. */
+    protected Object checkWaitFunc;
+
+    /** Whether the script has finished, as the VM keeps it. */
+    protected boolean finished;
+
+    /** The critical section's flag, as the VM keeps it. */
+    protected static final int CRITICAL_SECTION = 0x0001;
+
     protected ScriptBase(GameApi gameApi) {
         this.gameApi = gameApi;
     }
@@ -54,6 +66,14 @@ public abstract class ScriptBase {
     public final GameApi gameApi() {
         return gameApi;
     }
+
+    /**
+     * Runs the script.
+     *
+     * <p>The compiled code overrides this: the launcher of the script is
+     * what the VM starts on, and it is what runs here.
+     */
+    public abstract void run();
 
     // ------------------------------------------------------------------
     // The value stack. The compiled code calls these; they are what the
@@ -225,6 +245,88 @@ public abstract class ScriptBase {
     /** op_script_action: the script's action. */
     public final int scriptAction() {
         return scriptAction;
+    }
+
+    // ------------------------------------------------------------------
+    // The VM's own opcodes. The compiled code calls these instead of
+    // dispatching on an opcode, and they do what the original's handlers
+    // do, one for one.
+    // ------------------------------------------------------------------
+
+    /** op_set_global (0x2C): the script's globals start here. */
+    protected final void setGlobalBase() {
+        basePointer = stack.size();
+    }
+
+    /** op_fetch_global (0x12): one of the script's globals. */
+    protected final Program.ProgramValue fetchGlobal(int index) {
+        int position = basePointer + index;
+        if (position < 0 || position >= stack.size()) {
+            throw new IllegalStateException("fetchGlobal: index out of range");
+        }
+        return stack.get(position);
+    }
+
+    /** op_store_global (0x13): write one of the script's globals. */
+    protected final void storeGlobal(int index, Program.ProgramValue value) {
+        int position = basePointer + index;
+        if (position < 0 || position >= stack.size()) {
+            throw new IllegalStateException("storeGlobal: index out of range");
+        }
+        stack.set(position, value);
+    }
+
+    /** op_enter_critical_section (0x02) and op_start_critical (0x4A). */
+    protected final void enterCritical() {
+        flags |= CRITICAL_SECTION;
+    }
+
+    /** op_leave_critical_section (0x03) and op_end_critical (0x4B). */
+    protected final void leaveCritical() {
+        flags &= ~CRITICAL_SECTION;
+    }
+
+    /** op_swap (0x18): the two values on top of the stack change places. */
+    protected final void swap() {
+        int top = stack.size() - 1;
+        Program.ProgramValue value = stack.get(top);
+        stack.set(top, stack.get(top - 1));
+        stack.set(top - 1, value);
+    }
+
+    /** op_swap_a (0x19): the two values on the return stack change places. */
+    protected final void swapReturn() {
+        int top = returnStack.size() - 1;
+        Program.ProgramValue value = returnStack.get(top);
+        returnStack.set(top, returnStack.get(top - 1));
+        returnStack.set(top - 1, value);
+    }
+
+    /** op_duplicate (0x1B): the value on top of the stack goes on top again. */
+    protected final void duplicate() {
+        stack.add(stack.get(stack.size() - 1));
+    }
+
+    /** op_pop_flags (0x1F): the window, the wait function and the flags. */
+    protected final void popFlags() {
+        windowId = popInt();
+        checkWaitFunc = popPointer();
+        flags = popInt() & 0xFFFF;
+    }
+
+    /** op_exit (0x0E): the script ends. */
+    protected final void exitScript() {
+        finished = true;
+    }
+
+    /** op_exit_program (0x10): the program ends. */
+    protected final void exitProgram() {
+        finished = true;
+    }
+
+    /** op_stop_program (0x11): the program stops. */
+    protected final void stopProgram() {
+        finished = true;
     }
 
     // ------------------------------------------------------------------

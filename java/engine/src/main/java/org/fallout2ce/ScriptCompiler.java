@@ -71,6 +71,15 @@ final class ScriptCompiler {
 
         /** The procedure a call enters, or -1. */
         int callTarget = -1;
+
+        /** The procedure a branch lands in, or -1. */
+        int targetProcedure = -1;
+
+        /** The value on top of the stack before the instruction, if it is known. */
+        Integer topValue;
+
+        /** Whether the execution ever reaches the instruction. */
+        boolean reached;
     }
 
     /** One procedure of the script. */
@@ -359,7 +368,9 @@ final class ScriptCompiler {
             }
             seen.put(key, state);
 
+            instruction.reached = true;
             instruction.depthBefore = state.depth();
+            instruction.topValue = state.top();
             State next = state.copy();
             int slot = instruction.slot;
 
@@ -381,6 +392,7 @@ final class ScriptCompiler {
                         + instruction.offset);
                 } else {
                     instruction.target = target;
+                    instruction.targetProcedure = procedureOf(owner, target);
                     branch(script, work, owner, position, target, next);
                 }
                 break;
@@ -400,6 +412,7 @@ final class ScriptCompiler {
                         + instruction.offset);
                 } else {
                     instruction.target = target;
+                    instruction.targetProcedure = procedureOf(owner, target);
                     branch(script, work, owner, position, target, next);
                 }
                 addFallthrough(work, procedure, item.index + 1, next);
@@ -419,6 +432,7 @@ final class ScriptCompiler {
                         + instruction.offset);
                 } else {
                     instruction.target = target;
+                    instruction.targetProcedure = procedureOf(owner, target);
                     // The condition is empty: the target comes off the
                     // stack too and the execution goes back.
                     State back = next.copy();
@@ -587,6 +601,12 @@ final class ScriptCompiler {
         if (index >= 0 && index < procedure.code.size()) {
             work.add(new Work(procedure, index, state));
         }
+    }
+
+    /** The procedure an offset belongs to, or -1. */
+    private static int procedureOf(Map<Integer, Procedure> owner, int offset) {
+        Procedure procedure = owner.get(offset);
+        return procedure == null ? -1 : procedure.index;
     }
 
     /** A branch: the execution continues at the target. */
