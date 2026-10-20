@@ -68,8 +68,14 @@ class ScriptEmitterTest {
         return out.toString();
     }
 
+    /** What a run of a script left behind. */
+    private static final class Run {
+        MockScriptApi mock;
+        String stack;
+    }
+
     /** Runs a script through the VM with a mock behind it. */
-    private MockScriptApi runWithTheVm(String name) throws Exception {
+    private Run runWithTheVm(String name) throws Exception {
         MockScriptApi mock = new MockScriptApi();
         Program.setGameApi(mock);
 
@@ -79,8 +85,13 @@ class ScriptEmitterTest {
         program.flags = 0;
         program.instructionPointer = 0;
         Program.programInterpret(program, 20000);
+
+        Run run = new Run();
+        run.mock = mock;
+        run.stack = stack(program.stackValues);
+
         Program.programFree(program);
-        return mock;
+        return run;
     }
 
     /** Compiles a script into a class. */
@@ -128,7 +139,7 @@ class ScriptEmitterTest {
         assertTrue(emitted.problems.isEmpty(), emitted.problems.toString());
 
         // The script, through the VM.
-        MockScriptApi vm = runWithTheVm(name);
+        Run vm = runWithTheVm(name);
 
         // The script, through the compiled code.
         Class<?> type = compile(emitted);
@@ -136,7 +147,8 @@ class ScriptEmitterTest {
         ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class).newInstance(compiled);
         instance.run();
 
-        assertEquals(trace(vm), trace(compiled));
+        assertEquals(trace(vm.mock), trace(compiled));
+        assertEquals(vm.stack, stack(instance.stack));
 
         Db.dbCloseAll();
     }
@@ -189,7 +201,6 @@ class ScriptEmitterTest {
         assertTrue(master.toFile().isFile());
         assertEquals(0, Db.dbOpen(master.toString(), null));
 
-        List<String> divergences = new ArrayList<>();
         for (String name : REFERENCE_SCRIPTS) {
             // The script, compiled.
             byte[] data = ScriptScanner.readScript(name);
@@ -202,42 +213,19 @@ class ScriptEmitterTest {
             Class<?> type = compile(emitted);
 
             // The script, through the VM.
-            MockScriptApi vm = runWithTheVm(name);
-            String vmStack;
-            {
-                Program program = Program.programCreateByPath(name);
-                assertNotNull(program);
-                program.flags = 0;
-                program.instructionPointer = 0;
-                Program.setGameApi(vm);
-                Program.programInterpret(program, 20000);
-                vmStack = stack(program.stackValues);
-                Program.programFree(program);
-            }
+            Run vm = runWithTheVm(name);
 
             // The script, through the compiled code.
             MockScriptApi compiled = new MockScriptApi();
             ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class)
                 .newInstance(compiled);
 
-            try {
-                instance.run();
-                assertEquals(trace(vm), trace(compiled), name);
-                assertEquals(vmStack, stack(instance.stack), name);
-            } catch (AssertionError | RuntimeException failure) {
-                // The scripts whose code has branches still diverge, and
-                // the test says which ones.
-                divergences.add(name + ": " + failure.getMessage());
-            }
+            instance.run();
+            assertEquals(trace(vm.mock), trace(compiled), name);
+            assertEquals(vm.stack, stack(instance.stack), name);
         }
 
         Db.dbCloseAll();
-        System.out.println("reference scripts that diverge: " + divergences.size());
-        for (String divergence : divergences) {
-            System.out.println("  " + divergence);
-        }
-        assertTrue(divergences.size() < REFERENCE_SCRIPTS.length,
-            "every reference script diverges");
     }
 
     @Test
