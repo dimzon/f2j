@@ -6757,6 +6757,9 @@ void sectionScriptRunGame()
     scriptRunOne("scripts\\JONATHAN.int", 200);
     // This one writes to the message monitor and the debug log.
     scriptRunOne("scripts\\FREEZER.int", 200);
+    // These read the object's kind, tile and proto id.
+    scriptRunOne("scripts\\GRAFFITI.int", 200);
+    scriptRunOne("scripts\\BVAIR.int", 200);
 }
 
 void sectionScriptProg()

@@ -41,6 +41,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8105, // op_message_str
         0x80B8, // op_display_msg
         0x8154, // op_debug_msg
+        0x80C8, // op_obj_type
+        0x80D4, // op_tile_num
+        0x8100, // op_obj_pid
     };
 
     @Override
@@ -298,6 +301,49 @@ public class GameScriptApi extends UnsupportedScriptApi {
         if (Settings.settings.debug.show_script_messages) {
             Debug.print("\n%s", message);
         }
+    }
+
+    /**
+     * op_obj_type (0x80C8): the kind of object it is, taken from its frame.
+     *
+     * <p>A null object is the invalid type.
+     */
+    @Override
+    public int objType(Program program, Object object) {
+        if (object == null) {
+            return ObjectType.INVALID.value();
+        }
+
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        return FrmId.ofFid(obj.fid).objectType().value();
+    }
+
+    /**
+     * op_tile_num (0x80D4): the tile the object is on, or -1 when there is
+     * no object.
+     */
+    @Override
+    public int tileNum(Program program, Object object) {
+        if (object == null) {
+            return -1;
+        }
+
+        return ((ObjTypes.GameObject) object).tile;
+    }
+
+    /**
+     * op_obj_pid (0x8100): the object's proto id.
+     *
+     * <p>A null object has the empty pid, which is what the original's
+     * ProtoId gives for a null object.
+     */
+    @Override
+    public int objPid(Program program, Object object) {
+        if (object == null) {
+            return ProtoId.EMPTY_PID;
+        }
+
+        return ProtoId.ofGameObject((ObjTypes.GameObject) object).pid();
     }
 
     /**
