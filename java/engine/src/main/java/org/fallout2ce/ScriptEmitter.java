@@ -2,7 +2,9 @@ package org.fallout2ce;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 import org.fallout2ce.ScriptCompiler.CompiledScript;
@@ -117,6 +119,18 @@ final class ScriptEmitter {
         return emitted;
     }
 
+    /**
+     * The blocks of a procedure.
+     *
+     * <p>A block ends where the execution can leave it: at a branch, at a
+     * return or at a call. The blocks are what the compiled code dispatches
+     * over, because the Java this port builds with does not take a goto.
+     */
+    private static final class Block {
+        final List<Instruction> code = new ArrayList<>();
+        int id;
+    }
+
     /** Emits one procedure. */
     private static void emitProcedure(CompiledScript script, Procedure procedure, StringBuilder out,
             Emitted emitted) {
@@ -129,25 +143,158 @@ final class ScriptEmitter {
         out.append("    ").append(procedure.index == -1 ? "public" : "protected")
             .append(" void ").append(methodName(procedure)).append("() {\n");
 
-        Instruction previous = null;
-        for (Instruction instruction : procedure.code) {
-            if (!instruction.reached) {
-                // The code the execution never comes to. The original keeps
-                // it - the exit sequence under an EXIT_PROGRAM, for one -
-                // and the compiled code leaves it out, because the Java
-                // would not take the code after a return.
-                continue;
+        List<Block> blocks = blocks(procedure);
+        if (blocks.isEmpty()) {
+            out.append("    }\n\n");
+            return;
+        }
+        Map<Integer, Integer> blockOf = new HashMap<>();
+        for (Block piece : blocks) {
+            if (!piece.code.isEmpty()) {
+                blockOf.put(piece.code.get(0).offset, piece.id);
             }
-            String statement = statement(script, procedure, instruction, previous, emitted);
-            previous = instruction;
-            if (statement == null) {
-                continue;
-            }
-            out.append("        L").append(instruction.offset).append(": ");
-            out.append(statement).append("\n");
         }
 
+        out.append("        int block = 0;\n");
+        out.append("        while (true) {\n");
+        out.append("            switch (block) {\n");
+        for (Block piece : blocks) {
+            out.append("            case ").append(piece.id).append(":\n");
+            for (Instruction instruction : piece.code) {
+                String statement = statement(script, procedure, instruction, blockOf, emitted);
+                if (statement == null) {
+                    continue;
+                }
+                out.append("                ").append(statement).append("\n");
+            }
+            // The block falls through to the next one, unless its last
+            // instruction left the method.
+            Instruction last = piece.code.isEmpty() ? null : piece.code.get(piece.code.size() - 1);
+            if (last != null && !leavesTheMethod(last) && !leavesTheBlock(last)) {
+                if (isTailJump(procedure, last)) {
+                    // The original jumps into another procedure and does
+                    // not come back here, so the compiled code leaves the
+                    // method when the procedure it called returns. The
+                    // jump itself already returns, so there is nothing
+                    // to fall through to.
+                } else {
+                    int next = piece.id + 1;
+                    if (next < blocks.size()) {
+                        out.append("                block = ").append(next).append("; continue;\n");
+                    }
+                }
+            }
+        }
+        out.append("            }\n");
+        out.append("        }\n");
         out.append("    }\n\n");
+    }
+
+    /**
+     * The blocks of a procedure.
+     *
+     * <p>A block ends where the execution can leave it: at a branch, at a
+     * return or at a call. The code that the execution never comes to is
+     * left out: the original keeps it - the exit sequence under an
+     * EXIT_PROGRAM, for one - and the compiled code has no use for it.
+     */
+    private static List<Block> blocks(Procedure procedure) {
+        List<Block> blocks = new ArrayList<>();
+        Map<Integer, Block> byOffset = new HashMap<>();
+
+        // The branch targets start a block: the execution can land there
+        // from anywhere.
+        Set<Integer> targets = new HashSet<>();
+        for (Instruction instruction : procedure.code) {
+            if (instruction.branch && instruction.target > 0) {
+                targets.add(instruction.target);
+            }
+        }
+
+        Block current = null;
+        for (Instruction instruction : procedure.code) {
+            if (!instruction.reached) {
+                continue;
+            }
+            if (current == null || endsBlock(instruction) || targets.contains(instruction.offset)) {
+                current = new Block();
+                current.id = blocks.size();
+                blocks.add(current);
+                byOffset.put(instruction.offset, current);
+            }
+            current.code.add(instruction);
+        }
+        return blocks;
+    }
+
+    /**
+     * Whether an instruction is a jump into another procedure that the
+     * original does not come back from.
+     *
+     * <p>The original's calls are a jump with the address of the
+     * instruction after it on the return stack, and the execution comes
+     * back there. A jump without it is a tail jump: the execution goes
+     * into the other procedure and the return goes wherever the return
+     * stack says.
+     */
+    private static boolean isTailJump(Procedure procedure, Instruction instruction) {
+        if (instruction.slot != 0x004) {
+            return false;
+        }
+        if (instruction.targetProcedure == procedure.index) {
+            return false;
+        }
+        return !hasReturnAddress(procedure, instruction);
+    }
+
+    /**
+     * Whether the address of the instruction after a jump is on the return
+     * stack, which is what makes the jump a call.
+     */
+    private static boolean hasReturnAddress(Procedure procedure, Instruction instruction) {
+        int continuation = -1;
+        for (Instruction candidate : procedure.code) {
+            if (candidate.offset > instruction.offset) {
+                continuation = candidate.offset;
+                break;
+            }
+        }
+        if (continuation < 0) {
+            return false;
+        }
+        for (Instruction candidate : procedure.code) {
+            if (candidate.offset >= instruction.offset) {
+                break;
+            }
+            if (candidate.slot == 0x00D && candidate.topValue != null
+                    && candidate.topValue == continuation) {
+                return true;
+            }
+            if (candidate.branch) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    /** Whether an instruction already transfers the control elsewhere. */
+    private static boolean leavesTheBlock(Instruction instruction) {
+        int slot = instruction.slot;
+        return slot == 0x004 || instruction.branch;
+    }
+
+    /** Whether an instruction leaves the method. */
+    private static boolean leavesTheMethod(Instruction instruction) {
+        int slot = instruction.slot;
+        return slot == 0x00E || slot == 0x010 || slot == 0x011
+            || (slot >= 0x01C && slot <= 0x026);
+    }
+
+    /** Whether the execution can leave the code after an instruction. */
+    private static boolean endsBlock(Instruction instruction) {
+        return instruction.branch || instruction.slot == 0x005 || instruction.slot == 0x00E
+            || instruction.slot == 0x010 || instruction.slot == 0x011
+            || (instruction.slot >= 0x01C && instruction.slot <= 0x026);
     }
 
     /**
@@ -156,7 +303,7 @@ final class ScriptEmitter {
      * @return the code, or null when the opcode has none
      */
     private static String statement(CompiledScript script, Procedure procedure,
-            Instruction instruction, Instruction previous, Emitted emitted) {
+            Instruction instruction, Map<Integer, Integer> blockOf, Emitted emitted) {
         int slot = instruction.slot;
         switch (slot) {
         case 0x000:
@@ -170,7 +317,7 @@ final class ScriptEmitter {
         case 0x04B:
             return "leaveCritical();";
         case 0x004:
-            return jump(script, procedure, instruction, previous);
+            return jump(script, procedure, instruction, blockOf);
         case 0x005:
             // The procedure is named on the stack, so the call is a switch
             // the generated class has.
@@ -180,13 +327,13 @@ final class ScriptEmitter {
         case 0x00D:
             return "dataToAddress();";
         case 0x00E:
-            return "exitScript();";
+            return "exitScript(); return;";
         case 0x00F:
             return "detach();";
         case 0x010:
-            return "exitProgram();";
+            return "exitProgram(); return;";
         case 0x011:
-            return "stopProgram();";
+            return "stopProgram(); return;";
         case 0x012:
             return "pushValue(fetchGlobal(popInt()));";
         case 0x014:
@@ -233,9 +380,9 @@ final class ScriptEmitter {
         case 0x02C:
             return "setGlobalBase();";
         case 0x02F:
-            return branch(script, instruction, "if");
+            return branch(script, instruction, blockOf, "if");
         case 0x030:
-            return branch(script, instruction, "while");
+            return branch(script, instruction, blockOf, "while");
         case 0x031:
             return "setFrameLocal(popInt(), popValue());";
         case 0x033:
@@ -326,12 +473,23 @@ final class ScriptEmitter {
     }
 
     private static String jump(CompiledScript script, Procedure procedure, Instruction instruction,
-            Instruction previous) {
+            Map<Integer, Integer> blockOf) {
         StringBuilder out = new StringBuilder();
         out.append("popValue();");
 
         if (instruction.targetProcedure == procedure.index) {
-            out.append(" goto L").append(instruction.target).append(";");
+            Integer block = blockOf.get(instruction.target);
+            if (block == null) {
+                return "return;";
+            }
+            out.append(" block = ").append(block).append("; continue;");
+            return out.toString();
+        }
+
+        if (instruction.targetProcedure == -1) {
+            // The launcher: the original jumps to the end of the program
+            // there, so the compiled code ends the program.
+            out.append(" exitProgram(); return;");
             return out.toString();
         }
 
@@ -367,11 +525,11 @@ final class ScriptEmitter {
             }
         }
 
-        if (call) {
-            out.append(' ').append(methodName(target)).append("();");
-        } else {
-            out.append(" return;");
-        }
+        // The execution continues in the procedure it jumps to, so it is a
+        // call. The original leaves the return address on the return stack
+        // before it, and the compiled code does the same, so the two agree
+        // on where the return goes.
+        out.append(' ').append(methodName(target)).append("();");
         return out.toString();
     }
 
@@ -386,15 +544,20 @@ final class ScriptEmitter {
     }
 
     /** A branch: an if or a while. */
-    private static String branch(CompiledScript script, Instruction instruction, String kind) {
+    private static String branch(CompiledScript script, Instruction instruction,
+            Map<Integer, Integer> blockOf, String kind) {
+        Integer block = blockOf.get(instruction.target);
+        if (block == null) {
+            return null;
+        }
         StringBuilder out = new StringBuilder();
         out.append("{ Program.ProgramValue condition = popValue();");
         if ("if".equals(kind)) {
             out.append(" Program.ProgramValue target = popValue();");
-            out.append(" if (condition.isEmpty()) { goto L").append(instruction.target).append("; } }");
+            out.append(" if (condition.isEmpty()) { block = ").append(block).append("; continue; } }");
         } else {
-            out.append(" if (condition.isEmpty()) { popValue(); goto L")
-                .append(instruction.target).append("; } }");
+            out.append(" if (condition.isEmpty()) { popValue(); block = ")
+                .append(block).append("; continue; } }");
         }
         return out.toString();
     }
@@ -411,25 +574,30 @@ final class ScriptEmitter {
         String result = GameApiSlots.RESULTS[slot];
         String[] parts = kinds.isEmpty() ? new String[0] : kinds.split(",");
 
-        StringBuilder out = new StringBuilder();
         // The arguments come off the stack in the reverse order of the
-        // method's parameters.
+        // method's parameters, into locals of their own.
+        StringBuilder arguments = new StringBuilder();
         for (int i = parts.length - 1; i >= 0; i--) {
-            out.append(pop(parts[i], "a" + i)).append(" ");
+            arguments.append(pop(parts[i], "a" + i)).append(" ");
         }
-        out.append("gameApi.").append(method).append('(');
+        StringBuilder call = new StringBuilder();
+        call.append("gameApi.").append(method).append('(');
         for (int i = 0; i < parts.length; i++) {
             if (i > 0) {
-                out.append(", ");
+                call.append(", ");
             }
-            out.append('a').append(i);
+            call.append('a').append(i);
         }
-        out.append(')');
+        call.append(')');
 
+        StringBuilder out = new StringBuilder();
+        out.append("{ ").append(arguments);
         if (result.isEmpty()) {
-            return out.toString() + ";";
+            out.append(call).append("; }");
+        } else {
+            out.append("push").append(pushKind(result)).append('(').append(call).append("); }");
         }
-        return "push" + pushKind(result) + "(" + out + ");";
+        return out.toString();
     }
 
     /** The code that takes one value off the stack. */

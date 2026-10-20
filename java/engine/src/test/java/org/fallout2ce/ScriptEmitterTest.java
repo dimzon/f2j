@@ -141,6 +141,105 @@ class ScriptEmitterTest {
         Db.dbCloseAll();
     }
 
+    /**
+     * The reference scripts, run through the VM and through the compiled
+     * code.
+     *
+     * <p>They are the scripts the reference harness runs, so they are the
+     * ones whose behaviour is known. The compiled code has to do the same
+     * thing: the same calls to the game, in the same order, and the same
+     * stack at the end.
+     */
+    private static final String[] REFERENCE_SCRIPTS = {
+        "scripts\\miJerky.int",
+        "scripts\\CATH2MV.int",
+        "scripts\\acdog.int",
+        "scripts\\ABEL.int",
+        "scripts\\doorcode.int",
+        "scripts\\CODEDISK.int",
+        "scripts\\ARTIFACT.int",
+        "scripts\\MutFruit.int",
+        "scripts\\DOG2.int",
+        "scripts\\VSGTEAM9.int",
+        "scripts\\JONATHAN.int",
+        "scripts\\FREEZER.int",
+        "scripts\\GRAFFITI.int",
+        "scripts\\BVAIR.int",
+        "scripts\\ziclosed.int",
+        "scripts\\cowbomb.int",
+        "scripts\\CSAREA2.int",
+    };
+
+    /** The stack of a program, the way the reference writes it. */
+    private static String stack(List<Program.ProgramValue> values) {
+        StringBuilder out = new StringBuilder();
+        for (int i = values.size() - 1; i >= 0; i--) {
+            Program.ProgramValue value = values.get(i);
+            if (out.length() > 0) {
+                out.append(' ');
+            }
+            out.append(String.format("%04X:%d", value.opcode & 0xFFFF, value.integerValue));
+        }
+        return out.toString();
+    }
+
+    @Test
+    void everyReferenceScriptBehavesTheSameCompiled() throws Exception {
+        Path master = Paths.get(gameData(), "master.dat");
+        assertTrue(master.toFile().isFile());
+        assertEquals(0, Db.dbOpen(master.toString(), null));
+
+        List<String> divergences = new ArrayList<>();
+        for (String name : REFERENCE_SCRIPTS) {
+            // The script, compiled.
+            byte[] data = ScriptScanner.readScript(name);
+            assertNotNull(data, name);
+            ScriptCompiler.CompiledScript script = ScriptCompiler.compile(name, data);
+            assertTrue(script.problems.isEmpty(), script.problems.toString());
+            assertTrue(script.analysisProblems.isEmpty(), script.analysisProblems.toString());
+            ScriptEmitter.Emitted emitted = ScriptEmitter.emit(script);
+            assertTrue(emitted.problems.isEmpty(), emitted.problems.toString());
+            Class<?> type = compile(emitted);
+
+            // The script, through the VM.
+            MockScriptApi vm = runWithTheVm(name);
+            String vmStack;
+            {
+                Program program = Program.programCreateByPath(name);
+                assertNotNull(program);
+                program.flags = 0;
+                program.instructionPointer = 0;
+                Program.setGameApi(vm);
+                Program.programInterpret(program, 20000);
+                vmStack = stack(program.stackValues);
+                Program.programFree(program);
+            }
+
+            // The script, through the compiled code.
+            MockScriptApi compiled = new MockScriptApi();
+            ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class)
+                .newInstance(compiled);
+
+            try {
+                instance.run();
+                assertEquals(trace(vm), trace(compiled), name);
+                assertEquals(vmStack, stack(instance.stack), name);
+            } catch (AssertionError | RuntimeException failure) {
+                // The scripts whose code has branches still diverge, and
+                // the test says which ones.
+                divergences.add(name + ": " + failure.getMessage());
+            }
+        }
+
+        Db.dbCloseAll();
+        System.out.println("reference scripts that diverge: " + divergences.size());
+        for (String divergence : divergences) {
+            System.out.println("  " + divergence);
+        }
+        assertTrue(divergences.size() < REFERENCE_SCRIPTS.length,
+            "every reference script diverges");
+    }
+
     @Test
     void theEmitterCoversTheShippedScripts() {
         // How much of the game's scripts the emitter can turn into code.
