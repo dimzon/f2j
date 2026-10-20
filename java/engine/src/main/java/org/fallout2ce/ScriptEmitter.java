@@ -181,12 +181,20 @@ final class ScriptEmitter {
             return "dataToAddress();";
         case 0x00E:
             return "exitScript();";
+        case 0x00F:
+            return "detach();";
         case 0x010:
             return "exitProgram();";
         case 0x011:
             return "stopProgram();";
         case 0x012:
             return "pushValue(fetchGlobal(popInt()));";
+        case 0x014:
+            return external(script, instruction, "fetchExternal");
+        case 0x015:
+            return external(script, instruction, "storeExternal");
+        case 0x016:
+            return external(script, instruction, "exportVariable");
         case 0x013:
             return "storeGlobal(popInt(), popValue());";
         case 0x018:
@@ -230,6 +238,46 @@ final class ScriptEmitter {
             return branch(script, instruction, "while");
         case 0x031:
             return "setFrameLocal(popInt(), popValue());";
+        case 0x033:
+            return "compare(Compare.EQUAL);";
+        case 0x034:
+            return "compare(Compare.NOT_EQUAL);";
+        case 0x035:
+            return "compare(Compare.LESS_OR_EQUAL);";
+        case 0x036:
+            return "compare(Compare.GREATER_OR_EQUAL);";
+        case 0x037:
+            return "compare(Compare.LESS);";
+        case 0x038:
+            return "compare(Compare.GREATER);";
+        case 0x039:
+            return "add();";
+        case 0x03A:
+            return "subtract();";
+        case 0x03B:
+            return "multiply();";
+        case 0x03C:
+            return "divide();";
+        case 0x03D:
+            return "modulo();";
+        case 0x040:
+            return "bitwise(0);";
+        case 0x041:
+            return "bitwise(1);";
+        case 0x042:
+            return "bitwise(2);";
+        case 0x03E:
+            return "logical(0);";
+        case 0x03F:
+            return "logical(1);";
+        case 0x043:
+            return "bitwiseNot();";
+        case 0x045:
+            return "logicalNot();";
+        case 0x044:
+            return "floor();";
+        case 0x046:
+            return "negate();";
         case 0x032:
             return "pushValue(frameLocal(popInt()));";
         default:
@@ -254,6 +302,29 @@ final class ScriptEmitter {
      * to another procedure without it is a tail jump, and in the compiled
      * code a tail jump is a return.
      */
+    /**
+     * An external variable: the name is on the stack, and the original
+     * reads it out of the script's identifiers.
+     */
+    private static String external(CompiledScript script, Instruction instruction, String method) {
+        Integer offset = instruction.topValue;
+        String name = offset == null ? null : script.identifiers.get(offset);
+        if (name == null) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder();
+        out.append(method).append("(\"");
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '\\' || c == '"') {
+                out.append('\\');
+            }
+            out.append(c);
+        }
+        out.append("\");");
+        return out.toString();
+    }
+
     private static String jump(CompiledScript script, Procedure procedure, Instruction instruction,
             Instruction previous) {
         StringBuilder out = new StringBuilder();

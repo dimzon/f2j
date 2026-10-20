@@ -314,6 +314,16 @@ public abstract class ScriptBase {
         flags = popInt() & 0xFFFF;
     }
 
+    /**
+     * op_detach (0x0F): the script leaves the script that started it.
+     *
+     * <p>The original takes the child off its parent. A compiled script has
+     * no parent - the game's own script system is what starts scripts, and
+     * that is the game's business - so there is nothing to detach from.
+     */
+    protected final void detach() {
+    }
+
     /** op_exit (0x0E): the script ends. */
     protected final void exitScript() {
         finished = true;
@@ -327,6 +337,323 @@ public abstract class ScriptBase {
     /** op_stop_program (0x11): the program stops. */
     protected final void stopProgram() {
         finished = true;
+    }
+
+    // ------------------------------------------------------------------
+    // The arithmetic. The original works on the values and not on their
+    // types: a string plus a number is a string, an integer plus an
+    // integer is an integer unless it overflows, and then it is a float.
+    // ------------------------------------------------------------------
+
+    /** op_add (0x39). */
+    protected final void add() {
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+        switch (right.opcode) {
+        case Program.VALUE_TYPE_STRING:
+        case Program.VALUE_TYPE_DYNAMIC_STRING:
+            pushString(stringAt(right) + text(left));
+            break;
+        case Program.VALUE_TYPE_FLOAT:
+            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(right.floatValue + left.floatValue);
+            } else {
+                pushFloat(right.floatValue + left.integerValue);
+            }
+            break;
+        case Program.VALUE_TYPE_INT:
+            if (isString(left)) {
+                pushString(Integer.toString(right.integerValue) + text(left));
+            } else if (left.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(right.integerValue + left.floatValue);
+            } else {
+                int sum = right.integerValue + left.integerValue;
+                if (((right.integerValue ^ sum) & (left.integerValue ^ sum)) < 0) {
+                    // The sum overflowed, so it is a float.
+                    pushFloat((float) right.integerValue + left.integerValue);
+                } else {
+                    pushInt(sum);
+                }
+            }
+            break;
+        default:
+            pushString(text(right) + text(left));
+            break;
+        }
+    }
+
+    /** op_sub (0x3A). */
+    protected final void subtract() {
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+        switch (right.opcode) {
+        case Program.VALUE_TYPE_FLOAT:
+            pushFloat(right.floatValue - (left.opcode == Program.VALUE_TYPE_FLOAT
+                ? left.floatValue : left.integerValue));
+            break;
+        case Program.VALUE_TYPE_INT:
+            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(right.integerValue - left.floatValue);
+            } else {
+                pushInt(right.integerValue - left.integerValue);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    /** op_mul (0x3B). */
+    protected final void multiply() {
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+        switch (right.opcode) {
+        case Program.VALUE_TYPE_FLOAT:
+            pushFloat(right.floatValue * (left.opcode == Program.VALUE_TYPE_FLOAT
+                ? left.floatValue : left.integerValue));
+            break;
+        case Program.VALUE_TYPE_INT:
+            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(right.integerValue * left.floatValue);
+            } else {
+                pushInt(left.integerValue * right.integerValue);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    /** op_div (0x3C). */
+    protected final void divide() {
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+        switch (right.opcode) {
+        case Program.VALUE_TYPE_FLOAT: {
+            float divisor = left.opcode == Program.VALUE_TYPE_FLOAT
+                ? left.floatValue : left.integerValue;
+            if (divisor == 0.0f) {
+                throw new IllegalStateException("Division (DIV) by zero");
+            }
+            pushFloat(right.floatValue / divisor);
+            break;
+        }
+        case Program.VALUE_TYPE_INT:
+            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
+                if (left.floatValue == 0.0f) {
+                    throw new IllegalStateException("Division (DIV) by zero");
+                }
+                pushFloat((float) right.integerValue / left.floatValue);
+            } else {
+                if (left.integerValue == 0) {
+                    throw new IllegalStateException("Division (DIV) by zero");
+                }
+                pushInt(right.integerValue / left.integerValue);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    /** op_mod (0x3D). */
+    protected final void modulo() {
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+        if (right.opcode == Program.VALUE_TYPE_FLOAT) {
+            throw new IllegalStateException("Trying to MOD a float");
+        }
+        if (right.opcode != Program.VALUE_TYPE_INT) {
+            return;
+        }
+        if (left.opcode == Program.VALUE_TYPE_FLOAT) {
+            throw new IllegalStateException("Trying to MOD with a float");
+        }
+        if (left.integerValue == 0) {
+            throw new IllegalStateException("Division (MOD) by zero");
+        }
+        pushInt(right.integerValue % left.integerValue);
+    }
+
+    /** op_floor (0x44). */
+    protected final void floor() {
+        Program.ProgramValue value = popValue();
+        if (value.opcode == Program.VALUE_TYPE_STRING) {
+            throw new IllegalStateException("Invalid arg given to floor()");
+        }
+        if (value.opcode == Program.VALUE_TYPE_FLOAT) {
+            value.opcode = Program.VALUE_TYPE_INT;
+            value.integerValue = (int) value.floatValue;
+            value.floatValue = Float.intBitsToFloat(value.integerValue);
+        }
+        pushValue(value);
+    }
+
+    /** op_neg (0x46). */
+    protected final void negate() {
+        Program.ProgramValue value = popValue();
+        switch (value.opcode) {
+        case Program.VALUE_TYPE_INT:
+            pushInt(-value.integerValue);
+            break;
+        case Program.VALUE_TYPE_FLOAT:
+            pushFloat(-value.floatValue);
+            break;
+        default:
+            throw new IllegalStateException("Invalid arg given to NEG");
+        }
+    }
+
+    /** op_not (0x45): the original looks at the value's integer, whatever it is. */
+    protected final void logicalNot() {
+        Program.ProgramValue value = popValue();
+        pushInt(value.integerValue == 0 ? 1 : 0);
+    }
+
+    /** op_and (0x3E) and op_or (0x3F). */
+    protected final void logical(int kind) {
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+        boolean a = truthy(right);
+        boolean b = truthy(left);
+        pushInt((kind == 0 ? (a && b) : (a || b)) ? 1 : 0);
+    }
+
+    /**
+     * Whether a value counts as true.
+     *
+     * <p>A string always does, a float does when its bits are not zero, an
+     * integer when it is not zero and a pointer when it is not null.
+     */
+    private static boolean truthy(Program.ProgramValue value) {
+        switch (value.opcode) {
+        case Program.VALUE_TYPE_STRING:
+        case Program.VALUE_TYPE_DYNAMIC_STRING:
+            return true;
+        case Program.VALUE_TYPE_FLOAT:
+            return (value.integerValue & 0x7FFFFFFF) != 0;
+        case Program.VALUE_TYPE_INT:
+            return value.integerValue != 0;
+        case Program.VALUE_TYPE_PTR:
+            return value.pointerValue != null;
+        default:
+            return false;
+        }
+    }
+
+    /** op_bitwise_not (0x43). */
+    protected final void bitwiseNot() {
+        pushInt(~popInt());
+    }
+
+    /** op_bitwise_and (0x40), op_bitwise_or (0x41), op_bitwise_xor (0x42). */
+    protected final void bitwise(int kind) {
+        int right = popInt();
+        int left = popInt();
+        switch (kind) {
+        case 0: pushInt(left & right); break;
+        case 1: pushInt(left | right); break;
+        default: pushInt(left ^ right); break;
+        }
+    }
+
+    /** Whether a value is a string of either kind. */
+    private static boolean isString(Program.ProgramValue value) {
+        return value.opcode == Program.VALUE_TYPE_STRING
+            || value.opcode == Program.VALUE_TYPE_DYNAMIC_STRING;
+    }
+
+    // ------------------------------------------------------------------
+    // The comparisons. The original compares the values and not their
+    // types: a string against a number compares the text of the number.
+    // ------------------------------------------------------------------
+
+    /** The comparison the opcodes ask for. */
+    protected enum Compare {
+        EQUAL, NOT_EQUAL, LESS, LESS_OR_EQUAL, GREATER, GREATER_OR_EQUAL
+    }
+
+    /** op_equal (0x33) and the five that go with it. */
+    protected final void compare(Compare kind) {
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+
+        boolean result;
+        switch (right.opcode) {
+        case Program.VALUE_TYPE_STRING:
+        case Program.VALUE_TYPE_DYNAMIC_STRING: {
+            String first = stringAt(right);
+            String second = text(left);
+            result = kind == Compare.EQUAL ? first.equals(second)
+                : kind == Compare.NOT_EQUAL ? !first.equals(second)
+                : kind == Compare.LESS ? first.compareTo(second) < 0
+                : kind == Compare.LESS_OR_EQUAL ? first.compareTo(second) <= 0
+                : kind == Compare.GREATER ? first.compareTo(second) > 0
+                : first.compareTo(second) >= 0;
+            break;
+        }
+        case Program.VALUE_TYPE_FLOAT: {
+            float first = right.floatValue;
+            float second = left.opcode == Program.VALUE_TYPE_FLOAT ? left.floatValue
+                : left.opcode == Program.VALUE_TYPE_INT ? left.integerValue
+                : 0.0f;
+            result = compareFloats(kind, first, second);
+            break;
+        }
+        case Program.VALUE_TYPE_INT: {
+            if (left.opcode == Program.VALUE_TYPE_STRING
+                    || left.opcode == Program.VALUE_TYPE_DYNAMIC_STRING) {
+                String first = Integer.toString(right.integerValue);
+                String second = text(left);
+                result = kind == Compare.EQUAL ? first.equals(second)
+                    : kind == Compare.NOT_EQUAL ? !first.equals(second)
+                    : kind == Compare.LESS ? first.compareTo(second) < 0
+                    : kind == Compare.LESS_OR_EQUAL ? first.compareTo(second) <= 0
+                    : kind == Compare.GREATER ? first.compareTo(second) > 0
+                    : first.compareTo(second) >= 0;
+                break;
+            }
+            float first = right.integerValue;
+            float second = left.opcode == Program.VALUE_TYPE_FLOAT ? left.floatValue
+                : left.integerValue;
+            result = compareFloats(kind, first, second);
+            break;
+        }
+        default: {
+            float first = 0.0f;
+            float second = 0.0f;
+            result = compareFloats(kind, first, second);
+            break;
+        }
+        }
+        pushInt(result ? 1 : 0);
+    }
+
+    /** The comparison of two floats. */
+    private static boolean compareFloats(Compare kind, float a, float b) {
+        switch (kind) {
+        case EQUAL: return a == b;
+        case NOT_EQUAL: return a != b;
+        case LESS: return a < b;
+        case LESS_OR_EQUAL: return a <= b;
+        case GREATER: return a > b;
+        default: return a >= b;
+        }
+    }
+
+    /** The text of a value, the way the original formats it. */
+    private String text(Program.ProgramValue value) {
+        switch (value.opcode) {
+        case Program.VALUE_TYPE_STRING:
+        case Program.VALUE_TYPE_DYNAMIC_STRING:
+            return stringAt(value);
+        case Program.VALUE_TYPE_FLOAT:
+            return String.format(java.util.Locale.ROOT, "%.5f", value.floatValue);
+        case Program.VALUE_TYPE_INT:
+            return Integer.toString(value.integerValue);
+        default:
+            return "";
+        }
     }
 
     // ------------------------------------------------------------------

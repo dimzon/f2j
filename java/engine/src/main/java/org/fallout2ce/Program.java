@@ -889,55 +889,6 @@ public class Program {
     // dispatch on the type of the first (value[1]) and, inside, the second
     // (value[0]). Strings compare with strcmp semantics; ints and floats
     // compare numerically; pointers have per-operator null-test special cases.
-    private enum Cmp {
-        EQ, NE, LT, LE, GT, GE;
-
-        boolean ints(int a, int b) {
-            switch (this) {
-            case EQ: return a == b;
-            case NE: return a != b;
-            case LT: return a < b;
-            case LE: return a <= b;
-            case GT: return a > b;
-            default: return a >= b;
-            }
-        }
-
-        boolean floats(float a, float b) {
-            switch (this) {
-            case EQ: return a == b;
-            case NE: return a != b;
-            case LT: return a < b;
-            case LE: return a <= b;
-            case GT: return a > b;
-            default: return a >= b;
-            }
-        }
-
-        boolean strings(String a, String b) {
-            int order = a.compareTo(b);
-            switch (this) {
-            case EQ: return order == 0;
-            case NE: return order != 0;
-            case LT: return order < 0;
-            case LE: return order <= 0;
-            case GT: return order > 0;
-            default: return order >= 0;
-            }
-        }
-
-        String symbol() {
-            switch (this) {
-            case EQ: return "==";
-            case NE: return "!=";
-            case LT: return "<";
-            case LE: return "<=";
-            case GT: return ">";
-            default: return ">=";
-            }
-        }
-    }
-
     private static void opCompare(Program program, Cmp cmp) {
         ProgramValue[] value = new ProgramValue[2];
         for (int arg = 0; arg < 2; arg++) {

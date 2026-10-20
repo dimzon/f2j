@@ -140,6 +140,15 @@ final class ScriptCompiler {
         /** How many procedures the script has. */
         int procedureCount;
 
+        /**
+         * The script's identifiers, by the offset the code uses.
+         *
+         * <p>They are the names of the procedures and of the external
+         * variables. The original reads them out of the script's file, so
+         * the compiler does too.
+         */
+        final Map<Integer, String> identifiers = new HashMap<>();
+
         boolean ok() {
             return problems.isEmpty();
         }
@@ -242,6 +251,20 @@ final class ScriptCompiler {
         decode(script, top, data);
 
         script.procedureCount = procedures.size();
+
+        // The identifiers: the length, and then the names, each of them
+        // ending with a zero.
+        int identifiersLength = Program.stackReadInt32(data, identifiersPos);
+        int start = identifiersPos + 4;
+        while (start < identifiersPos + 4 + identifiersLength && start < data.length) {
+            int end = start;
+            while (end < data.length && data[end] != 0) {
+                end++;
+            }
+            script.identifiers.put(start - identifiersPos,
+                new String(data, start, end - start, java.nio.charset.StandardCharsets.US_ASCII));
+            start = end + 1;
+        }
 
         // The stack, and with it the branches.
         analyse(script, top);
