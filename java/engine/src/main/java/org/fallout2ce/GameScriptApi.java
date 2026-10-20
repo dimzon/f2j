@@ -8,7 +8,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  *
  * <p>Only the builtins whose backing the port already provides are
  * implemented; the rest are refused, exactly as {@link UnsupportedScriptApi}
- * refuses them. A refused builtin stops the script with a fatal error, the
+ * refuses them. The builtins that are the script's own state - its locals,
+ * its owner and its action - are not here: they belong to the compiled
+ * script's base class. A refused builtin stops the script with a fatal error, the
  * way the original stops when it meets an opcode it has no handler for.
  *
  * <p>The builtins that are implemented here are the ones the shipped scripts
@@ -28,9 +30,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80BC, // op_self_obj
         0x80C1, // op_get_local_var
         0x80C2, // op_set_local_var
+        0x80C7, // op_script_action
         0x80BF, // opGetDude
         0x8101, // op_cur_map_index
-        0x80C7, // op_script_action
         0x8102, // op_critter_add_trait
         0x814B, // op_party_member_obj
         0x80C5, // op_get_global_var
@@ -56,45 +58,15 @@ public class GameScriptApi extends UnsupportedScriptApi {
         return false;
     }
 
-    /**
-     * op_self_obj (0x80BC): the object the script runs for.
-     *
-     * <p>C's {@code scriptGetSelf} finds the script that owns the program and
-     * returns its owner, or for a spatial script a hidden marker object. With
-     * no script attached there is no owner, and the original answers null.
-     */
-    @Override
-    public Object selfObj(Program program) {
-        return program.scriptOwner;
-    }
 
-    /**
-     * op_get_local_var (0x80C1): one of the script's own local variables.
-     *
-     * <p>C resolves the script context and reads the variable from the
-     * script's storage. Without a script there is no context, and the
-     * original answers -1.
-     */
-    @Override
-    public Program.ProgramValue getLocalVar(Program program, int index) {
-        return new Program.ProgramValue(-1);
-    }
 
-    /**
-     * op_set_local_var (0x80C2): write one of the script's own local
-     * variables. Without a script there is no context and the write is
-     * dropped, like the original's.
-     */
-    @Override
-    public void setLocalVar(Program program, int index, Program.ProgramValue value) {
-    }
 
     /**
      * opGetDude (0x80BF): the player character. The object system models the
      * dude as a null holder for now.
      */
     @Override
-    public Object opGetDude(Program program) {
+    public Object opGetDude() {
         return null;
     }
 
@@ -103,18 +75,10 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * not ported yet, so this is the map header's index of zero.
      */
     @Override
-    public int curMapIndex(Program program) {
+    public int curMapIndex() {
         return 0;
     }
 
-    /**
-     * op_script_action (0x80C7): the script's action. The script registry is
-     * not ported yet, so this is the action carried by the program.
-     */
-    @Override
-    public int scriptAction(Program program) {
-        return program.scriptAction;
-    }
 
     /**
      * op_critter_add_trait (0x8102): add a perk or trait to a critter.
@@ -125,7 +89,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * is implemented. C pushes -1 on every path, and so does this.
      */
     @Override
-    public int critterAddTrait(Program program, Object object, int kind, int param, int value) {
+    public int critterAddTrait(Object object, int kind, int param, int value) {
         if (object == null) {
             return -1;
         }
@@ -136,7 +100,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * op_party_member_obj (0x814B): the party member with a given proto id.
      */
     @Override
-    public Object partyMemberObj(Program program, int protoId) {
+    public Object partyMemberObj(int protoId) {
         return PartyMembers.partyMemberFindByProtoId(ProtoId.ofPid(protoId));
     }
 
@@ -149,7 +113,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the engine's init is ported.
      */
     @Override
-    public Program.ProgramValue getGlobalVar(Program program, int variable) {
+    public Program.ProgramValue getGlobalVar(int variable) {
         if (GameGlobalVars.length == 0) {
             return new Program.ProgramValue(-1);
         }
@@ -172,7 +136,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * anything else goes into the value table and clears the pointer.
      */
     @Override
-    public void setGlobalVar(Program program, int variable, Program.ProgramValue value) {
+    public void setGlobalVar(int variable, Program.ProgramValue value) {
         if (GameGlobalVars.length == 0) {
             return;
         }
@@ -193,7 +157,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>C answers 0 for a null object and prints a script error.
      */
     @Override
-    public int objIsCarryingObj(Program program, Object object, int protoId) {
+    public int objIsCarryingObj(Object object, int protoId) {
         if (object == null) {
             return 0;
         }
@@ -209,7 +173,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>C answers null for a null object and prints a script error.
      */
     @Override
-    public Object objCarryingPidObj(Program program, Object object, int protoId) {
+    public Object objCarryingPidObj(Object object, int protoId) {
         if (object == null) {
             return null;
         }
@@ -227,7 +191,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * critter that is not a critter answers 0.
      */
     @Override
-    public Program.ProgramValue critterInvenObj(Program program, Object critter, int type) {
+    public Program.ProgramValue critterInvenObj(Object critter, int type) {
         if (critter == null) {
             return new Program.ProgramValue(0);
         }
@@ -270,7 +234,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * is negative.
      */
     @Override
-    public String messageStr(Program program, int messageListIndex, int messageIndex) {
+    public String messageStr(int messageListIndex, int messageIndex) {
         ensureScriptsListLoaded();
 
         String text = null;
@@ -285,7 +249,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * op_display_msg (0x80B8): put a message on the message monitor.
      */
     @Override
-    public void displayMsg(Program program, String message) {
+    public void displayMsg(String message) {
         DisplayMonitor.addMessage(message);
 
         if (Settings.settings.debug.show_script_messages) {
@@ -297,7 +261,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * op_debug_msg (0x8154): write a message to the debug log.
      */
     @Override
-    public void debugMsg(Program program, String message) {
+    public void debugMsg(String message) {
         if (Settings.settings.debug.show_script_messages) {
             Debug.print("\n%s", message);
         }
@@ -309,7 +273,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>A null object is the invalid type.
      */
     @Override
-    public int objType(Program program, Object object) {
+    public int objType(Object object) {
         if (object == null) {
             return ObjectType.INVALID.value();
         }
@@ -323,7 +287,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * no object.
      */
     @Override
-    public int tileNum(Program program, Object object) {
+    public int tileNum(Object object) {
         if (object == null) {
             return -1;
         }
@@ -338,7 +302,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * ProtoId gives for a null object.
      */
     @Override
-    public int objPid(Program program, Object object) {
+    public int objPid(Object object) {
         if (object == null) {
             return ProtoId.EMPTY_PID;
         }
@@ -352,6 +316,52 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>C does this during the game's startup; here it happens on demand,
      * because the message files are only reachable through the script API.
      */
+    /**
+     * op_self_obj (0x80BC): the object the script runs for.
+     *
+     * <p>C's scriptGetSelf finds the script that owns the program and
+     * returns its owner. The script is the game's own, so the game answers
+     * this - not the interpreter. With no script behind the API there is no
+     * owner, and the answer is null, which is what C's scriptGetSelf
+     * returns for a program with no script.
+     */
+    @Override
+    public Object selfObj() {
+        return null;
+    }
+
+    /**
+     * op_get_local_var (0x80C1): one of the script's own local variables.
+     *
+     * <p>C resolves the script context and reads the variable from the
+     * script's storage. Without a script there is no context, and the
+     * original answers -1.
+     */
+    @Override
+    public Program.ProgramValue getLocalVar(int index) {
+        return new Program.ProgramValue(-1);
+    }
+
+    /**
+     * op_set_local_var (0x80C2): write one of the script's own local
+     * variables. Without a script there is no context and the write is
+     * dropped, which is what C's scriptContextSetLocalVar does.
+     */
+    @Override
+    public void setLocalVar(int index, Program.ProgramValue value) {
+    }
+
+    /**
+     * op_script_action (0x80C7): the script's action.
+     *
+     * <p>The action belongs to the script, so the game answers it. A
+     * program with no script has no action, and the answer is 0.
+     */
+    @Override
+    public int scriptAction() {
+        return 0;
+    }
+
     private static void ensureScriptsListLoaded() {
         if (!ScriptMessages.scriptFileName(0).isEmpty()) {
             return;

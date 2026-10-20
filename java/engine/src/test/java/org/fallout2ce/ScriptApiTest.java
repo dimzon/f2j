@@ -49,7 +49,7 @@ class ScriptApiTest {
         assertEquals(0, Db.dbOpen(master.toString(), null));
 
         MockScriptApi mock = new MockScriptApi();
-        Program.setScriptApi(mock);
+        Program.setGameApi(mock);
 
         byte[] data = ScriptScanner.readScript(name);
         assertNotNull(data, name);
@@ -88,6 +88,9 @@ class ScriptApiTest {
         { "scripts\\FREEZER.int", "20", "80100001", "1", "C001:0" },
         { "scripts\\GRAFFITI.int", "20", "80100001", "2", "C001:0 C001:0" },
         { "scripts\\BVAIR.int", "20", "80100001", "1", "C001:0" },
+        { "scripts\\ziclosed.int", "20", "80100001", "20", "C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0" },
+        { "scripts\\cowbomb.int", "20", "80100001", "12", "C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0" },
+        { "scripts\\CSAREA2.int", "20", "80100001", "20", "C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0" },
     };
 
     private static final class State {
@@ -97,12 +100,12 @@ class ScriptApiTest {
         String stack;
     }
 
-    private State runForState(String name, ScriptApi api) throws Exception {
+    private State runForState(String name, GameApi api) throws Exception {
         Path master = Paths.get(gameData(), "master.dat");
         assertTrue(master.toFile().isFile());
         assertEquals(0, Db.dbOpen(master.toString(), null));
 
-        Program.setScriptApi(api);
+        Program.setGameApi(api);
 
         Program program = Program.programCreateByPath(name);
         assertNotNull(program);
@@ -130,7 +133,7 @@ class ScriptApiTest {
         return state;
     }
 
-    private void assertMatchesReference(String name, ScriptApi api) throws Exception {
+    private void assertMatchesReference(String name, GameApi api) throws Exception {
         String[] expected = null;
         for (String[] reference : REFERENCE) {
             if (reference[0].equals(name)) {
@@ -247,16 +250,16 @@ class ScriptApiTest {
     @Test
     void theMockRecordsTheBuiltinsInOrder() {
         MockScriptApi mock = new MockScriptApi();
-        mock.selfObj(null);
-        mock.getLocalVar(null, 3);
-        mock.setLocalVar(null, 4, new Program.ProgramValue(7));
+        mock.curMapIndex();
+        mock.getGlobalVar(3);
+        mock.setGlobalVar(4, new Program.ProgramValue(7));
 
         List<MockScriptApi.Call> calls = mock.calls();
         assertEquals(3, calls.size());
-        assertEquals("selfObj", calls.get(0).name);
-        assertEquals("getLocalVar", calls.get(1).name);
+        assertEquals("curMapIndex", calls.get(0).name);
+        assertEquals("getGlobalVar", calls.get(1).name);
         assertEquals("3", calls.get(1).args.get(0));
-        assertEquals("setLocalVar", calls.get(2).name);
+        assertEquals("setGlobalVar", calls.get(2).name);
         assertEquals("4", calls.get(2).args.get(0));
         assertEquals("C001:7", calls.get(2).args.get(1));
     }

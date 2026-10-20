@@ -9,22 +9,22 @@ package org.fallout2ce;
  * right and the VM pops them right to left, so a builtin that takes two
  * arguments sees them reversed from the source.
  *
- * <p>Generated together with {@link ScriptApi}.
+ * <p>Generated together with {@link GameApi}.
  */
-final class ScriptApiDispatch {
+final class GameApiDispatch {
 
-    private ScriptApiDispatch() {
+    private GameApiDispatch() {
     }
 
     /** Installs the API's builtins into the opcode table. */
-    static void install(ScriptApi api) {
+    static void install(GameApi api) {
         // 0x804D opSayEnd
         Program.INTERPRETER_OPCODE_HANDLERS[77] = program -> {
             if (!api.supports(77)) {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x804D.", 0x804D));
             }
-            api.opSayEnd(program);
+            api.opSayEnd();
         };
         // 0x804E opSayStart
         Program.INTERPRETER_OPCODE_HANDLERS[78] = program -> {
@@ -32,7 +32,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x804E.", 0x804E));
             }
-            api.opSayStart(program);
+            api.opSayStart();
         };
         // 0x8052 opSayOption
         Program.INTERPRETER_OPCODE_HANDLERS[82] = program -> {
@@ -42,7 +42,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             Program.ProgramValue a1 = Program.programStackPopValue(program);
-            api.opSayOption(program, a1, a0);
+            api.opSayOption(a1, a0);
         };
         // 0x8053 opSayReply
         Program.INTERPRETER_OPCODE_HANDLERS[83] = program -> {
@@ -52,7 +52,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             Program.ProgramValue a1 = Program.programStackPopValue(program);
-            api.opSayReply(program, a1, a0);
+            api.opSayReply(a1, a0);
         };
         // 0x8054 opSayMessage
         Program.INTERPRETER_OPCODE_HANDLERS[84] = program -> {
@@ -62,7 +62,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             Program.ProgramValue a1 = Program.programStackPopValue(program);
-            api.opSayMessage(program, a1, a0);
+            api.opSayMessage(a1, a0);
         };
         // 0x806B opDisplay
         Program.INTERPRETER_OPCODE_HANDLERS[107] = program -> {
@@ -71,7 +71,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x806B.", 0x806B));
             }
             String a0 = Program.programStackPopString(program);
-            api.opDisplay(program, a0);
+            api.opDisplay(a0);
         };
         // 0x80A1 op_give_exp_points
         Program.INTERPRETER_OPCODE_HANDLERS[161] = program -> {
@@ -80,7 +80,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80A1.", 0x80A1));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.giveExpPoints(program, a0);
+            api.giveExpPoints(a0);
         };
         // 0x80A2 op_scr_return
         Program.INTERPRETER_OPCODE_HANDLERS[162] = program -> {
@@ -89,7 +89,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80A2.", 0x80A2));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.scrReturn(program, a0);
+            api.scrReturn(a0);
         };
         // 0x80A3 op_play_sfx
         Program.INTERPRETER_OPCODE_HANDLERS[163] = program -> {
@@ -98,7 +98,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80A3.", 0x80A3));
             }
             String a0 = Program.programStackPopString(program);
-            api.playSfx(program, a0);
+            api.playSfx(a0);
         };
         // 0x80A4 op_obj_name
         Program.INTERPRETER_OPCODE_HANDLERS[164] = program -> {
@@ -107,7 +107,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80A4.", 0x80A4));
             }
             Object a0 = Program.programStackPopPointer(program);
-            String result = api.objName(program, a0);
+            String result = api.objName(a0);
             Program.programStackPushString(program, result);
         };
         // 0x80A6 op_get_pc_stat
@@ -117,7 +117,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80A6.", 0x80A6));
             }
             int a0 = Program.programStackPopInteger(program);
-            int result = api.getPcStat(program, a0);
+            int result = api.getPcStat(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80A7 op_tile_contains_pid_obj
@@ -129,7 +129,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
-            Object result = api.tileContainsPidObj(program, a2, a1, a0);
+            Object result = api.tileContainsPidObj(a2, a1, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x80A8 op_set_map_start
@@ -142,7 +142,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
             int a3 = Program.programStackPopInteger(program);
-            api.setMapStart(program, a3, a2, a1, a0);
+            api.setMapStart(a3, a2, a1, a0);
         };
         // 0x80A9 op_override_map_start
         Program.INTERPRETER_OPCODE_HANDLERS[169] = program -> {
@@ -154,7 +154,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
             int a3 = Program.programStackPopInteger(program);
-            api.overrideMapStart(program, a3, a2, a1, a0);
+            api.overrideMapStart(a3, a2, a1, a0);
         };
         // 0x80AA op_has_skill
         Program.INTERPRETER_OPCODE_HANDLERS[170] = program -> {
@@ -164,7 +164,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.hasSkill(program, a1, a0);
+            int result = api.hasSkill(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80AB op_using_skill
@@ -175,7 +175,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.usingSkill(program, a1, a0);
+            int result = api.usingSkill(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80AC op_roll_vs_skill
@@ -187,7 +187,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            int result = api.rollVsSkill(program, a2, a1, a0);
+            int result = api.rollVsSkill(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80AE op_do_check
@@ -199,7 +199,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            int result = api.doCheck(program, a2, a1, a0);
+            int result = api.doCheck(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80AF op_success
@@ -209,7 +209,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80AF.", 0x80AF));
             }
             int a0 = Program.programStackPopInteger(program);
-            int result = api.success(program, a0);
+            int result = api.success(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80B0 op_critical
@@ -219,7 +219,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80B0.", 0x80B0));
             }
             int a0 = Program.programStackPopInteger(program);
-            int result = api.critical(program, a0);
+            int result = api.critical(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80B2 op_mark_area_known
@@ -231,7 +231,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
-            api.markAreaKnown(program, a2, a1, a0);
+            api.markAreaKnown(a2, a1, a0);
         };
         // 0x80B4 op_random
         Program.INTERPRETER_OPCODE_HANDLERS[180] = program -> {
@@ -239,7 +239,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80B4.", 0x80B4));
             }
-            int result = api.random(program);
+            int result = api.random();
             Program.programStackPushInteger(program, result);
         };
         // 0x80B6 op_move_to
@@ -251,7 +251,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            int result = api.moveTo(program, a2, a1, a0);
+            int result = api.moveTo(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80B7 op_create_object
@@ -264,7 +264,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
             int a3 = Program.programStackPopInteger(program);
-            Object result = api.createObject(program, a3, a2, a1, a0);
+            Object result = api.createObject(a3, a2, a1, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x80B8 op_display_msg
@@ -274,7 +274,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80B8.", 0x80B8));
             }
             String a0 = Program.programStackPopString(program);
-            api.displayMsg(program, a0);
+            api.displayMsg(a0);
         };
         // 0x80B9 op_script_overrides
         Program.INTERPRETER_OPCODE_HANDLERS[185] = program -> {
@@ -282,7 +282,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80B9.", 0x80B9));
             }
-            api.scriptOverrides(program);
+            api.scriptOverrides();
         };
         // 0x80BA op_obj_is_carrying_obj
         Program.INTERPRETER_OPCODE_HANDLERS[186] = program -> {
@@ -292,7 +292,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.objIsCarryingObj(program, a1, a0);
+            int result = api.objIsCarryingObj(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80BB op_tile_contains_obj_pid
@@ -304,7 +304,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
-            int result = api.tileContainsObjPid(program, a2, a1, a0);
+            int result = api.tileContainsObjPid(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80BC op_self_obj
@@ -313,7 +313,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80BC.", 0x80BC));
             }
-            Object result = api.selfObj(program);
+            Object result = api.selfObj();
             Program.programStackPushPointer(program, result);
         };
         // 0x80BD op_source_obj
@@ -322,7 +322,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80BD.", 0x80BD));
             }
-            Object result = api.sourceObj(program);
+            Object result = api.sourceObj();
             Program.programStackPushPointer(program, result);
         };
         // 0x80BE op_target_obj
@@ -331,7 +331,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80BE.", 0x80BE));
             }
-            Object result = api.targetObj(program);
+            Object result = api.targetObj();
             Program.programStackPushPointer(program, result);
         };
         // 0x80BF opGetDude
@@ -340,7 +340,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80BF.", 0x80BF));
             }
-            Object result = api.opGetDude(program);
+            Object result = api.opGetDude();
             Program.programStackPushPointer(program, result);
         };
         // 0x80C0 op_obj_being_used_with
@@ -349,7 +349,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80C0.", 0x80C0));
             }
-            Object result = api.objBeingUsedWith(program);
+            Object result = api.objBeingUsedWith();
             Program.programStackPushPointer(program, result);
         };
         // 0x80C1 op_get_local_var
@@ -359,7 +359,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80C1.", 0x80C1));
             }
             int a0 = Program.programStackPopInteger(program);
-            Program.ProgramValue result = api.getLocalVar(program, a0);
+            Program.ProgramValue result = api.getLocalVar(a0);
             Program.programStackPushValue(program, result);
         };
         // 0x80C2 op_set_local_var
@@ -370,7 +370,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             int a1 = Program.programStackPopInteger(program);
-            api.setLocalVar(program, a1, a0);
+            api.setLocalVar(a1, a0);
         };
         // 0x80C3 op_get_map_var
         Program.INTERPRETER_OPCODE_HANDLERS[195] = program -> {
@@ -379,7 +379,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80C3.", 0x80C3));
             }
             int a0 = Program.programStackPopInteger(program);
-            Program.ProgramValue result = api.getMapVar(program, a0);
+            Program.ProgramValue result = api.getMapVar(a0);
             Program.programStackPushValue(program, result);
         };
         // 0x80C4 op_set_map_var
@@ -390,7 +390,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             int a1 = Program.programStackPopInteger(program);
-            api.setMapVar(program, a1, a0);
+            api.setMapVar(a1, a0);
         };
         // 0x80C5 op_get_global_var
         Program.INTERPRETER_OPCODE_HANDLERS[197] = program -> {
@@ -399,7 +399,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80C5.", 0x80C5));
             }
             int a0 = Program.programStackPopInteger(program);
-            Program.ProgramValue result = api.getGlobalVar(program, a0);
+            Program.ProgramValue result = api.getGlobalVar(a0);
             Program.programStackPushValue(program, result);
         };
         // 0x80C6 op_set_global_var
@@ -410,7 +410,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             int a1 = Program.programStackPopInteger(program);
-            api.setGlobalVar(program, a1, a0);
+            api.setGlobalVar(a1, a0);
         };
         // 0x80C7 op_script_action
         Program.INTERPRETER_OPCODE_HANDLERS[199] = program -> {
@@ -418,7 +418,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80C7.", 0x80C7));
             }
-            int result = api.scriptAction(program);
+            int result = api.scriptAction();
             Program.programStackPushInteger(program, result);
         };
         // 0x80C8 op_obj_type
@@ -428,7 +428,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80C8.", 0x80C8));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.objType(program, a0);
+            int result = api.objType(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80C9 op_item_subtype
@@ -438,7 +438,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80C9.", 0x80C9));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.itemSubtype(program, a0);
+            int result = api.itemSubtype(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80CA op_get_critter_stat
@@ -449,7 +449,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.getCritterStat(program, a1, a0);
+            int result = api.getCritterStat(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80CB op_set_critter_stat
@@ -461,7 +461,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            int result = api.setCritterStat(program, a2, a1, a0);
+            int result = api.setCritterStat(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80CC op_animate_stand_obj
@@ -471,7 +471,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80CC.", 0x80CC));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.animateStandObj(program, a0);
+            api.animateStandObj(a0);
         };
         // 0x80CD animate_stand_reverse_obj
         Program.INTERPRETER_OPCODE_HANDLERS[205] = program -> {
@@ -480,7 +480,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80CD.", 0x80CD));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.animateStandReverseObj(program, a0);
+            api.animateStandReverseObj(a0);
         };
         // 0x80CE animate_move_obj_to_tile
         Program.INTERPRETER_OPCODE_HANDLERS[206] = program -> {
@@ -491,7 +491,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.animateMoveObjToTile(program, a2, a1, a0);
+            api.animateMoveObjToTile(a2, a1, a0);
         };
         // 0x80CF tile_in_tile_rect
         Program.INTERPRETER_OPCODE_HANDLERS[207] = program -> {
@@ -499,7 +499,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80CF.", 0x80CF));
             }
-            int result = api.tileInTileRect(program);
+            int result = api.tileInTileRect();
             Program.programStackPushInteger(program, result);
         };
         // 0x80D0 op_attack
@@ -508,7 +508,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80D0.", 0x80D0));
             }
-            api.attack(program);
+            api.attack();
         };
         // 0x80D2 op_tile_distance
         Program.INTERPRETER_OPCODE_HANDLERS[210] = program -> {
@@ -518,7 +518,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
-            int result = api.tileDistance(program, a1, a0);
+            int result = api.tileDistance(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80D3 op_tile_distance_objs
@@ -529,7 +529,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.tileDistanceObjs(program, a1, a0);
+            int result = api.tileDistanceObjs(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80D4 op_tile_num
@@ -539,7 +539,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80D4.", 0x80D4));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.tileNum(program, a0);
+            int result = api.tileNum(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80D5 op_tile_num_in_direction
@@ -551,7 +551,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
-            int result = api.tileNumInDirection(program, a2, a1, a0);
+            int result = api.tileNumInDirection(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80D7 op_drop_obj
@@ -561,7 +561,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80D7.", 0x80D7));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.dropObj(program, a0);
+            api.dropObj(a0);
         };
         // 0x80D8 op_add_obj_to_inven
         Program.INTERPRETER_OPCODE_HANDLERS[216] = program -> {
@@ -571,7 +571,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.addObjToInven(program, a1, a0);
+            api.addObjToInven(a1, a0);
         };
         // 0x80D9 op_rm_obj_from_inven
         Program.INTERPRETER_OPCODE_HANDLERS[217] = program -> {
@@ -581,7 +581,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.rmObjFromInven(program, a1, a0);
+            api.rmObjFromInven(a1, a0);
         };
         // 0x80DA op_wield_obj_critter
         Program.INTERPRETER_OPCODE_HANDLERS[218] = program -> {
@@ -591,7 +591,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.wieldObjCritter(program, a1, a0);
+            api.wieldObjCritter(a1, a0);
         };
         // 0x80DB op_use_obj
         Program.INTERPRETER_OPCODE_HANDLERS[219] = program -> {
@@ -600,7 +600,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80DB.", 0x80DB));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.useObj(program, a0);
+            api.useObj(a0);
         };
         // 0x80DC op_obj_can_see_obj
         Program.INTERPRETER_OPCODE_HANDLERS[220] = program -> {
@@ -610,7 +610,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.objCanSeeObj(program, a1, a0);
+            int result = api.objCanSeeObj(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80DE op_start_gdialog
@@ -624,7 +624,7 @@ final class ScriptApiDispatch {
             int a2 = Program.programStackPopInteger(program);
             Object a3 = Program.programStackPopPointer(program);
             int a4 = Program.programStackPopInteger(program);
-            api.startGdialog(program, a4, a3, a2, a1, a0);
+            api.startGdialog(a4, a3, a2, a1, a0);
         };
         // 0x80DF op_end_gdialog
         Program.INTERPRETER_OPCODE_HANDLERS[223] = program -> {
@@ -632,7 +632,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80DF.", 0x80DF));
             }
-            api.endGdialog(program);
+            api.endGdialog();
         };
         // 0x80E1 op_metarule3
         Program.INTERPRETER_OPCODE_HANDLERS[225] = program -> {
@@ -644,7 +644,7 @@ final class ScriptApiDispatch {
             Program.ProgramValue a1 = Program.programStackPopValue(program);
             Program.ProgramValue a2 = Program.programStackPopValue(program);
             int a3 = Program.programStackPopInteger(program);
-            Program.ProgramValue result = api.metarule3(program, a3, a2, a1, a0);
+            Program.ProgramValue result = api.metarule3(a3, a2, a1, a0);
             Program.programStackPushValue(program, result);
         };
         // 0x80E3 op_set_obj_visibility
@@ -655,7 +655,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.setObjVisibility(program, a1, a0);
+            api.setObjVisibility(a1, a0);
         };
         // 0x80E4 op_load_map
         Program.INTERPRETER_OPCODE_HANDLERS[228] = program -> {
@@ -665,7 +665,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Program.ProgramValue a1 = Program.programStackPopValue(program);
-            api.loadMap(program, a1, a0);
+            api.loadMap(a1, a0);
         };
         // 0x80E5 op_wm_area_set_pos
         Program.INTERPRETER_OPCODE_HANDLERS[229] = program -> {
@@ -676,7 +676,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
-            api.wmAreaSetPos(program, a2, a1, a0);
+            api.wmAreaSetPos(a2, a1, a0);
         };
         // 0x80E6 op_set_exit_grids
         Program.INTERPRETER_OPCODE_HANDLERS[230] = program -> {
@@ -689,7 +689,7 @@ final class ScriptApiDispatch {
             int a2 = Program.programStackPopInteger(program);
             int a3 = Program.programStackPopInteger(program);
             int a4 = Program.programStackPopInteger(program);
-            api.setExitGrids(program, a4, a3, a2, a1, a0);
+            api.setExitGrids(a4, a3, a2, a1, a0);
         };
         // 0x80E7 op_anim_busy
         Program.INTERPRETER_OPCODE_HANDLERS[231] = program -> {
@@ -698,7 +698,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80E7.", 0x80E7));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.animBusy(program, a0);
+            int result = api.animBusy(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80E8 op_critter_heal
@@ -709,7 +709,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.critterHeal(program, a1, a0);
+            int result = api.critterHeal(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80E9 op_set_light_level
@@ -719,7 +719,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80E9.", 0x80E9));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.setLightLevel(program, a0);
+            api.setLightLevel(a0);
         };
         // 0x80EA op_game_time
         Program.INTERPRETER_OPCODE_HANDLERS[234] = program -> {
@@ -727,7 +727,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80EA.", 0x80EA));
             }
-            int result = api.gameTime(program);
+            int result = api.gameTime();
             Program.programStackPushInteger(program, result);
         };
         // 0x80EC op_elevation
@@ -737,7 +737,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80EC.", 0x80EC));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.elevation(program, a0);
+            int result = api.elevation(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80ED op_kill_critter
@@ -748,7 +748,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.killCritter(program, a1, a0);
+            api.killCritter(a1, a0);
         };
         // 0x80EE op_kill_critter_type
         Program.INTERPRETER_OPCODE_HANDLERS[238] = program -> {
@@ -758,7 +758,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
-            api.killCritterType(program, a1, a0);
+            api.killCritterType(a1, a0);
         };
         // 0x80EF op_critter_damage
         Program.INTERPRETER_OPCODE_HANDLERS[239] = program -> {
@@ -769,7 +769,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.critterDamage(program, a2, a1, a0);
+            api.critterDamage(a2, a1, a0);
         };
         // 0x80F0 op_add_timer_event
         Program.INTERPRETER_OPCODE_HANDLERS[240] = program -> {
@@ -780,7 +780,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.addTimerEvent(program, a2, a1, a0);
+            api.addTimerEvent(a2, a1, a0);
         };
         // 0x80F1 op_rm_timer_event
         Program.INTERPRETER_OPCODE_HANDLERS[241] = program -> {
@@ -789,7 +789,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80F1.", 0x80F1));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.rmTimerEvent(program, a0);
+            api.rmTimerEvent(a0);
         };
         // 0x80F2 op_game_ticks
         Program.INTERPRETER_OPCODE_HANDLERS[242] = program -> {
@@ -798,7 +798,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80F2.", 0x80F2));
             }
             int a0 = Program.programStackPopInteger(program);
-            int result = api.gameTicks(program, a0);
+            int result = api.gameTicks(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80F3 op_has_trait
@@ -810,7 +810,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
             int a2 = Program.programStackPopInteger(program);
-            int result = api.hasTrait(program, a2, a1, a0);
+            int result = api.hasTrait(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80F4 op_destroy_object
@@ -820,7 +820,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80F4.", 0x80F4));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.destroyObject(program, a0);
+            api.destroyObject(a0);
         };
         // 0x80F5 op_obj_can_hear_obj
         Program.INTERPRETER_OPCODE_HANDLERS[245] = program -> {
@@ -830,7 +830,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.objCanHearObj(program, a1, a0);
+            int result = api.objCanHearObj(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80F6 op_game_time_hour
@@ -839,7 +839,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80F6.", 0x80F6));
             }
-            int result = api.gameTimeHour(program);
+            int result = api.gameTimeHour();
             Program.programStackPushInteger(program, result);
         };
         // 0x80F7 op_fixed_param
@@ -848,7 +848,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80F7.", 0x80F7));
             }
-            int result = api.fixedParam(program);
+            int result = api.fixedParam();
             Program.programStackPushInteger(program, result);
         };
         // 0x80F8 op_tile_is_visible
@@ -858,7 +858,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80F8.", 0x80F8));
             }
             int a0 = Program.programStackPopInteger(program);
-            int result = api.tileIsVisible(program, a0);
+            int result = api.tileIsVisible(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80F9 op_dialogue_system_enter
@@ -867,7 +867,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80F9.", 0x80F9));
             }
-            api.dialogueSystemEnter(program);
+            api.dialogueSystemEnter();
         };
         // 0x80FA op_action_being_used
         Program.INTERPRETER_OPCODE_HANDLERS[250] = program -> {
@@ -875,7 +875,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x80FA.", 0x80FA));
             }
-            int result = api.actionBeingUsed(program);
+            int result = api.actionBeingUsed();
             Program.programStackPushInteger(program, result);
         };
         // 0x80FB critter_state
@@ -885,7 +885,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80FB.", 0x80FB));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.critterState(program, a0);
+            int result = api.critterState(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x80FC op_game_time_advance
@@ -895,7 +895,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x80FC.", 0x80FC));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.gameTimeAdvance(program, a0);
+            api.gameTimeAdvance(a0);
         };
         // 0x80FD op_radiation_inc
         Program.INTERPRETER_OPCODE_HANDLERS[253] = program -> {
@@ -905,7 +905,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.radiationInc(program, a1, a0);
+            api.radiationInc(a1, a0);
         };
         // 0x80FE op_radiation_dec
         Program.INTERPRETER_OPCODE_HANDLERS[254] = program -> {
@@ -915,7 +915,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.radiationDec(program, a1, a0);
+            api.radiationDec(a1, a0);
         };
         // 0x80FF critter_attempt_placement
         Program.INTERPRETER_OPCODE_HANDLERS[255] = program -> {
@@ -926,7 +926,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            int result = api.critterAttemptPlacement(program, a2, a1, a0);
+            int result = api.critterAttemptPlacement(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8100 op_obj_pid
@@ -936,7 +936,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8100.", 0x8100));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.objPid(program, a0);
+            int result = api.objPid(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8101 op_cur_map_index
@@ -945,7 +945,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8101.", 0x8101));
             }
-            int result = api.curMapIndex(program);
+            int result = api.curMapIndex();
             Program.programStackPushInteger(program, result);
         };
         // 0x8102 op_critter_add_trait
@@ -958,7 +958,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
             Object a3 = Program.programStackPopPointer(program);
-            int result = api.critterAddTrait(program, a3, a2, a1, a0);
+            int result = api.critterAddTrait(a3, a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8103 critter_rm_trait
@@ -971,7 +971,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
             Object a3 = Program.programStackPopPointer(program);
-            int result = api.critterRmTrait(program, a3, a2, a1, a0);
+            int result = api.critterRmTrait(a3, a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8104 op_proto_data
@@ -982,7 +982,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
-            Program.ProgramValue result = api.protoData(program, a1, a0);
+            Program.ProgramValue result = api.protoData(a1, a0);
             Program.programStackPushValue(program, result);
         };
         // 0x8105 op_message_str
@@ -993,7 +993,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
-            String result = api.messageStr(program, a1, a0);
+            String result = api.messageStr(a1, a0);
             Program.programStackPushString(program, result);
         };
         // 0x8106 op_critter_inven_obj
@@ -1004,7 +1004,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            Program.ProgramValue result = api.critterInvenObj(program, a1, a0);
+            Program.ProgramValue result = api.critterInvenObj(a1, a0);
             Program.programStackPushValue(program, result);
         };
         // 0x8107 op_obj_set_light_level
@@ -1016,7 +1016,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.objSetLightLevel(program, a2, a1, a0);
+            api.objSetLightLevel(a2, a1, a0);
         };
         // 0x8109 op_inven_cmds
         Program.INTERPRETER_OPCODE_HANDLERS[265] = program -> {
@@ -1027,7 +1027,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            Object result = api.invenCmds(program, a2, a1, a0);
+            Object result = api.invenCmds(a2, a1, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x810A op_float_msg
@@ -1038,7 +1038,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Program.ProgramValue a1 = Program.programStackPopValue(program);
-            api.floatMsg(program, a1, a0);
+            api.floatMsg(a1, a0);
         };
         // 0x810B op_metarule
         Program.INTERPRETER_OPCODE_HANDLERS[267] = program -> {
@@ -1048,7 +1048,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             int a1 = Program.programStackPopInteger(program);
-            int result = api.metarule(program, a1, a0);
+            int result = api.metarule(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x810C op_anim
@@ -1061,7 +1061,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
             Object a3 = Program.programStackPopPointer(program);
-            api.anim(program, a3, a2, a1, a0);
+            api.anim(a3, a2, a1, a0);
         };
         // 0x810D op_obj_carrying_pid_obj
         Program.INTERPRETER_OPCODE_HANDLERS[269] = program -> {
@@ -1071,7 +1071,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            Object result = api.objCarryingPidObj(program, a1, a0);
+            Object result = api.objCarryingPidObj(a1, a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x810E op_reg_anim_func
@@ -1082,7 +1082,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             int a1 = Program.programStackPopInteger(program);
-            api.regAnimFunc(program, a1, a0);
+            api.regAnimFunc(a1, a0);
         };
         // 0x810F op_reg_anim_animate
         Program.INTERPRETER_OPCODE_HANDLERS[271] = program -> {
@@ -1093,7 +1093,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.regAnimAnimate(program, a2, a1, a0);
+            api.regAnimAnimate(a2, a1, a0);
         };
         // 0x8110 op_reg_anim_animate_reverse
         Program.INTERPRETER_OPCODE_HANDLERS[272] = program -> {
@@ -1104,7 +1104,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.regAnimAnimateReverse(program, a2, a1, a0);
+            api.regAnimAnimateReverse(a2, a1, a0);
         };
         // 0x8113 op_reg_anim_obj_move_to_tile
         Program.INTERPRETER_OPCODE_HANDLERS[275] = program -> {
@@ -1115,7 +1115,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.regAnimObjMoveToTile(program, a2, a1, a0);
+            api.regAnimObjMoveToTile(a2, a1, a0);
         };
         // 0x8115 op_play_gmovie
         Program.INTERPRETER_OPCODE_HANDLERS[277] = program -> {
@@ -1124,7 +1124,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8115.", 0x8115));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.playGmovie(program, a0);
+            api.playGmovie(a0);
         };
         // 0x8116 op_add_mult_objs_to_inven
         Program.INTERPRETER_OPCODE_HANDLERS[278] = program -> {
@@ -1135,7 +1135,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.addMultObjsToInven(program, a2, a1, a0);
+            api.addMultObjsToInven(a2, a1, a0);
         };
         // 0x8117 rm_mult_objs_from_inven
         Program.INTERPRETER_OPCODE_HANDLERS[279] = program -> {
@@ -1146,7 +1146,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
             Object a2 = Program.programStackPopPointer(program);
-            int result = api.rmMultObjsFromInven(program, a2, a1, a0);
+            int result = api.rmMultObjsFromInven(a2, a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8118 op_month
@@ -1155,7 +1155,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8118.", 0x8118));
             }
-            int result = api.month(program);
+            int result = api.month();
             Program.programStackPushInteger(program, result);
         };
         // 0x8119 op_day
@@ -1164,7 +1164,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8119.", 0x8119));
             }
-            int result = api.day(program);
+            int result = api.day();
             Program.programStackPushInteger(program, result);
         };
         // 0x811A op_explosion
@@ -1176,7 +1176,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             int a2 = Program.programStackPopInteger(program);
-            api.explosion(program, a2, a1, a0);
+            api.explosion(a2, a1, a0);
         };
         // 0x811C _op_gsay_start
         Program.INTERPRETER_OPCODE_HANDLERS[284] = program -> {
@@ -1184,7 +1184,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x811C.", 0x811C));
             }
-            api.opGsayStart(program);
+            api.opGsayStart();
         };
         // 0x811D _op_gsay_end
         Program.INTERPRETER_OPCODE_HANDLERS[285] = program -> {
@@ -1192,7 +1192,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x811D.", 0x811D));
             }
-            api.opGsayEnd(program);
+            api.opGsayEnd();
         };
         // 0x811E op_gsay_reply
         Program.INTERPRETER_OPCODE_HANDLERS[286] = program -> {
@@ -1202,7 +1202,7 @@ final class ScriptApiDispatch {
             }
             Program.ProgramValue a0 = Program.programStackPopValue(program);
             int a1 = Program.programStackPopInteger(program);
-            api.gsayReply(program, a1, a0);
+            api.gsayReply(a1, a0);
         };
         // 0x811F op_gsay_option
         Program.INTERPRETER_OPCODE_HANDLERS[287] = program -> {
@@ -1214,7 +1214,7 @@ final class ScriptApiDispatch {
             Program.ProgramValue a1 = Program.programStackPopValue(program);
             Program.ProgramValue a2 = Program.programStackPopValue(program);
             int a3 = Program.programStackPopInteger(program);
-            api.gsayOption(program, a3, a2, a1, a0);
+            api.gsayOption(a3, a2, a1, a0);
         };
         // 0x8120 op_gsay_message
         Program.INTERPRETER_OPCODE_HANDLERS[288] = program -> {
@@ -1225,7 +1225,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             Program.ProgramValue a1 = Program.programStackPopValue(program);
             int a2 = Program.programStackPopInteger(program);
-            api.gsayMessage(program, a2, a1, a0);
+            api.gsayMessage(a2, a1, a0);
         };
         // 0x8121 op_giq_option
         Program.INTERPRETER_OPCODE_HANDLERS[289] = program -> {
@@ -1238,7 +1238,7 @@ final class ScriptApiDispatch {
             Program.ProgramValue a2 = Program.programStackPopValue(program);
             int a3 = Program.programStackPopInteger(program);
             int a4 = Program.programStackPopInteger(program);
-            api.giqOption(program, a4, a3, a2, a1, a0);
+            api.giqOption(a4, a3, a2, a1, a0);
         };
         // 0x8122 op_poison
         Program.INTERPRETER_OPCODE_HANDLERS[290] = program -> {
@@ -1248,7 +1248,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.poison(program, a1, a0);
+            api.poison(a1, a0);
         };
         // 0x8123 op_get_poison
         Program.INTERPRETER_OPCODE_HANDLERS[291] = program -> {
@@ -1257,7 +1257,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8123.", 0x8123));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.getPoison(program, a0);
+            int result = api.getPoison(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8124 op_party_add
@@ -1267,7 +1267,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8124.", 0x8124));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.partyAdd(program, a0);
+            api.partyAdd(a0);
         };
         // 0x8125 op_party_remove
         Program.INTERPRETER_OPCODE_HANDLERS[293] = program -> {
@@ -1276,7 +1276,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8125.", 0x8125));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.partyRemove(program, a0);
+            api.partyRemove(a0);
         };
         // 0x8126 op_reg_anim_animate_forever
         Program.INTERPRETER_OPCODE_HANDLERS[294] = program -> {
@@ -1286,7 +1286,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.regAnimAnimateForever(program, a1, a0);
+            api.regAnimAnimateForever(a1, a0);
         };
         // 0x8127 op_critter_injure
         Program.INTERPRETER_OPCODE_HANDLERS[295] = program -> {
@@ -1296,7 +1296,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.critterInjure(program, a1, a0);
+            api.critterInjure(a1, a0);
         };
         // 0x8128 op_is_in_combat
         Program.INTERPRETER_OPCODE_HANDLERS[296] = program -> {
@@ -1304,7 +1304,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8128.", 0x8128));
             }
-            int result = api.isInCombat(program);
+            int result = api.isInCombat();
             Program.programStackPushInteger(program, result);
         };
         // 0x8129 op_gdialog_barter
@@ -1314,7 +1314,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8129.", 0x8129));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.gdialogBarter(program, a0);
+            api.gdialogBarter(a0);
         };
         // 0x812C op_inven_unwield
         Program.INTERPRETER_OPCODE_HANDLERS[300] = program -> {
@@ -1322,7 +1322,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x812C.", 0x812C));
             }
-            api.invenUnwield(program);
+            api.invenUnwield();
         };
         // 0x812D op_obj_is_locked
         Program.INTERPRETER_OPCODE_HANDLERS[301] = program -> {
@@ -1331,7 +1331,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x812D.", 0x812D));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.objIsLocked(program, a0);
+            int result = api.objIsLocked(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x812E op_obj_lock
@@ -1341,7 +1341,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x812E.", 0x812E));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.objLock(program, a0);
+            api.objLock(a0);
         };
         // 0x812F op_obj_unlock
         Program.INTERPRETER_OPCODE_HANDLERS[303] = program -> {
@@ -1350,7 +1350,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x812F.", 0x812F));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.objUnlock(program, a0);
+            api.objUnlock(a0);
         };
         // 0x8130 op_obj_is_open
         Program.INTERPRETER_OPCODE_HANDLERS[304] = program -> {
@@ -1359,7 +1359,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8130.", 0x8130));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.objIsOpen(program, a0);
+            int result = api.objIsOpen(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8131 op_obj_open
@@ -1369,7 +1369,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8131.", 0x8131));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.objOpen(program, a0);
+            api.objOpen(a0);
         };
         // 0x8132 op_obj_close
         Program.INTERPRETER_OPCODE_HANDLERS[306] = program -> {
@@ -1378,7 +1378,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8132.", 0x8132));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.objClose(program, a0);
+            api.objClose(a0);
         };
         // 0x8133 op_game_ui_disable
         Program.INTERPRETER_OPCODE_HANDLERS[307] = program -> {
@@ -1386,7 +1386,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8133.", 0x8133));
             }
-            api.gameUiDisable(program);
+            api.gameUiDisable();
         };
         // 0x8134 op_game_ui_enable
         Program.INTERPRETER_OPCODE_HANDLERS[308] = program -> {
@@ -1394,7 +1394,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8134.", 0x8134));
             }
-            api.gameUiEnable(program);
+            api.gameUiEnable();
         };
         // 0x8136 op_gfade_out
         Program.INTERPRETER_OPCODE_HANDLERS[310] = program -> {
@@ -1403,7 +1403,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8136.", 0x8136));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.gfadeOut(program, a0);
+            api.gfadeOut(a0);
         };
         // 0x8137 op_gfade_in
         Program.INTERPRETER_OPCODE_HANDLERS[311] = program -> {
@@ -1412,7 +1412,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8137.", 0x8137));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.gfadeIn(program, a0);
+            api.gfadeIn(a0);
         };
         // 0x8138 op_item_caps_total
         Program.INTERPRETER_OPCODE_HANDLERS[312] = program -> {
@@ -1421,7 +1421,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8138.", 0x8138));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.itemCapsTotal(program, a0);
+            int result = api.itemCapsTotal(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8139 op_item_caps_adjust
@@ -1432,7 +1432,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.itemCapsAdjust(program, a1, a0);
+            int result = api.itemCapsAdjust(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x813B op_reg_anim_play_sfx
@@ -1444,7 +1444,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             String a1 = Program.programStackPopString(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.regAnimPlaySfx(program, a2, a1, a0);
+            api.regAnimPlaySfx(a2, a1, a0);
         };
         // 0x813C op_critter_mod_skill
         Program.INTERPRETER_OPCODE_HANDLERS[316] = program -> {
@@ -1455,7 +1455,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            api.critterModSkill(program, a2, a1, a0);
+            api.critterModSkill(a2, a1, a0);
         };
         // 0x813D op_sfx_build_char_name
         Program.INTERPRETER_OPCODE_HANDLERS[317] = program -> {
@@ -1466,7 +1466,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
-            String result = api.sfxBuildCharName(program, a2, a1, a0);
+            String result = api.sfxBuildCharName(a2, a1, a0);
             Program.programStackPushString(program, result);
         };
         // 0x8141 op_sfx_build_weapon_name
@@ -1479,7 +1479,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
             int a3 = Program.programStackPopInteger(program);
-            String result = api.sfxBuildWeaponName(program, a3, a2, a1, a0);
+            String result = api.sfxBuildWeaponName(a3, a2, a1, a0);
             Program.programStackPushString(program, result);
         };
         // 0x8143 op_attack_setup
@@ -1490,7 +1490,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.attackSetup(program, a1, a0);
+            api.attackSetup(a1, a0);
         };
         // 0x8144 op_destroy_mult_objs
         Program.INTERPRETER_OPCODE_HANDLERS[324] = program -> {
@@ -1500,7 +1500,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            int result = api.destroyMultObjs(program, a1, a0);
+            int result = api.destroyMultObjs(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8145 op_use_obj_on_obj
@@ -1511,7 +1511,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.useObjOnObj(program, a1, a0);
+            api.useObjOnObj(a1, a0);
         };
         // 0x8146 op_endgame_slideshow
         Program.INTERPRETER_OPCODE_HANDLERS[326] = program -> {
@@ -1519,7 +1519,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8146.", 0x8146));
             }
-            api.endgameSlideshow(program);
+            api.endgameSlideshow();
         };
         // 0x8147 op_move_obj_inven_to_obj
         Program.INTERPRETER_OPCODE_HANDLERS[327] = program -> {
@@ -1529,7 +1529,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.moveObjInvenToObj(program, a1, a0);
+            api.moveObjInvenToObj(a1, a0);
         };
         // 0x8149 op_obj_art_fid
         Program.INTERPRETER_OPCODE_HANDLERS[329] = program -> {
@@ -1538,7 +1538,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8149.", 0x8149));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.objArtFid(program, a0);
+            int result = api.objArtFid(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x814A op_art_anim
@@ -1548,7 +1548,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x814A.", 0x814A));
             }
             int a0 = Program.programStackPopInteger(program);
-            int result = api.artAnim(program, a0);
+            int result = api.artAnim(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x814B op_party_member_obj
@@ -1558,7 +1558,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x814B.", 0x814B));
             }
             int a0 = Program.programStackPopInteger(program);
-            Object result = api.partyMemberObj(program, a0);
+            Object result = api.partyMemberObj(a0);
             Program.programStackPushPointer(program, result);
         };
         // 0x814C op_rotation_to_tile
@@ -1569,7 +1569,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
-            int result = api.rotationToTile(program, a1, a0);
+            int result = api.rotationToTile(a1, a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x814D op_jam_lock
@@ -1579,7 +1579,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x814D.", 0x814D));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.jamLock(program, a0);
+            api.jamLock(a0);
         };
         // 0x814E op_gdialog_set_barter_mod
         Program.INTERPRETER_OPCODE_HANDLERS[334] = program -> {
@@ -1588,7 +1588,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x814E.", 0x814E));
             }
             int a0 = Program.programStackPopInteger(program);
-            api.gdialogSetBarterMod(program, a0);
+            api.gdialogSetBarterMod(a0);
         };
         // 0x8150 op_obj_on_screen
         Program.INTERPRETER_OPCODE_HANDLERS[336] = program -> {
@@ -1597,7 +1597,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8150.", 0x8150));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.objOnScreen(program, a0);
+            int result = api.objOnScreen(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8151 op_critter_is_fleeing
@@ -1607,7 +1607,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8151.", 0x8151));
             }
             Object a0 = Program.programStackPopPointer(program);
-            int result = api.critterIsFleeing(program, a0);
+            int result = api.critterIsFleeing(a0);
             Program.programStackPushInteger(program, result);
         };
         // 0x8152 op_critter_set_flee_state
@@ -1618,7 +1618,7 @@ final class ScriptApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Object a1 = Program.programStackPopPointer(program);
-            api.critterSetFleeState(program, a1, a0);
+            api.critterSetFleeState(a1, a0);
         };
         // 0x8153 op_terminate_combat
         Program.INTERPRETER_OPCODE_HANDLERS[339] = program -> {
@@ -1626,7 +1626,7 @@ final class ScriptApiDispatch {
                 Program.programFatalError(
                     String.format("Undefined opcode 0x8153.", 0x8153));
             }
-            api.terminateCombat(program);
+            api.terminateCombat();
         };
         // 0x8154 op_debug_msg
         Program.INTERPRETER_OPCODE_HANDLERS[340] = program -> {
@@ -1635,7 +1635,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8154.", 0x8154));
             }
             String a0 = Program.programStackPopString(program);
-            api.debugMsg(program, a0);
+            api.debugMsg(a0);
         };
         // 0x8155 op_critter_stop_attacking
         Program.INTERPRETER_OPCODE_HANDLERS[341] = program -> {
@@ -1644,7 +1644,7 @@ final class ScriptApiDispatch {
                     String.format("Undefined opcode 0x8155.", 0x8155));
             }
             Object a0 = Program.programStackPopPointer(program);
-            api.critterStopAttacking(program, a0);
+            api.critterStopAttacking(a0);
         };
     }
 }

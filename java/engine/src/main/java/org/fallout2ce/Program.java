@@ -1997,6 +1997,7 @@ public class Program {
     // opEnterCriticalSection / opLeaveCriticalSection (0x46B078 / 0x46B06C).
     // START_CRITICAL / END_CRITICAL (0x804A / 0x804B) are the extended-set
     // aliases registered to the same two handlers.
+
     private static void opEnterCriticalSection(Program program) {
         program.flags |= PROGRAM_FLAG_CRITICAL_SECTION;
     }
@@ -2027,7 +2028,7 @@ public class Program {
         interpreterEnabled = true;
         // The game's own builtins come from the script API, so a script can be
         // run against a mock instead of the game.
-        ScriptApiDispatch.install(scriptApi);
+        GameApiDispatch.install(gameApi);
         interpreterRegisterOpcode(OPCODE_NOOP, Program::opNoop);
         interpreterRegisterOpcode(OPCODE_PUSH, Program::opPush);
         interpreterRegisterOpcode(OPCODE_A_TO_D, Program::opAtoD);
@@ -2119,19 +2120,19 @@ public class Program {
      * <p>Swapping it is what makes a script testable: a mock records what the
      * script asks for instead of needing the game to be running.
      */
-    private static ScriptApi scriptApi = new UnsupportedScriptApi();
+    private static GameApi gameApi = new UnsupportedScriptApi();
 
     /** The script API the builtins are dispatched to. */
-    public static ScriptApi scriptApi() {
-        return scriptApi;
+    public static GameApi gameApi() {
+        return gameApi;
     }
 
     /**
      * Replaces the script API and re-registers the opcode table, so the new
      * API's builtins take the place of the old ones.
      */
-    public static void setScriptApi(ScriptApi api) {
-        scriptApi = api;
+    public static void setGameApi(GameApi api) {
+        gameApi = api;
         interpreterRegisterOpcodeHandlers();
     }
 
