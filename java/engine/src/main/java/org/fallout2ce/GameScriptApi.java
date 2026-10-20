@@ -38,6 +38,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80BA, // op_obj_is_carrying_obj
         0x810D, // op_obj_carrying_pid_obj
         0x8106, // op_critter_inven_obj
+        0x8105, // op_message_str
     };
 
     @Override
@@ -255,5 +256,45 @@ public class GameScriptApi extends UnsupportedScriptApi {
         value.opcode = Program.VALUE_TYPE_PTR;
         value.pointerValue = item;
         return value;
+    }
+
+    /**
+     * op_message_str (0x8105): the text of one of the game's messages.
+     *
+     * <p>C answers "Error" when the message is not there and when the index
+     * is negative.
+     */
+    @Override
+    public String messageStr(Program program, int messageListIndex, int messageIndex) {
+        ensureScriptsListLoaded();
+
+        String text = null;
+        if (messageIndex >= 0) {
+            text = ScriptMessages.messageText(messageListIndex, messageIndex);
+        }
+
+        return text != null ? text : "Error";
+    }
+
+    /**
+     * Reads the script list the first time it is needed.
+     *
+     * <p>C does this during the game's startup; here it happens on demand,
+     * because the message files are only reachable through the script API.
+     */
+    private static void ensureScriptsListLoaded() {
+        if (!ScriptMessages.scriptFileName(0).isEmpty()) {
+            return;
+        }
+
+        int[] size = { -1 };
+        if (Db.dbGetFileSize("scripts\\scripts.lst", size) != 0 || size[0] <= 0) {
+            return;
+        }
+        byte[] data = new byte[size[0]];
+        if (Db.dbGetFileContents("scripts\\scripts.lst", data, 0) != 0) {
+            return;
+        }
+        ScriptMessages.loadScriptsList(data);
     }
 }

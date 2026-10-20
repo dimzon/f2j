@@ -6710,6 +6710,30 @@ void sectionScriptRunGame()
     }
     std::printf("globals length=%d\n", fallout::gGameGlobalVarsLength);
 
+    // A few of the game's message strings, read through the original's own
+    // message-file loader, so the Java port's parser can be compared against
+    // it. The lookup the scripts use needs the script list, which the
+    // harness has not loaded, so the file is read directly instead.
+    {
+        fallout::MessageList list;
+        fallout::messageListInit(&list);
+        if (fallout::messageListLoad(&list, "dialog\\ACBrahmn.msg")) {
+            for (int num : { 100, 101, 102 }) {
+                fallout::MessageListItem item;
+                memset(&item, 0, sizeof(item));
+                item.num = num;
+                if (fallout::messageListGetItem(&list, &item)) {
+                    std::printf("msg num=%d [%s]\n", num, item.text != nullptr ? item.text : "(null)");
+                } else {
+                    std::printf("msg num=%d (missing)\n", num);
+                }
+            }
+        } else {
+            std::printf("msg (file not loaded)\n");
+        }
+        fallout::messageListFree(&list);
+    }
+
     // The same scripts with the game's own builtins available. The intlib
     // reaches into the running game, so this is the state the game's scripts
     // see - and the state the Java side has to reproduce once the game

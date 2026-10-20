@@ -2,6 +2,7 @@ package org.fallout2ce;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -189,6 +190,45 @@ class ScriptApiTest {
         assertEquals(0, GameGlobalVars.get(GameGlobalVars.ENUM_COUNT - 1));
 
         GameGlobalVars.reset();
+        Db.dbCloseAll();
+    }
+
+    @Test
+    void theMessageStringsParseTheSameWayAsTheReference() throws Exception {
+        Path master = Paths.get(gameData(), "master.dat");
+        assertTrue(master.toFile().isFile());
+        assertEquals(0, Db.dbOpen(master.toString(), null));
+
+        // The script list, and the message file that goes with a script.
+        int[] size = { -1 };
+        assertEquals(0, Db.dbGetFileSize("scripts\\scripts.lst", size));
+        byte[] listData = new byte[size[0]];
+        assertEquals(0, Db.dbGetFileContents("scripts\\scripts.lst", listData, 0));
+        ScriptMessages.loadScriptsList(listData);
+
+        // The list the reference reads: obj_dude.int is the first entry.
+        assertEquals("obj_dude.int", ScriptMessages.scriptFileName(0));
+        assertEquals(5, ScriptMessages.scriptLocalVarsCount(0));
+        assertEquals("Test0.int", ScriptMessages.scriptFileName(1));
+        assertEquals(8, ScriptMessages.scriptLocalVarsCount(1));
+
+        // The reference's own message-file loader read these three:
+        //   msg num=100 [You see a regular domesticated brahmin.]
+        //   msg num=101 [The brahmin's extra head is probably the result of a
+        //   regular cow being exposed too soon to radiation.]
+        //   msg num=102 [You don?t notice anything unusual about the brahmin.]
+        assertEquals("You see a regular domesticated brahmin.",
+            ScriptMessages.messageText(17, 100));
+        assertEquals(
+            "The brahmin's extra head is probably the result of a regular cow being exposed too soon to radiation.",
+            ScriptMessages.messageText(17, 101));
+        assertEquals("You don\u0092t notice anything unusual about the brahmin.",
+            ScriptMessages.messageText(17, 102));
+
+        // A message that is not there is null, and the original answers
+        // "Error" for it.
+        assertNull(ScriptMessages.messageText(17, 9999));
+
         Db.dbCloseAll();
     }
 

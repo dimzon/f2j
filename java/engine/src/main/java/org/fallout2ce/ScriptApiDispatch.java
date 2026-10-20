@@ -108,7 +108,7 @@ final class ScriptApiDispatch {
             }
             Object a0 = Program.programStackPopPointer(program);
             String result = api.objName(program, a0);
-            Program.programStackPushValue(program, new Program.ProgramValue(result));
+            Program.programStackPushString(program, result);
         };
         // 0x80A6 op_get_pc_stat
         Program.INTERPRETER_OPCODE_HANDLERS[166] = program -> {
@@ -994,7 +994,7 @@ final class ScriptApiDispatch {
             int a0 = Program.programStackPopInteger(program);
             int a1 = Program.programStackPopInteger(program);
             String result = api.messageStr(program, a1, a0);
-            Program.programStackPushValue(program, new Program.ProgramValue(result));
+            Program.programStackPushString(program, result);
         };
         // 0x8106 op_critter_inven_obj
         Program.INTERPRETER_OPCODE_HANDLERS[262] = program -> {
@@ -1467,7 +1467,7 @@ final class ScriptApiDispatch {
             int a1 = Program.programStackPopInteger(program);
             Object a2 = Program.programStackPopPointer(program);
             String result = api.sfxBuildCharName(program, a2, a1, a0);
-            Program.programStackPushValue(program, new Program.ProgramValue(result));
+            Program.programStackPushString(program, result);
         };
         // 0x8141 op_sfx_build_weapon_name
         Program.INTERPRETER_OPCODE_HANDLERS[321] = program -> {
@@ -1480,7 +1480,7 @@ final class ScriptApiDispatch {
             Object a2 = Program.programStackPopPointer(program);
             int a3 = Program.programStackPopInteger(program);
             String result = api.sfxBuildWeaponName(program, a3, a2, a1, a0);
-            Program.programStackPushValue(program, new Program.ProgramValue(result));
+            Program.programStackPushString(program, result);
         };
         // 0x8143 op_attack_setup
         Program.INTERPRETER_OPCODE_HANDLERS[323] = program -> {
