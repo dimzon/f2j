@@ -1,6 +1,8 @@
 package org.fallout2ce;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -110,6 +112,9 @@ final class ScriptCompiler {
         /** The API methods the script calls, in the order it calls them. */
         final List<String> apiCalls = new ArrayList<>();
 
+        /** How many procedures the script has. */
+        int procedureCount;
+
         boolean ok() {
             return problems.isEmpty();
         }
@@ -198,8 +203,41 @@ final class ScriptCompiler {
         script.procedures.add(top);
         decode(script, top, data);
 
+        script.procedureCount = procedures.size();
+
         // The stack, and with it the branches.
-        analyse(script);
+        analyse(script, top);
+
+        // The top level code is a launcher: it enters the critical section,
+        // puts the exit address on the return stack and jumps into the
+        // script's own code. That code is a block of its own, between the
+        // tables and the procedure bodies, and it belongs to no procedure.
+        int mainStart = -1;
+        for (Instruction instruction : top.code) {
+            if (instruction.branch && instruction.target > 0) {
+                mainStart = instruction.target;
+                break;
+            }
+        }
+        if (mainStart > 0) {
+            int mainEnd = data.length;
+            for (Procedure procedure : procedures) {
+                if (procedure.bodyOffset > mainStart && procedure.bodyOffset < mainEnd) {
+                    mainEnd = procedure.bodyOffset;
+                }
+            }
+            Procedure main = new Procedure();
+            main.index = -2;
+            main.bodyOffset = mainStart;
+            main.bodyEnd = mainEnd;
+            // The script own code comes before the top level code, which is
+            // the last thing the VM runs.
+            script.procedures.add(script.procedures.size() - 1, main);
+            decode(script, main, data);
+
+            script.analysisProblems.clear();
+            analyse(script, top);
+        }
 
         return script;
     }
@@ -233,242 +271,352 @@ final class ScriptCompiler {
     }
 
     /**
-     * Works out the stack depth of every instruction, resolves the branches and
-     * finds the calls.
+     * Works out the stack depth of every instruction, resolves the branches
+     * and finds the calls.
+     *
+     * <p>The instructions make a graph, not a line. A jump leaves the code
+     * under it, a call leaves the code under it until the callee returns,
+     * and a return comes back through the return stack. So the analysis
+     * follows the graph: every instruction is reached with the state the
+     * machine is in, and the state is the depth of the value stack, the two
+     * values on top of it, the frame pointer and the return stack.
+     *
+     * <p>Only the top of the stack is tracked, because that is all the
+     * analysis needs: a branch target, the procedure a call names and the
+     * argument count are all on top. What is under them is not known, and
+     * the analysis does not pretend it is.
      */
-    private static void analyse(CompiledScript script) {
-        Map<Integer, Integer> depthAt = new HashMap<>();
-        Map<Integer, Integer> callSite = new HashMap<>();
-
-        // The top level code runs on an empty stack.
-        Procedure top = script.procedures.get(script.procedures.size() - 1);
-        simulate(script, top, 0, depthAt, callSite);
-
-        // A procedure's entry depth is the depth at the call that enters it.
-        boolean progress = true;
-        while (progress) {
-            progress = false;
-            for (Map.Entry<Integer, Integer> entry : callSite.entrySet()) {
-                Procedure procedure = script.procedures.get(entry.getKey());
-                if (procedure.entryDepth == -1) {
-                    procedure.entryDepth = entry.getValue();
-                    progress = true;
-                } else if (procedure.entryDepth != entry.getValue()) {
-                    procedure.recursive = true;
-                }
+    private static void analyse(CompiledScript script, Procedure top) {
+        // The instructions, so that a branch can be resolved to the
+        // procedure and the position it lands on.
+        Map<Integer, Procedure> owner = new HashMap<>();
+        Map<Integer, Integer> position = new HashMap<>();
+        for (Procedure procedure : script.procedures) {
+            for (int index = 0; index < procedure.code.size(); index++) {
+                owner.put(procedure.code.get(index).offset, procedure);
+                position.put(procedure.code.get(index).offset, index);
             }
         }
 
-        for (Procedure procedure : script.procedures) {
-            if (procedure.entryDepth == -1) {
+        Deque<Work> work = new ArrayDeque<>();
+        Map<String, State> seen = new HashMap<>();
+        List<String> mismatches = new ArrayList<>();
+
+        // The VM starts on the top level code, on an empty stack.
+        work.add(new Work(top, 0, new State()));
+
+        while (!work.isEmpty()) {
+            Work item = work.poll();
+            Procedure procedure = item.procedure;
+            Instruction instruction = procedure.code.get(item.index);
+            State state = item.state;
+
+            // The stack is one: an instruction is reached with one state.
+            String key = procedure.index + ":" + item.index;
+            State first = seen.get(key);
+            if (first != null) {
+                if (first.depth() != state.depth()) {
+                    // A procedure that calls itself is entered with a deeper
+                    // stack every time, and that is right, so the mismatch
+                    // is only a problem when the procedure is not recursive.
+                    if (!procedure.recursive) {
+                        mismatches.add(script.name + ": the stack does not match at "
+                            + instruction.offset);
+                    }
+                }
                 continue;
             }
-            simulate(script, procedure, procedure.entryDepth, depthAt, callSite);
-        }
+            seen.put(key, state);
 
-        // The branches have to land on an instruction, and the calls have to
-        // name a procedure of the script.
-        java.util.Set<Integer> offsets = new java.util.HashSet<>();
-        for (Procedure procedure : script.procedures) {
-            for (Instruction instruction : procedure.code) {
-                offsets.add(instruction.offset);
-            }
-        }
-        int procedureCount = script.procedures.size() - 1;
-        for (Procedure procedure : script.procedures) {
-            for (Instruction instruction : procedure.code) {
-                if (instruction.branch && !offsets.contains(instruction.target)) {
-                    script.analysisProblems.add(script.name + ": the branch at " + instruction.offset
-                        + " does not land on an instruction");
-                }
-                if (instruction.callTarget >= procedureCount) {
-                    script.analysisProblems.add(script.name + ": the call at " + instruction.offset
-                        + " names no procedure of the script");
-                }
-            }
-        }
-
-        // The API calls, in the order the script makes them.
-        for (Procedure procedure : script.procedures) {
-            for (Instruction instruction : procedure.code) {
-                String method = apiMethodFor(instruction.slot);
-                if (method != null && !script.apiCalls.contains(method)) {
-                    script.apiCalls.add(method);
-                }
-            }
-        }
-    }
-
-    /**
-     * One pass over a procedure's code, following the stack.
-     *
-     * @param depthAt the depth of every instruction seen so far
-     * @param callSite the depth at which each procedure is called
-     */
-    private static void simulate(CompiledScript script, Procedure procedure, int entryDepth,
-            Map<Integer, Integer> depthAt, Map<Integer, Integer> callSite) {
-        Integer[] stack = new Integer[MAX_STACK];
-        int depth = entryDepth;
-        int framePointer = -1;
-        int returnDepth = 0;
-
-        for (Instruction instruction : procedure.code) {
+            instruction.depthBefore = state.depth();
+            State next = state.copy();
             int slot = instruction.slot;
-            instruction.depthBefore = depth;
-
-            Integer known = null;
-            if (depth > 0) {
-                known = stack[depth - 1];
-            }
 
             switch (slot) {
             case OP_PUSH:
-                push(stack, depth, instruction.immediate);
-                depth++;
+                next.push(instruction.immediate);
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
                 break;
 
-            case OP_D_TO_A:
-                // A value off the value stack onto the return stack.
-                pop(stack, depth);
-                depth--;
-                returnDepth++;
-                break;
-
-            case OP_A_TO_D:
-                // A value off the return stack onto the value stack.
-                pop(stack, depth);
-                returnDepth--;
-                depth++;
-                push(stack, depth, null);
-                break;
-
-            case OP_PUSH_BASE: {
-                // The argument count, then the frame pointer becomes the stack
-                // size less the argument count.
-                Integer argCount = depth > 0 ? stack[depth - 1] : null;
-                pop(stack, depth);
-                depth--;
-                returnDepth++;
-                framePointer = argCount != null ? (depth - argCount) : -1;
+            case OP_JUMP: {
+                // The target is on top, and it is the only way on.
+                Integer target = state.top();
+                next.pop();
+                instruction.depthAfter = next.depth();
+                instruction.branch = true;
+                if (target == null) {
+                    script.analysisProblems.add(script.name + ": JUMP with an unknown target at "
+                        + instruction.offset);
+                } else {
+                    instruction.target = target;
+                    branch(script, work, owner, position, target, next);
+                }
                 break;
             }
 
-            case OP_POP_BASE:
-                returnDepth--;
-                break;
-
-            case OP_POP_TO_BASE:
-                // The depth falls to the frame pointer.
-                if (framePointer < 0) {
-                    script.analysisProblems.add(script.name + ": POP_TO_BASE without a frame at "
-                        + instruction.offset);
-                    return;
-                }
-                depth = framePointer;
-                break;
-
             case OP_IF: {
-                // The condition, and under it the target.
-                Integer condition = depth > 0 ? stack[depth - 1] : null;
-                Integer target = depth > 1 ? stack[depth - 2] : null;
-                pop(stack, depth);
-                depth--;
-                pop(stack, depth);
-                depth--;
+                // The condition on top, the target under it. Both come off
+                // the stack, and the target is where the execution goes when
+                // the condition is empty.
+                Integer target = state.second();
+                next.pop();
+                next.pop();
+                instruction.depthAfter = next.depth();
                 instruction.branch = true;
-                if (target != null) {
-                    instruction.target = target;
-                } else {
+                if (target == null) {
                     script.analysisProblems.add(script.name + ": IF with an unknown target at "
                         + instruction.offset);
+                } else {
+                    instruction.target = target;
+                    branch(script, work, owner, position, target, next);
                 }
+                addFallthrough(work, procedure, item.index + 1, next);
                 break;
             }
 
             case OP_WHILE: {
-                // The condition, and under it the target. The target stays on
-                // the stack while the body runs.
-                Integer condition = depth > 0 ? stack[depth - 1] : null;
-                Integer target = depth > 1 ? stack[depth - 2] : null;
-                pop(stack, depth);
-                depth--;
+                // The condition on top, the target under it. When the
+                // condition is empty the target comes off the stack too and
+                // the execution goes back; otherwise the target stays.
+                Integer target = state.second();
+                next.pop();
+                instruction.depthAfter = next.depth();
                 instruction.branch = true;
-                if (target != null) {
-                    instruction.target = target;
-                } else {
+                if (target == null) {
                     script.analysisProblems.add(script.name + ": WHILE with an unknown target at "
                         + instruction.offset);
-                }
-                // The body leaves the target on the stack, the exit takes it.
-                break;
-            }
-
-            case OP_JUMP: {
-                Integer target = depth > 0 ? stack[depth - 1] : null;
-                pop(stack, depth);
-                depth--;
-                instruction.branch = true;
-                if (target != null) {
-                    instruction.target = target;
                 } else {
-                    script.analysisProblems.add(script.name + ": JUMP with an unknown target at "
-                        + instruction.offset);
+                    instruction.target = target;
+                    State back = next.copy();
+                    back.pop();
+                    branch(script, work, owner, position, target, back);
                 }
+                addFallthrough(work, procedure, item.index + 1, next);
                 break;
             }
 
             case OP_CALL: {
-                Integer index = depth > 0 ? stack[depth - 1] : null;
-                pop(stack, depth);
-                depth--;
-                if (index != null) {
-                    instruction.callTarget = index;
-                    callSite.putIfAbsent(index, depth);
-                } else {
+                // The procedure is named on top. The code under the call is
+                // not reached until the callee returns.
+                Integer index = state.top();
+                next.pop();
+                instruction.depthAfter = next.depth();
+                if (index == null) {
                     script.analysisProblems.add(script.name + ": CALL with an unknown index at "
                         + instruction.offset);
+                    break;
                 }
+                instruction.callTarget = index;
+                if (index < 0 || index >= script.procedureCount) {
+                    script.analysisProblems.add(script.name + ": the call at " + instruction.offset
+                        + " names no procedure of the script");
+                    break;
+                }
+                Procedure callee = script.procedures.get(index);
+                if (callee.entryDepth == -1) {
+                    callee.entryDepth = next.depth();
+                } else if (callee.entryDepth != next.depth()) {
+                    callee.recursive = true;
+                }
+                work.add(new Work(callee, 0, next));
+                break;
+            }
+
+            case OP_D_TO_A: {
+                // A value off the value stack onto the return stack. That is
+                // where the return address goes.
+                next.returnPush(state.top());
+                next.pop();
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
+                break;
+            }
+
+            case OP_A_TO_D: {
+                // A value off the return stack onto the value stack.
+                next.push(next.returns == null ? null : next.returns.value);
+                next.returnPop();
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
+                break;
+            }
+
+            case OP_PUSH_BASE: {
+                // The argument count on top; the frame pointer becomes the
+                // stack size less the argument count, and the old frame
+                // pointer goes onto the return stack.
+                Integer argumentCount = state.top();
+                next.pop();
+                next.returnPush(null);
+                next.framePointer = argumentCount != null ? next.depth() - argumentCount : -1;
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
+                break;
+            }
+
+            case OP_POP_BASE: {
+                // The old frame pointer comes back off the return stack.
+                next.returnPop();
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
+                break;
+            }
+
+            case OP_POP_TO_BASE: {
+                // The stack falls to the frame pointer.
+                if (state.framePointer < 0) {
+                    script.analysisProblems.add(script.name + ": POP_TO_BASE without a frame at "
+                        + instruction.offset);
+                    break;
+                }
+                // The stack falls to the frame pointer, and what was on it
+                // is gone.
+                next.values = trimTo(next.values, state.framePointer);
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
                 break;
             }
 
             default: {
+                // The shape of the opcode says what it reads and what it
+                // leaves behind.
                 int pops = ScriptOpcodeShapes.POP_COUNT[slot];
                 for (int i = 0; i < pops; i++) {
-                    pop(stack, depth);
-                    depth--;
+                    next.pop();
                 }
                 if (ScriptOpcodeShapes.PUSH_KIND[slot] != -1) {
-                    push(stack, depth, null);
-                    depth++;
+                    next.push(null);
                 }
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
                 break;
             }
             }
+        }
 
-            instruction.depthAfter = depth;
-            if (depth < 0) {
-                script.analysisProblems.add(script.name + ": the value stack underflows at "
-                    + instruction.offset);
-                return;
-            }
-            if (depth > MAX_STACK) {
-                script.analysisProblems.add(script.name + ": the value stack overflows at "
-                    + instruction.offset);
-                return;
-            }
-            depthAt.put(instruction.offset, depth);
+        // A procedure that is entered with different stacks is recursive,
+        // and that is not a problem: the stack grows with the recursion.
+        for (String mismatch : mismatches) {
+            script.analysisProblems.add(mismatch);
         }
     }
 
-    private static void push(Integer[] stack, int depth, Integer value) {
-        if (depth >= 0 && depth < stack.length) {
-            stack[depth] = value;
+    /** The stack, cut down to the given depth. */
+    private static Value trimTo(Value values, int depth) {
+        Value result = values;
+        while (result != null && result.depth > depth) {
+            result = result.tail;
+        }
+        return result;
+    }
+
+    /** The execution carries on at the next instruction of the procedure. */
+    private static void addFallthrough(Deque<Work> work, Procedure procedure, int index, State state) {
+        if (index >= 0 && index < procedure.code.size()) {
+            work.add(new Work(procedure, index, state));
         }
     }
 
-    private static void pop(Integer[] stack, int depth) {
-        if (depth >= 0 && depth < stack.length) {
-            stack[depth] = null;
+    /** A branch: the execution continues at the target. */
+    private static void branch(CompiledScript script, Deque<Work> work,
+            Map<Integer, Procedure> owner, Map<Integer, Integer> position,
+            int target, State state) {
+        Procedure procedure = owner.get(target);
+        Integer index = position.get(target);
+        if (procedure == null || index == null) {
+            script.analysisProblems.add(script.name + ": the branch to " + target
+                + " lands on no instruction");
+            return;
+        }
+        work.add(new Work(procedure, index, state));
+    }
+
+    /**
+     * One value of a stack, with the rest of the stack under it.
+     *
+     * <p>The stacks are shared: a push makes a new head over the old one,
+     * so the paths through the program share what they have in common.
+     */
+    private static final class Value {
+        final Integer value;
+        final Value tail;
+        final int depth;
+
+        Value(Integer value, Value tail) {
+            this.value = value;
+            this.tail = tail;
+            this.depth = tail == null ? 1 : tail.depth + 1;
+        }
+    }
+
+    /**
+     * The state of the machine at one instruction.
+     *
+     * <p>The value stack holds the values the analysis knows: a branch
+     * target, the procedure a call names, the argument count. What is
+     * pushed by anything but a PUSH is not known, and the analysis does not
+     * pretend it is - the value is there, but it is null.
+     */
+    private static final class State {
+        Value values;
+        Value returns;
+        int framePointer = -1;
+
+        State copy() {
+            State other = new State();
+            other.values = values;
+            other.returns = returns;
+            other.framePointer = framePointer;
+            return other;
+        }
+
+        /** The depth of the value stack. */
+        int depth() {
+            return values == null ? 0 : values.depth;
+        }
+
+        /** The value on top of the value stack. */
+        Integer top() {
+            return values == null ? null : values.value;
+        }
+
+        /** The value under the top of the value stack. */
+        Integer second() {
+            return values == null || values.tail == null ? null : values.tail.value;
+        }
+
+        /** A value goes onto the value stack. */
+        void push(Integer value) {
+            values = new Value(value, values);
+        }
+
+        /** A value comes off the value stack. */
+        void pop() {
+            values = values == null ? null : values.tail;
+        }
+
+        /** A value goes onto the return stack. */
+        void returnPush(Integer value) {
+            returns = new Value(value, returns);
+        }
+
+        /** A value comes off the return stack. */
+        void returnPop() {
+            returns = returns == null ? null : returns.tail;
+        }
+    }
+
+    /** An instruction to analyse, with the state it is reached with. */
+    private static final class Work {
+        final Procedure procedure;
+        final int index;
+        final State state;
+
+        Work(Procedure procedure, int index, State state) {
+            this.procedure = procedure;
+            this.index = index;
+            this.state = state;
         }
     }
 

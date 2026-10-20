@@ -53,11 +53,15 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[5] = -1;
     }
     static {
-        POP_COUNT[6] = 0;
+        POP_COUNT[6] = 2;
+        POP_KIND[6 + 0] = 0;
+        POP_KIND[6 + 1] = 0;
         PUSH_KIND[6] = -1;
     }
     static {
-        POP_COUNT[7] = 0;
+        POP_COUNT[7] = 2;
+        POP_KIND[7 + 0] = 0;
+        POP_KIND[7 + 1] = 0;
         PUSH_KIND[7] = -1;
     }
     static {
@@ -264,67 +268,99 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[50] = 3;
     }
     static {
-        POP_COUNT[51] = 0;
+        POP_COUNT[51] = 2;
+        POP_KIND[51 + 0] = 3;
+        POP_KIND[51 + 1] = 3;
         PUSH_KIND[51] = 0;
     }
     static {
-        POP_COUNT[52] = 0;
+        POP_COUNT[52] = 2;
+        POP_KIND[52 + 0] = 3;
+        POP_KIND[52 + 1] = 3;
         PUSH_KIND[52] = 0;
     }
     static {
-        POP_COUNT[53] = 0;
+        POP_COUNT[53] = 2;
+        POP_KIND[53 + 0] = 3;
+        POP_KIND[53 + 1] = 3;
         PUSH_KIND[53] = 0;
     }
     static {
-        POP_COUNT[54] = 0;
+        POP_COUNT[54] = 2;
+        POP_KIND[54 + 0] = 3;
+        POP_KIND[54 + 1] = 3;
         PUSH_KIND[54] = 0;
     }
     static {
-        POP_COUNT[55] = 0;
+        POP_COUNT[55] = 2;
+        POP_KIND[55 + 0] = 3;
+        POP_KIND[55 + 1] = 3;
         PUSH_KIND[55] = 0;
     }
     static {
-        POP_COUNT[56] = 0;
+        POP_COUNT[56] = 2;
+        POP_KIND[56 + 0] = 3;
+        POP_KIND[56 + 1] = 3;
         PUSH_KIND[56] = 0;
     }
     static {
-        POP_COUNT[57] = 0;
+        POP_COUNT[57] = 2;
+        POP_KIND[57 + 0] = 3;
+        POP_KIND[57 + 1] = 3;
         PUSH_KIND[57] = 3;
     }
     static {
-        POP_COUNT[58] = 0;
+        POP_COUNT[58] = 2;
+        POP_KIND[58 + 0] = 3;
+        POP_KIND[58 + 1] = 3;
         PUSH_KIND[58] = 0;
     }
     static {
-        POP_COUNT[59] = 0;
+        POP_COUNT[59] = 2;
+        POP_KIND[59 + 0] = 3;
+        POP_KIND[59 + 1] = 3;
         PUSH_KIND[59] = 0;
     }
     static {
-        POP_COUNT[60] = 0;
+        POP_COUNT[60] = 2;
+        POP_KIND[60 + 0] = 3;
+        POP_KIND[60 + 1] = 3;
         PUSH_KIND[60] = 0;
     }
     static {
-        POP_COUNT[61] = 0;
+        POP_COUNT[61] = 2;
+        POP_KIND[61 + 0] = 3;
+        POP_KIND[61 + 1] = 3;
         PUSH_KIND[61] = 0;
     }
     static {
-        POP_COUNT[62] = 0;
+        POP_COUNT[62] = 2;
+        POP_KIND[62 + 0] = 3;
+        POP_KIND[62 + 1] = 3;
         PUSH_KIND[62] = 0;
     }
     static {
-        POP_COUNT[63] = 0;
+        POP_COUNT[63] = 2;
+        POP_KIND[63 + 0] = 3;
+        POP_KIND[63 + 1] = 3;
         PUSH_KIND[63] = 0;
     }
     static {
-        POP_COUNT[64] = 0;
+        POP_COUNT[64] = 2;
+        POP_KIND[64 + 0] = 3;
+        POP_KIND[64 + 1] = 3;
         PUSH_KIND[64] = 0;
     }
     static {
-        POP_COUNT[65] = 0;
+        POP_COUNT[65] = 2;
+        POP_KIND[65 + 0] = 3;
+        POP_KIND[65 + 1] = 3;
         PUSH_KIND[65] = 0;
     }
     static {
-        POP_COUNT[66] = 0;
+        POP_COUNT[66] = 2;
+        POP_KIND[66 + 0] = 3;
+        POP_KIND[66 + 1] = 3;
         PUSH_KIND[66] = 0;
     }
     static {
@@ -464,11 +500,17 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[90] = -1;
     }
     static {
-        POP_COUNT[91] = 0;
+        POP_COUNT[91] = 3;
+        POP_KIND[91 + 0] = 3;
+        POP_KIND[91 + 1] = 3;
+        POP_KIND[91 + 2] = 3;
         PUSH_KIND[91] = -1;
     }
     static {
-        POP_COUNT[92] = 0;
+        POP_COUNT[92] = 3;
+        POP_KIND[92 + 0] = 3;
+        POP_KIND[92 + 1] = 3;
+        POP_KIND[92 + 2] = 3;
         PUSH_KIND[92] = -1;
     }
     static {
@@ -629,11 +671,17 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[118] = -1;
     }
     static {
-        POP_COUNT[119] = 0;
+        POP_COUNT[119] = 3;
+        POP_KIND[119 + 0] = 3;
+        POP_KIND[119 + 1] = 3;
+        POP_KIND[119 + 2] = 3;
         PUSH_KIND[119] = -1;
     }
     static {
-        POP_COUNT[120] = 0;
+        POP_COUNT[120] = 3;
+        POP_KIND[120 + 0] = 3;
+        POP_KIND[120 + 1] = 3;
+        POP_KIND[120 + 2] = 3;
         PUSH_KIND[120] = -1;
     }
     static {
@@ -931,7 +979,10 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[172] = 0;
     }
     static {
-        POP_COUNT[173] = 0;
+        POP_COUNT[173] = 3;
+        POP_KIND[173 + 0] = 0;
+        POP_KIND[173 + 1] = 0;
+        POP_KIND[173 + 2] = 0;
         PUSH_KIND[173] = 0;
     }
     static {
@@ -964,15 +1015,22 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[178] = -1;
     }
     static {
-        POP_COUNT[179] = 0;
+        POP_COUNT[179] = 3;
+        POP_KIND[179 + 0] = 0;
+        POP_KIND[179 + 1] = 0;
+        POP_KIND[179 + 2] = 0;
         PUSH_KIND[179] = 0;
     }
     static {
-        POP_COUNT[180] = 0;
+        POP_COUNT[180] = 2;
+        POP_KIND[180 + 0] = 0;
+        POP_KIND[180 + 1] = 0;
         PUSH_KIND[180] = 0;
     }
     static {
-        POP_COUNT[181] = 0;
+        POP_COUNT[181] = 2;
+        POP_KIND[181 + 0] = 0;
+        POP_KIND[181 + 1] = 0;
         PUSH_KIND[181] = 0;
     }
     static {
@@ -1110,11 +1168,24 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[206] = -1;
     }
     static {
-        POP_COUNT[207] = 0;
+        POP_COUNT[207] = 5;
+        POP_KIND[207 + 0] = 0;
+        POP_KIND[207 + 1] = 0;
+        POP_KIND[207 + 2] = 0;
+        POP_KIND[207 + 3] = 0;
+        POP_KIND[207 + 4] = 0;
         PUSH_KIND[207] = 0;
     }
     static {
-        POP_COUNT[208] = 0;
+        POP_COUNT[208] = 8;
+        POP_KIND[208 + 0] = 0;
+        POP_KIND[208 + 1] = 0;
+        POP_KIND[208 + 2] = 0;
+        POP_KIND[208 + 3] = 0;
+        POP_KIND[208 + 4] = 0;
+        POP_KIND[208 + 5] = 0;
+        POP_KIND[208 + 6] = 0;
+        POP_KIND[208 + 7] = 2;
         PUSH_KIND[208] = -1;
     }
     static {
@@ -1185,7 +1256,15 @@ final class ScriptOpcodeShapes {
         PUSH_KIND[220] = 0;
     }
     static {
-        POP_COUNT[221] = 0;
+        POP_COUNT[221] = 8;
+        POP_KIND[221 + 0] = 0;
+        POP_KIND[221 + 1] = 0;
+        POP_KIND[221 + 2] = 0;
+        POP_KIND[221 + 3] = 0;
+        POP_KIND[221 + 4] = 0;
+        POP_KIND[221 + 5] = 0;
+        POP_KIND[221 + 6] = 0;
+        POP_KIND[221 + 7] = 2;
         PUSH_KIND[221] = -1;
     }
     static {

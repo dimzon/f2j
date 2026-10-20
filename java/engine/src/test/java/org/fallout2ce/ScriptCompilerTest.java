@@ -59,6 +59,7 @@ class ScriptCompilerTest {
         assertTrue(names.size() > 1000, "the master archive has " + names.size() + " scripts");
 
         List<String> problems = new ArrayList<>();
+        List<String> analysis = new ArrayList<>();
         int procedures = 0;
         int instructions = 0;
         for (String name : names) {
@@ -70,19 +71,23 @@ class ScriptCompilerTest {
                 instructions += procedure.code.size();
             }
             problems.addAll(script.problems);
+            analysis.addAll(script.analysisProblems);
         }
         Db.dbCloseAll();
 
         assertTrue(problems.isEmpty(),
             problems.size() + " problems, first: " + (problems.isEmpty() ? "" : problems.get(0)));
         System.out.println("scripts=" + names.size() + " procedures=" + procedures
-            + " instructions=" + instructions);
+            + " instructions=" + instructions + " analysis problems=" + analysis.size());
+        for (int i = 0; i < Math.min(analysis.size(), 20); i++) {
+            System.out.println("  " + analysis.get(i));
+        }
     }
 
     @Test
-    void theAnalysisSaysWhatItCannotFollow() {
-        // The analysis is not finished, but it must not pretend: what it
-        // cannot follow, it reports.
+    void theAnalysisFollowsAShippedScript() {
+        // The analysis follows the graph: the launcher, the script's own
+        // code and the procedures, with the stack and the branches.
         List<String> names = shippedScripts();
         assertTrue(names.size() > 1000);
 
@@ -92,16 +97,12 @@ class ScriptCompilerTest {
 
         ScriptCompiler.CompiledScript script = ScriptCompiler.compile("scripts\\miJerky.int", data);
         assertTrue(script.problems.isEmpty(), script.problems.toString());
+        assertTrue(script.analysisProblems.isEmpty(), script.analysisProblems.toString());
 
-        // The top level code is a launcher: it enters the critical section,
-        // puts the exit address on the return stack and jumps into the
-        // script's own code. The analysis follows the jump and then reports
-        // the code it cannot reach.
-        System.out.println("analysis problems: " + script.analysisProblems.size());
-        for (String problem : script.analysisProblems) {
-            System.out.println("  " + problem);
-        }
-        assertTrue(script.analysisProblems.size() > 0,
-            "the analysis followed everything, which it should not");
+        // The launcher, the script's own code and the procedure.
+        assertEquals(3, script.procedures.size());
+        assertEquals(0, script.procedures.get(0).index);
+        assertEquals(-2, script.procedures.get(1).index);
+        assertEquals(-1, script.procedures.get(2).index);
     }
 }
