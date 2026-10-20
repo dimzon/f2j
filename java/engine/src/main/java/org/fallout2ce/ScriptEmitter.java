@@ -89,6 +89,29 @@ final class ScriptEmitter {
             emitProcedure(script, procedure, out, emitted);
         }
 
+        out.append("    /**\n");
+        out.append("     * Calls the procedure with an index.\n");
+        out.append("     *\n");
+        out.append("     * <p>The original names the procedure on the stack and jumps to\n");
+        out.append("     * it, so the compiled code looks the name up.\n");
+        out.append("     */\n");
+        out.append("    protected void callProcedure(int index) {\n");
+        out.append("        switch (index) {\n");
+        for (Procedure procedure : script.procedures) {
+            if (procedure.index < 0) {
+                continue;
+            }
+            out.append("        case ").append(procedure.index).append(": ");
+            if ((procedure.flags & 0x10) != 0) {
+                // The procedure wants the critical section.
+                out.append("enterCritical(); ");
+            }
+            out.append("proc").append(procedure.index).append("(); break;\n");
+        }
+        out.append("        default: break;\n");
+        out.append("        }\n");
+        out.append("    }\n\n");
+
         out.append("}\n");
         emitted.source = out.toString();
         return emitted;
@@ -148,6 +171,10 @@ final class ScriptEmitter {
             return "leaveCritical();";
         case 0x004:
             return jump(script, procedure, instruction, previous);
+        case 0x005:
+            // The procedure is named on the stack, so the call is a switch
+            // the generated class has.
+            return "callProcedure(popInt());";
         case 0x00C:
             return "addressToData();";
         case 0x00D:

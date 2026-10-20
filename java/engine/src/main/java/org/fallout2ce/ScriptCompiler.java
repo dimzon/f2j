@@ -88,6 +88,9 @@ final class ScriptCompiler {
         int nameOffset;
         String name;
         int argCount;
+
+        /** The procedure's flags, as the original keeps them. */
+        int flags;
         int bodyOffset;
         int bodyEnd;
         final List<Instruction> code = new ArrayList<>();
@@ -197,6 +200,7 @@ final class ScriptCompiler {
             procedure.index = index;
             procedure.nameOffset = Program.stackReadInt32(data, row);
             procedure.argCount = Program.stackReadInt32(data, row + 20);
+            procedure.flags = Program.stackReadInt32(data, row + 4);
             procedure.bodyOffset = Program.stackReadInt32(data, row + 16);
             procedures.add(procedure);
         }
