@@ -58,6 +58,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D5, // op_tile_num_in_direction
         0x80A4, // op_obj_name
         0x80B7, // op_create_object
+        0x80BD, // op_source_obj
         0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
@@ -656,6 +657,18 @@ public class GameScriptApi extends UnsupportedScriptApi {
         default:
             return 0;
         }
+    }
+
+    /**
+     * op_source_obj (0x80BD): the object that started the script.
+     *
+     * <p>The source is not the object the script runs for, but the one that
+     * started it. The scripts of the game are started by the game itself and
+     * have no source, so the original answers the same in its harness.
+     */
+    @Override
+    public Object sourceObj() {
+        return null;
     }
 
     /**
