@@ -53,6 +53,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80C8, // op_obj_type
         0x80D4, // op_tile_num
         0x8100, // op_obj_pid
+        0x80D2, // op_tile_distance
+        0x80D3, // op_tile_distance_objs
     };
 
     @Override
@@ -369,6 +371,38 @@ public class GameScriptApi extends UnsupportedScriptApi {
 
         ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
         return FrmId.ofFid(obj.fid).objectType().value();
+    }
+
+    /**
+     * op_tile_distance (0x80D2): the distance between two tiles.
+     *
+     * <p>The original measures it on the hex grid, and a tile that is not
+     * on the grid has no distance at all.
+     */
+    @Override
+    public int tileDistance(int a0, int a1) {
+        return TileMath.tileDistanceBetween(a0, a1);
+    }
+
+    /**
+     * op_tile_distance_objs (0x80D3): the distance between the tiles two
+     * objects stand on.
+     *
+     * <p>Only objects on the same elevation are close enough to have a
+     * distance; the rest are as far apart as the grid allows.
+     */
+    @Override
+    public int tileDistanceObjs(Object a0, Object a1) {
+        if (a0 == null || a1 == null) {
+            return TileMath.TILE_MAX_DISTANCE;
+        }
+
+        ObjTypes.GameObject first = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject second = (ObjTypes.GameObject) a1;
+        if (first.elevation != second.elevation) {
+            return TileMath.TILE_MAX_DISTANCE;
+        }
+        return TileMath.tileDistanceBetween(first.tile, second.tile);
     }
 
     /**
