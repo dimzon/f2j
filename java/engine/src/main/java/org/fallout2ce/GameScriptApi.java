@@ -60,6 +60,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
         0x80D9, // op_rm_obj_from_inven
+        0x814C, // op_rotation_to_tile
         0x80CB, // op_set_critter_stat
     };
 
@@ -476,6 +477,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return;
         }
         Item.itemRemove((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, 1);
+    }
+
+    /**
+     * op_rotation_to_tile (0x814C): the direction one tile lies in from
+     * another one.
+     *
+     * <p>The direction is the number the game gives it: north-east is zero.
+     */
+    @Override
+    public int rotationToTile(int a0, int a1) {
+        return TileMath.tileGetRotationTo(a0, a1).value();
     }
 
     /**
