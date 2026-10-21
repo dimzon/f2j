@@ -58,6 +58,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D5, // op_tile_num_in_direction
         0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
+        0x80D8, // op_add_obj_to_inven
         0x80CB, // op_set_critter_stat
     };
 
@@ -445,6 +446,21 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return ProtoTypes.ItemType.ITEM_TYPE_INVALID.id();
         }
         return Item.itemGetType(item).id();
+    }
+
+    /**
+     * op_add_obj_to_inven (0x80D8): put an object into the inventory of
+     * another one.
+     *
+     * <p>Nothing happens when there is no owner or no object at all, and an
+     * object that is attached to something else is not taken.
+     */
+    @Override
+    public void addObjToInven(Object a0, Object a1) {
+        if (a0 == null || a1 == null) {
+            return;
+        }
+        Item.itemAdd((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, 1);
     }
 
     /**
