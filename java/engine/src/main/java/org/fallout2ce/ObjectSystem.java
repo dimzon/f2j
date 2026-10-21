@@ -253,6 +253,9 @@ public final class ObjectSystem {
     /** Port of {@code gObjectFindLastObjectListNode} (tile-scan cursor). */
     private static GameObjectListNode findCursor = null;
 
+    /** The cursor of the search for an object on a tile. */
+    private static GameObjectListNode findLocationCursor = null;
+
     /** Port of {@code gObjectFindTile} (tile-scan cursor). */
     private static int findTile = 0;
 
@@ -868,6 +871,56 @@ public final class ObjectSystem {
 
     // 0x48B48C obj_find_first_at: same tile-head scan with the elevation
     // filter, exactly like C.
+    /**
+     * Port of {@code obj_find_first_at_tile} ({@code src/object.cc}): the
+     * first object on a tile.
+     */
+    public static GameObject objectFindFirstAtLocation(int elevation, int tile) {
+        findElevation = elevation;
+        findTile = tile;
+
+        if (tile < 0 || tile >= tileHeads.length) {
+            findLocationCursor = null;
+            return null;
+        }
+
+        GameObjectListNode node = tileHeads[tile];
+        while (node != null) {
+            GameObject obj = node.obj;
+            if (obj != null && obj.elevation == elevation && !isFindHidden(obj)) {
+                findLocationCursor = node;
+                return obj;
+            }
+            node = node.next;
+        }
+
+        findLocationCursor = null;
+        return null;
+    }
+
+    /**
+     * Port of {@code obj_find_next_at_tile} ({@code src/object.cc}): the
+     * next object on a tile.
+     */
+    public static GameObject objectFindNextAtLocation() {
+        if (findLocationCursor == null) {
+            return null;
+        }
+
+        GameObjectListNode node = findLocationCursor.next;
+        while (node != null) {
+            GameObject obj = node.obj;
+            if (obj != null && obj.elevation == findElevation && !isFindHidden(obj)) {
+                findLocationCursor = node;
+                return obj;
+            }
+            node = node.next;
+        }
+
+        findLocationCursor = null;
+        return null;
+    }
+
     public static GameObject objectFindFirstAtElevation(int elevation) {
         findElevation = elevation;
         findTile = 0;

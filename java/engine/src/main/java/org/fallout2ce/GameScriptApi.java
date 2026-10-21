@@ -57,6 +57,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D3, // op_tile_distance_objs
         0x80D5, // op_tile_num_in_direction
         0x80A4, // op_obj_name
+        0x80A7, // op_tile_contains_pid_obj
         0x80B7, // op_create_object
         0x80A1, // op_give_exp_points
         0x80AC, // op_roll_vs_skill
@@ -761,6 +762,28 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void giveExpPoints(int a0) {
+    }
+
+    /**
+     * op_tile_contains_pid_obj (0x80A7): the object of a proto on a tile.
+     *
+     * <p>The proto id is the number the game gives it, and there is no
+     * object when the tile is the one of "nowhere".
+     */
+    @Override
+    public Object tileContainsPidObj(int a0, int a1, int a2) {
+        if (a2 == -1) {
+            return null;
+        }
+        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofPid(a0);
+        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtLocation(a1, a2);
+        while (object != null) {
+            if (ProtoTypes.ProtoId.ofGameObject(object).equals(protoId)) {
+                return object;
+            }
+            object = ObjectSystem.objectFindNextAtLocation();
+        }
+        return null;
     }
 
     /**
