@@ -56,10 +56,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D2, // op_tile_distance
         0x80D3, // op_tile_distance_objs
         0x80D5, // op_tile_num_in_direction
+        0x80B7, // op_create_object
         0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
         0x80D9, // op_rm_obj_from_inven
+        0x80F4, // op_destroy_object
         0x814C, // op_rotation_to_tile
         0x80CB, // op_set_critter_stat
     };
@@ -488,6 +490,42 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public int rotationToTile(int a0, int a1) {
         return TileMath.tileGetRotationTo(a0, a1).value();
+    }
+
+    /**
+     * op_create_object (0x80B7): put a new object of a proto on a tile.
+     *
+     * <p>The proto id is the number the game gives it, the tile is the
+     * number of the tile and the elevation is the level. Nothing is created
+     * when the proto id is zero or when the game has no such proto, and
+     * the object is put on the tile zero when there is no tile.
+     */
+    @Override
+    public Object createObject(int a0, int a1, int a2, int a3) {
+        if (a0 == 0) {
+            return null;
+        }
+        ObjTypes.GameObject[] slot = new ObjTypes.GameObject[1];
+        if (ObjectSystem.objectCreateWithProtoId(slot, ProtoTypes.ProtoId.ofPid(a0)) == -1) {
+            return null;
+        }
+        ObjTypes.GameObject object = slot[0];
+        object.sid = a3;
+        ObjectSystem.objectSetLocation(object, a1 == -1 ? 0 : a1, a2);
+        return object;
+    }
+
+    /**
+     * op_destroy_object (0x80F4): take an object out of the game.
+     *
+     * <p>Nothing happens when there is no object at all.
+     */
+    @Override
+    public void destroyObject(Object a0) {
+        if (a0 == null) {
+            return;
+        }
+        ObjectSystem.objectDestroy((ObjTypes.GameObject) a0);
     }
 
     /**
