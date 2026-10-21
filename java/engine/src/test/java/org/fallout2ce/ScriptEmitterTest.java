@@ -4,8 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -14,11 +12,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,28 +87,27 @@ class ScriptEmitterTest {
         return run;
     }
 
-    /** Compiles a script into a class. */
-    private static Class<?> compile(ScriptEmitter.Emitted emitted) throws Exception {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        assertNotNull(compiler, "there is no java compiler");
+    /**
+     * Loads the class the emitter produced.
+     *
+     * <p>The class file is what the JVM gets: there is no source and no
+     * compiler in the loop.
+     */
+    private static Class<?> compile(ScriptEmitter.Emitted emitted) {
+        byte[] bytes = emitted.bytes;
+        assertNotNull(bytes, "the emitter produced no class file");
+        return new ScriptClassLoader(ScriptEmitterTest.class.getClassLoader())
+            .define(emitted.className.replace('/', '.'), bytes);
+    }
 
-        Path directory = Files.createTempDirectory("f2j-script");
-        Path file = directory.resolve(emitted.className + ".java");
-        Files.writeString(file, emitted.source);
-
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        try (StandardJavaFileManager manager = compiler.getStandardFileManager(diagnostics, null, null)) {
-            Iterable<? extends JavaFileObject> units = manager.getJavaFileObjects(file.toFile());
-            JavaCompiler.CompilationTask task = compiler.getTask(null, manager, diagnostics,
-                List.of("-d", directory.toString()), null, units);
-            assertTrue(task.call(), "the generated code does not compile: "
-                + diagnostics.getDiagnostics() + "\n" + emitted.source);
+    /** A class loader that defines the generated classes. */
+    private static final class ScriptClassLoader extends ClassLoader {
+        ScriptClassLoader(ClassLoader parent) {
+            super(parent);
         }
 
-        URL url = directory.toUri().toURL();
-        try (URLClassLoader loader = new URLClassLoader(new URL[] { url },
-                ScriptEmitterTest.class.getClassLoader())) {
-            return loader.loadClass("org.fallout2ce." + emitted.className);
+        Class<?> define(String name, byte[] bytes) {
+            return defineClass(name, bytes, 0, bytes.length);
         }
     }
 
@@ -144,7 +136,7 @@ class ScriptEmitterTest {
         // The script, through the compiled code.
         Class<?> type = compile(emitted);
         MockScriptApi compiled = new MockScriptApi();
-        ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class).newInstance(compiled);
+        ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class, String.class, String.class).newInstance(compiled, name, script.staticStrings);
         instance.run();
 
         assertEquals(trace(vm.mock), trace(compiled));
@@ -217,8 +209,8 @@ class ScriptEmitterTest {
 
             // The script, through the compiled code.
             MockScriptApi compiled = new MockScriptApi();
-            ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class)
-                .newInstance(compiled);
+            ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class, String.class, String.class)
+                .newInstance(compiled, name, script.staticStrings);
 
             instance.run();
             assertEquals(trace(vm.mock), trace(compiled), name);
@@ -254,11 +246,58 @@ class ScriptEmitterTest {
             Program.programFree(program);
 
             // The script, through the compiled code and the game's API.
-            ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class)
-                .newInstance(new GameScriptApi());
+            ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class, String.class, String.class)
+                .newInstance(new GameScriptApi(), name, script.staticStrings);
             instance.run();
 
             assertEquals(vmStack, stack(instance.stack), name);
+        }
+
+        Db.dbCloseAll();
+    }
+
+    /**
+     * The scripts that export a variable other scripts share.
+     *
+     * <p>The external variables are not on the game API: they are the
+     * ones the scripts declare for each other, and they live in a registry
+     * of their own. The compiled code reaches them the same way the
+     * interpreter does.
+     */
+    private static final String[] EXTERNAL_SCRIPTS = {
+        "scripts\\arcaves.int",
+        "scripts\\argarden.int",
+        "scripts\\arvillag.int",
+        "scripts\\bccrissy.int",
+    };
+
+    @Test
+    void everyScriptThatExportsAVariableBehavesTheSameCompiled() throws Exception {
+        Path master = Paths.get(gameData(), "master.dat");
+        assertTrue(master.toFile().isFile());
+        assertEquals(0, Db.dbOpen(master.toString(), null));
+
+        for (String name : EXTERNAL_SCRIPTS) {
+            // The script, compiled.
+            byte[] data = ScriptScanner.readScript(name);
+            assertNotNull(data, name);
+            ScriptCompiler.CompiledScript script = ScriptCompiler.compile(name, data);
+            assertTrue(script.problems.isEmpty(), script.problems.toString());
+            ScriptEmitter.Emitted emitted = ScriptEmitter.emit(script);
+            assertTrue(emitted.problems.isEmpty(), emitted.problems.toString());
+            Class<?> type = compile(emitted);
+
+            // The script, through the VM.
+            Run vm = runWithTheVm(name);
+
+            // The script, through the compiled code.
+            MockScriptApi compiled = new MockScriptApi();
+            ScriptBase instance = (ScriptBase) type.getConstructor(GameApi.class, String.class, String.class)
+                .newInstance(compiled, name, script.staticStrings);
+
+            instance.run();
+            assertEquals(trace(vm.mock), trace(compiled), name);
+            assertEquals(vm.stack, stack(instance.stack), name);
         }
 
         Db.dbCloseAll();

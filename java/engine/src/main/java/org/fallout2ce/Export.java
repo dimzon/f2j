@@ -63,6 +63,21 @@ final class Export {
         }
     }
 
+    /**
+     * The heap the strings of a script live in.
+     *
+     * <p>The original keeps a script's strings in the script itself, and a
+     * compiled script keeps them in its own heap, so the registry asks for
+     * them through this.
+     */
+    interface StringHeap {
+        /** The offset of a string in the heap. */
+        int heapString(String value);
+
+        /** The string at an offset. */
+        String heapText(int opcode, int offset);
+    }
+
     private Export() {
     }
 
@@ -189,10 +204,10 @@ final class Export {
 
     /**
      * 0x4413D4 externalVariableGetValue. Returns 1 when the name is unknown.
-     * A stored string is re-interned into {@code program}'s own heap rather
-     * than handed back as a borrowed offset.
+     * A stored string is re-interned into the script's own heap rather than
+     * handed back as a borrowed offset.
      */
-    static int getValue(Program program, String name, Program.ProgramValue value) {
+    static int getValue(StringHeap heap, String name, Program.ProgramValue value) {
         ExternalVariable var = findVariable(name);
         if (var == null) {
             return 1;
@@ -200,7 +215,7 @@ final class Export {
 
         if (isString(var.value)) {
             value.opcode = var.value.opcode;
-            value.integerValue = Program.programPushString(program, var.stringValue);
+            value.integerValue = heap.heapString(var.stringValue);
         } else {
             // C copies the whole struct.
             value.opcode = var.value.opcode;
@@ -216,7 +231,7 @@ final class Export {
      * 0x44127C externalVariableSetValue. Returns 1 when the name is unknown, so
      * the variable has to be exported first.
      */
-    static int setValue(Program program, String name, Program.ProgramValue programValue) {
+    static int setValue(StringHeap heap, String name, Program.ProgramValue programValue) {
         ExternalVariable var = findVariable(name);
         if (var == null) {
             return 1;
@@ -224,8 +239,8 @@ final class Export {
 
         if (isString(programValue)) {
             // C keeps the stored type dynamic and copies the bytes out, because
-            // the offset in programValue is only meaningful inside `program`.
-            String stringValue = Program.programGetString(program, programValue.opcode, programValue.integerValue);
+            // the offset in programValue is only meaningful inside the script.
+            String stringValue = heap.heapText(programValue.opcode, programValue.integerValue);
             var.value.opcode = Program.VALUE_TYPE_DYNAMIC_STRING;
             var.value.integerValue = 0;
             var.stringValue = stringValue;
@@ -243,8 +258,7 @@ final class Export {
      * exported by a <em>different</em> program - re-exporting from the same
      * program is fine and just resets the value to 0.
      */
-    static int createVariable(Program program, String identifier) {
-        String programName = program.name;
+    static int createVariable(String programName, String identifier) {
         ExternalVariable var = findVariable(identifier);
 
         if (var != null) {

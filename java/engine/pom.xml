@@ -15,6 +15,17 @@
     <description>1:1 port of fallout2-ce src/*.cc (no SDL: pure logic first, platform seams later).</description>
 
     <dependencies>
+        <!-- The script compiler turns a script into bytecode at runtime.
+             ReflectASM would be the friendlier API, but its code generation
+             is not published: every artifact of it carries only the
+             reflection part, and the author left the generator out of the
+             repository. So the compiler writes the class file with ASM,
+             which is the library ReflectASM wraps. -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>9.7.1</version>
+        </dependency>
         <dependency>
             <groupId>org.fallout2ce</groupId>
             <artifactId>f2j-platform-spi</artifactId>

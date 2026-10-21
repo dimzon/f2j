@@ -20,10 +20,29 @@ import java.util.List;
  * the string heap. The game's own state - the objects, the map, the global
  * variables - is not here; that is what {@link GameApi} is for.
  */
-public abstract class ScriptBase {
+public abstract class ScriptBase implements Export.StringHeap {
+
+    /**
+     * Raised where the VM would stop the program.
+     *
+     * <p>The VM leaves its interpreter when a script fails, and the
+     * program ends. The compiled code raises this instead, and the
+     * launcher catches it and ends the same way.
+     */
+    public static final class FatalError extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public FatalError(String message) {
+            super(message);
+        }
+    }
+
 
     /** The game API the compiled code calls. */
     protected GameApi gameApi;
+
+    /** The script's own name, the way the VM names a program. */
+    protected String name;
 
     /** The value stack, shared by every procedure of the script. */
     protected final List<Program.ProgramValue> stack = new ArrayList<>();
@@ -59,7 +78,30 @@ public abstract class ScriptBase {
     protected static final int CRITICAL_SECTION = 0x0001;
 
     protected ScriptBase(GameApi gameApi) {
+        this(gameApi, "", "");
+    }
+
+    /**
+     * The script's own name.
+     *
+     * <p>The VM names a program after the file it came from, and the
+     * external variable registry uses that name to tell one script's
+     * variables from another's.
+     */
+    protected ScriptBase(GameApi gameApi, String name) {
+        this(gameApi, name, "");
+    }
+
+    /**
+     * The script's own name and its static strings.
+     *
+     * <p>The static strings are the ones the code names with their
+     * offset, and they come out of the file the script was read from.
+     */
+    protected ScriptBase(GameApi gameApi, String name, String staticStrings) {
         this.gameApi = gameApi;
+        this.name = name;
+        this.staticStrings = staticStrings == null ? "" : staticStrings;
     }
 
     /** The script API the compiled code calls. */
@@ -93,8 +135,22 @@ public abstract class ScriptBase {
     /** Pushes a string. */
     protected final void pushString(String value) {
         Program.ProgramValue programValue = new Program.ProgramValue();
-        programValue.opcode = Program.VALUE_TYPE_STRING;
+        programValue.opcode = Program.VALUE_TYPE_DYNAMIC_STRING;
         programValue.integerValue = intern(value);
+        stack.add(programValue);
+    }
+
+    /**
+     * Pushes one of the script's own strings.
+     *
+     * <p>The strings the code names come out of the file, and the offset
+     * is the one the file gives them, so that a value that holds one is
+     * the same on both sides.
+     */
+    protected final void pushStaticString(int offset) {
+        Program.ProgramValue programValue = new Program.ProgramValue();
+        programValue.opcode = Program.VALUE_TYPE_STRING;
+        programValue.integerValue = offset;
         stack.add(programValue);
     }
 
@@ -129,7 +185,7 @@ public abstract class ScriptBase {
     /** Removes and returns the top of the value stack as a string. */
     protected final String popString() {
         Program.ProgramValue value = popValue();
-        return value.opcode == Program.VALUE_TYPE_STRING
+        return (value.opcode & Program.VALUE_TYPE_MASK) == Program.VALUE_TYPE_STRING
             ? stringAt(value)
             : null;
     }
@@ -262,7 +318,7 @@ public abstract class ScriptBase {
     protected final Program.ProgramValue fetchGlobal(int index) {
         int position = basePointer + index;
         if (position < 0 || position >= stack.size()) {
-            throw new IllegalStateException("fetchGlobal: index out of range");
+            throw new FatalError("fetchGlobal: index out of range");
         }
         return stack.get(position);
     }
@@ -271,7 +327,7 @@ public abstract class ScriptBase {
     protected final void storeGlobal(int index, Program.ProgramValue value) {
         int position = basePointer + index;
         if (position < 0 || position >= stack.size()) {
-            throw new IllegalStateException("storeGlobal: index out of range");
+            throw new FatalError("storeGlobal: index out of range");
         }
         stack.set(position, value);
     }
@@ -433,7 +489,7 @@ public abstract class ScriptBase {
             float divisor = left.opcode == Program.VALUE_TYPE_FLOAT
                 ? left.floatValue : left.integerValue;
             if (divisor == 0.0f) {
-                throw new IllegalStateException("Division (DIV) by zero");
+                throw new FatalError("Division (DIV) by zero");
             }
             pushFloat(right.floatValue / divisor);
             break;
@@ -441,12 +497,12 @@ public abstract class ScriptBase {
         case Program.VALUE_TYPE_INT:
             if (left.opcode == Program.VALUE_TYPE_FLOAT) {
                 if (left.floatValue == 0.0f) {
-                    throw new IllegalStateException("Division (DIV) by zero");
+                    throw new FatalError("Division (DIV) by zero");
                 }
                 pushFloat((float) right.integerValue / left.floatValue);
             } else {
                 if (left.integerValue == 0) {
-                    throw new IllegalStateException("Division (DIV) by zero");
+                    throw new FatalError("Division (DIV) by zero");
                 }
                 pushInt(right.integerValue / left.integerValue);
             }
@@ -461,16 +517,16 @@ public abstract class ScriptBase {
         Program.ProgramValue right = popValue();
         Program.ProgramValue left = popValue();
         if (right.opcode == Program.VALUE_TYPE_FLOAT) {
-            throw new IllegalStateException("Trying to MOD a float");
+            throw new FatalError("Trying to MOD a float");
         }
         if (right.opcode != Program.VALUE_TYPE_INT) {
             return;
         }
         if (left.opcode == Program.VALUE_TYPE_FLOAT) {
-            throw new IllegalStateException("Trying to MOD with a float");
+            throw new FatalError("Trying to MOD with a float");
         }
         if (left.integerValue == 0) {
-            throw new IllegalStateException("Division (MOD) by zero");
+            throw new FatalError("Division (MOD) by zero");
         }
         pushInt(right.integerValue % left.integerValue);
     }
@@ -479,7 +535,7 @@ public abstract class ScriptBase {
     protected final void floor() {
         Program.ProgramValue value = popValue();
         if (value.opcode == Program.VALUE_TYPE_STRING) {
-            throw new IllegalStateException("Invalid arg given to floor()");
+            throw new FatalError("Invalid arg given to floor()");
         }
         if (value.opcode == Program.VALUE_TYPE_FLOAT) {
             value.opcode = Program.VALUE_TYPE_INT;
@@ -500,7 +556,7 @@ public abstract class ScriptBase {
             pushFloat(-value.floatValue);
             break;
         default:
-            throw new IllegalStateException("Invalid arg given to NEG");
+            throw new FatalError("Invalid arg given to NEG");
         }
     }
 
@@ -657,24 +713,164 @@ public abstract class ScriptBase {
     }
 
     // ------------------------------------------------------------------
-    // The string heap. The VM interns a string and keeps its offset, so a
-    // script can compare strings by value.
+    // The operations the compiled code calls. Each of them does what the
+    // original's opcode handler does, so the compiled code and the
+    // interpreter do the same thing.
     // ------------------------------------------------------------------
 
-    private final List<String> strings = new ArrayList<>();
+    /** op_equal (0x33) and the five that go with it. */
+    protected final void compareEqual() {
+        compare(Compare.EQUAL);
+    }
+
+    protected final void compareNotEqual() {
+        compare(Compare.NOT_EQUAL);
+    }
+
+    protected final void compareLessOrEqual() {
+        compare(Compare.LESS_OR_EQUAL);
+    }
+
+    protected final void compareGreaterOrEqual() {
+        compare(Compare.GREATER_OR_EQUAL);
+    }
+
+    protected final void compareLess() {
+        compare(Compare.LESS);
+    }
+
+    protected final void compareGreater() {
+        compare(Compare.GREATER);
+    }
+
+    /** op_and (0x3E), op_or (0x3F) and the bitwise ones. */
+    protected final void logicalAnd() {
+        logical(0);
+    }
+
+    protected final void logicalOr() {
+        logical(1);
+    }
+
+    protected final void bitwiseAnd() {
+        bitwise(0);
+    }
+
+    protected final void bitwiseOr() {
+        bitwise(1);
+    }
+
+    protected final void bitwiseXor() {
+        bitwise(2);
+    }
+
+    // ------------------------------------------------------------------
+    // The external variables: the ones that scripts share.
+    // ------------------------------------------------------------------
+
+    /**
+     * op_fetch_external (0x14): a variable another script shares.
+     *
+     * <p>The name is on the stack in the VM, and the original reads it out
+     * of the script's identifiers. The compiled code knows the name when
+     * it is written, so the name is a constant there.
+     */
+    protected final void fetchExternal(String identifier) {
+        Program.ProgramValue value = new Program.ProgramValue();
+        if (Export.getValue(this, identifier, value) != 0) {
+            throw new FatalError(
+                "External variable " + identifier + " does not exist");
+        }
+        if (value.opcode == Program.VALUE_TYPE_DYNAMIC_STRING) {
+            // The script's own heap holds its strings, and they are not
+            // the dynamic kind.
+            value.opcode = Program.VALUE_TYPE_STRING;
+        }
+        pushValue(value);
+    }
+
+    /**
+     * op_store_external (0x15): write a variable another script shares.
+     */
+    protected final void storeExternal(String identifier, Program.ProgramValue value) {
+        if (Export.setValue(this, identifier, value) != 0) {
+            throw new FatalError(
+                "External variable " + identifier + " does not exist");
+        }
+    }
+
+    /**
+     * op_export_variable (0x16): declare a variable other scripts share.
+     */
+    protected final void exportVariable(String identifier) {
+        if (Export.createVariable(name, identifier) != 0) {
+            throw new FatalError(
+                "External variable " + identifier + " already exists");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // The string heap. The VM has two of them: the strings the script
+    // names come out of the file, and the strings the script makes go
+    // into a heap of its own. The two are kept apart, the way the VM keeps
+    // them apart, so that a value that holds a string is the same on both
+    // sides.
+    // ------------------------------------------------------------------
+
+    /** The script's static strings, as the file has them. */
+    private final String staticStrings;
+
+    /** The strings the script made, by the offset it gave them. */
+    private final List<String> dynamicStrings = new ArrayList<>();
 
     /** Adds a string to the heap and returns its offset. */
     protected final int intern(String value) {
-        strings.add(value);
-        return strings.size() - 1;
+        dynamicStrings.add(value);
+        return dynamicStrings.size() - 1;
     }
 
-    /** The string at an offset. */
-    protected final String stringAt(Program.ProgramValue value) {
-        int offset = value.integerValue;
-        if (offset < 0 || offset >= strings.size()) {
+    /** The string at an offset of the script's own heap. */
+    protected final String dynamicStringAt(int offset) {
+        if (offset < 0 || offset >= dynamicStrings.size()) {
             return null;
         }
-        return strings.get(offset);
+        return dynamicStrings.get(offset);
+    }
+
+    /** The static string at an offset of the file's table. */
+    protected final String staticStringAt(int offset) {
+        if (offset < 0 || offset >= staticStrings.length()) {
+            return null;
+        }
+        int end = staticStrings.indexOf('\0', offset);
+        return end < 0 ? staticStrings.substring(offset) : staticStrings.substring(offset, end);
+    }
+
+    /** The string a value holds. */
+    protected final String stringAt(Program.ProgramValue value) {
+        if (value.opcode == Program.VALUE_TYPE_STRING) {
+            return staticStringAt(value.integerValue);
+        }
+        if (value.opcode == Program.VALUE_TYPE_DYNAMIC_STRING) {
+            return dynamicStringAt(value.integerValue);
+        }
+        return null;
+    }
+
+    /**
+     * The offset of a string in the script's own heap.
+     *
+     * <p>The external variable registry asks the script for this, because
+     * a string it hands out belongs to the script it came from.
+     */
+    @Override
+    public int heapString(String value) {
+        return intern(value);
+    }
+
+    /** The string at an offset of the script's own heap. */
+    @Override
+    public String heapText(int opcode, int offset) {
+        return stringAt(new Program.ProgramValue(opcode, offset));
     }
 }

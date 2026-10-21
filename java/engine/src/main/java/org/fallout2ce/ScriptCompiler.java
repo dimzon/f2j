@@ -140,14 +140,40 @@ final class ScriptCompiler {
         /** How many procedures the script has. */
         int procedureCount;
 
+        /** The bytes of the script, so that an identifier can be read. */
+        byte[] data;
+
+        /** Where the identifiers start in the script's bytes. */
+        int identifiersPos;
+
         /**
-         * The script's identifiers, by the offset the code uses.
+         * The script's static strings, the way the file has them.
          *
-         * <p>They are the names of the procedures and of the external
-         * variables. The original reads them out of the script's file, so
-         * the compiler does too.
+         * <p>They are the strings the code names with their offset, and the
+         * offsets are the ones the VM uses, so that a value that holds one
+         * is the same on both sides.
          */
-        final Map<Integer, String> identifiers = new HashMap<>();
+        String staticStrings = "";
+
+        /**
+         * The name at an offset, the way the original reads it.
+         *
+         * <p>The offsets the code uses point into the table of names and
+         * not at the start of one, so the name is read out of the table
+         * rather than looked up in it.
+         */
+        String identifierAt(int offset) {
+            int start = identifiersPos + offset;
+            if (data == null || start < 0 || start >= data.length) {
+                return null;
+            }
+            int end = start;
+            while (end < data.length && data[end] != 0) {
+                end++;
+            }
+            return new String(data, start, end - start,
+                java.nio.charset.StandardCharsets.ISO_8859_1);
+        }
 
         boolean ok() {
             return problems.isEmpty();
@@ -202,6 +228,18 @@ final class ScriptCompiler {
         }
         int codePos = staticStringsPos + 4 + staticStringLen + 4;
 
+        // The static strings: the table the code names its strings with.
+        int staticStringStart = staticStringsPos + 4;
+        int staticStringEnd = staticStringStart + Math.max(0, staticStringLen);
+        if (staticStringEnd > data.length) {
+            staticStringEnd = data.length;
+        }
+        if (staticStringEnd > staticStringStart) {
+            script.staticStrings = new String(data, staticStringStart,
+                staticStringEnd - staticStringStart,
+                java.nio.charset.StandardCharsets.ISO_8859_1);
+        }
+
         List<Procedure> procedures = new ArrayList<>();
         for (int index = 0; index < procedureCount; index++) {
             int row = 46 + 24 * index;
@@ -252,19 +290,11 @@ final class ScriptCompiler {
 
         script.procedureCount = procedures.size();
 
-        // The identifiers: the length, and then the names, each of them
-        // ending with a zero.
-        int identifiersLength = Program.stackReadInt32(data, identifiersPos);
-        int start = identifiersPos + 4;
-        while (start < identifiersPos + 4 + identifiersLength && start < data.length) {
-            int end = start;
-            while (end < data.length && data[end] != 0) {
-                end++;
-            }
-            script.identifiers.put(start - identifiersPos,
-                new String(data, start, end - start, java.nio.charset.StandardCharsets.US_ASCII));
-            start = end + 1;
-        }
+        // The identifiers: the table the code names things with. The names
+        // in it are read out of it when they are needed, because the code
+        // names them with an offset that is not always the start of one.
+        script.data = data;
+        script.identifiersPos = identifiersPos;
 
         // The stack, and with it the branches.
         analyse(script, top);

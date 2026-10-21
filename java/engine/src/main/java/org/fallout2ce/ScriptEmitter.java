@@ -2,47 +2,164 @@ package org.fallout2ce;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.Map;
 
 import org.fallout2ce.ScriptCompiler.CompiledScript;
 import org.fallout2ce.ScriptCompiler.Instruction;
 import org.fallout2ce.ScriptCompiler.Procedure;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
 /**
- * The emitter: it turns the shape of a script into Java code.
+ * The emitter: it turns the shape of a script into a class file.
  *
  * <p>What it produces is a subclass of {@link ScriptBase}: one method per
  * procedure of the script, plus the script's own code and the launcher that
  * the VM starts on. The methods share the value stack of the base class, so
  * a procedure's locals are where the frame pointer says they are.
  *
- * <p>The control flow is resolved, not dispatched. A branch becomes a jump
- * to a label, a call becomes a call, and the game's builtins become calls on
- * the game API - the interface the compiled code was written against, so
- * the game, a mock or a decorator that logs what the script asks for can
- * be supplied.
+ * <p>The control flow is resolved, not dispatched. A branch becomes a jump,
+ * a call becomes a call, and the game's builtins become calls on the game
+ * API - the interface the compiled code is written against, so the game, a
+ * mock or a decorator that logs what the script asks for can be supplied.
  *
- * <p>The original's calls are a jump with the return address on the return
- * stack, and that is what the emitter looks for: a jump to another
- * procedure, with the address of the instruction after it on the return
- * stack, is a call. A jump to another procedure without one is a tail
- * jump, which in the compiled code is a return.
+ * <p>The class file is written with ASM. The bytes are what the JVM loads;
+ * nothing is compiled at run time and no source is kept.
+ *
+ * <p>The generated class lives in a package of its own, and the class loader
+ * that defines it is not the one that holds the base class, so the two are
+ * in different runtime packages. A protected member of the base class can
+ * still be reached, but only through a reference that names the subclass -
+ * which is what a compiler does as well.
  */
 final class ScriptEmitter {
 
-    /** The generated code of one script. */
+    /** The name of the base class, as the class file spells it. */
+    private static final String BASE = "org/fallout2ce/ScriptBase";
+
+    /** The name of the game API, as the class file spells it. */
+    private static final String API = "org/fallout2ce/GameApi";
+
+    /** The value the stack holds, as the class file spells it. */
+    private static final String VALUE = "org/fallout2ce/Program$ProgramValue";
+
+    /** The descriptor of the value the stack holds. */
+    private static final String VALUE_DESC = "L" + VALUE + ";";
+
+    /** The descriptor of a string. */
+    private static final String STRING_DESC = "Ljava/lang/String;";
+
+    /** The descriptor of a pointer. */
+    private static final String OBJECT_DESC = "Ljava/lang/Object;";
+
+    /** The code carries on with the next instruction. */
+    private static final int CONTINUE = 0;
+
+    /** The method has ended. */
+    private static final int ENDED = 1;
+
+    /** The control has gone somewhere else. */
+    private static final int JUMPED = 2;
+
+    /** The generated class of one script. */
     static final class Emitted {
-        /** The name of the generated class. */
+        /** The internal name of the class. */
         String className;
 
-        /** The generated source. */
-        String source;
+        /** The class file. */
+        byte[] bytes;
 
         /** The opcodes the emitter could not turn into code. */
         final List<String> problems = new ArrayList<>();
+    }
+
+    private ScriptEmitter() {
+    }
+
+    /** Emits the class of a script. */
+    static Emitted emit(CompiledScript script) {
+        Emitted emitted = new Emitted();
+        emitted.className = className(script);
+
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS) {
+            @Override
+            protected String getCommonSuperClass(String type1, String type2) {
+                if (type1.equals(type2)) {
+                    return type1;
+                }
+                if (isSubclassOf(type1, type2)) {
+                    return type2;
+                }
+                if (isSubclassOf(type2, type1)) {
+                    return type1;
+                }
+                return "java/lang/Object";
+            }
+        };
+        writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_SUPER,
+            emitted.className, null, BASE, null);
+
+        // The constructor: the game API the script talks to, its name and
+        // its static strings.
+        MethodVisitor constructor = writer.visitMethod(
+            Opcodes.ACC_PUBLIC, "<init>",
+            "(L" + API + ";Ljava/lang/String;Ljava/lang/String;)V", null, null);
+        constructor.visitCode();
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitVarInsn(Opcodes.ALOAD, 1);
+        constructor.visitLdcInsn(script.name);
+        constructor.visitLdcInsn(script.staticStrings);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, BASE, "<init>",
+            "(L" + API + ";Ljava/lang/String;Ljava/lang/String;)V", false);
+        constructor.visitInsn(Opcodes.RETURN);
+        constructor.visitMaxs(0, 0);
+        constructor.visitEnd();
+
+        // The procedures, the script's own code and the launcher.
+        for (Procedure procedure : script.procedures) {
+            emitProcedure(script, procedure, writer, emitted);
+        }
+        // The call of a procedure by index: the original names the procedure
+        // on the stack, so the code looks the name up.
+        emitCallProcedure(script, writer);
+
+        writer.visitEnd();
+        emitted.bytes = writer.toByteArray();
+        return emitted;
+    }
+
+    /**
+     * Whether a type is a subclass of another.
+     *
+     * <p>Only the classes the generated code knows about are in here: the
+     * class loader that holds the generated class is not the one that holds
+     * the base class, so the common superclass cannot be worked out by
+     * loading the classes.
+     */
+    private static boolean isSubclassOf(String type, String supertype) {
+        if (supertype.equals("java/lang/Object")) {
+            return true;
+        }
+        if (type.equals(BASE)) {
+            return supertype.equals(BASE);
+        }
+        if (type.startsWith("org/fallout2ce/generated/")) {
+            return supertype.equals(BASE);
+        }
+        return false;
+    }
+
+    /** The internal name of the generated class. */
+    private static String className(CompiledScript script) {
+        StringBuilder out = new StringBuilder("org/fallout2ce/generated/CompiledScript_");
+        for (int i = 0; i < script.name.length(); i++) {
+            char c = script.name.charAt(i);
+            out.append(Character.isLetterOrDigit(c) ? c : '_');
+        }
+        return out.append('_').append(Integer.toHexString(script.name.hashCode())).toString();
     }
 
     /** The name of the method a procedure gets. */
@@ -56,158 +173,123 @@ final class ScriptEmitter {
         return "proc" + procedure.index;
     }
 
-    /** The name of the generated class. */
-    private static String className(String name) {
-        StringBuilder out = new StringBuilder("CompiledScript");
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            if (Character.isLetterOrDigit(c)) {
-                out.append(c);
-            } else {
-                out.append('_');
-            }
-        }
-        return out.toString();
-    }
-
-    /** Emits the code of a script. */
-    static Emitted emit(CompiledScript script) {
-        Emitted emitted = new Emitted();
-        emitted.className = className(script.name);
-
-        StringBuilder out = new StringBuilder();
-        out.append("package org.fallout2ce;\n\n");
-        out.append("/**\n");
-        out.append(" * The compiled script ").append(script.name).append(".\n");
-        out.append(" *\n");
-        out.append(" * <p>Generated by the script compiler; do not edit.\n");
-        out.append(" */\n");
-        out.append("public final class ").append(emitted.className).append(" extends ScriptBase {\n\n");
-        out.append("    public ").append(emitted.className).append("(GameApi gameApi) {\n");
-        out.append("        super(gameApi);\n");
-        out.append("    }\n\n");
-
-        for (Procedure procedure : script.procedures) {
-            emitProcedure(script, procedure, out, emitted);
-        }
-
-        out.append("    /**\n");
-        out.append("     * Calls the procedure with an index.\n");
-        out.append("     *\n");
-        out.append("     * <p>The original names the procedure on the stack and jumps to\n");
-        out.append("     * it, so the compiled code looks the name up.\n");
-        out.append("     */\n");
-        out.append("    protected void callProcedure(int index) {\n");
-        out.append("        switch (index) {\n");
-        for (Procedure procedure : script.procedures) {
-            if (procedure.index < 0) {
-                continue;
-            }
-            out.append("        case ").append(procedure.index).append(": ");
-            if ((procedure.flags & 0x10) != 0) {
-                // The procedure wants the critical section.
-                out.append("enterCritical(); ");
-            }
-            out.append("proc").append(procedure.index).append("(); break;\n");
-        }
-        out.append("        default: break;\n");
-        out.append("        }\n");
-        out.append("    }\n\n");
-
-        out.append("}\n");
-        emitted.source = out.toString();
-        return emitted;
-    }
-
     /**
-     * The blocks of a procedure.
-     *
-     * <p>A block ends where the execution can leave it: at a branch, at a
-     * return or at a call. The blocks are what the compiled code dispatches
-     * over, because the Java this port builds with does not take a goto.
-     */
-    private static final class Block {
-        final List<Instruction> code = new ArrayList<>();
-        int id;
-    }
-
-    /** Emits one procedure. */
-    private static void emitProcedure(CompiledScript script, Procedure procedure, StringBuilder out,
-            Emitted emitted) {
-        out.append("    /** ").append(procedure.index == -1
-            ? "The launcher: what the VM starts on."
-            : procedure.index == -2
-                ? "The script's own code."
-                : "The procedure " + procedure.index + ".")
-            .append(" */\n");
-        out.append("    ").append(procedure.index == -1 ? "public" : "protected")
-            .append(" void ").append(methodName(procedure)).append("() {\n");
-
-        List<Block> blocks = blocks(procedure);
-        if (blocks.isEmpty()) {
-            out.append("    }\n\n");
-            return;
-        }
-        Map<Integer, Integer> blockOf = new HashMap<>();
-        for (Block piece : blocks) {
-            if (!piece.code.isEmpty()) {
-                blockOf.put(piece.code.get(0).offset, piece.id);
-            }
-        }
-
-        out.append("        int block = 0;\n");
-        out.append("        while (true) {\n");
-        out.append("            switch (block) {\n");
-        for (Block piece : blocks) {
-            out.append("            case ").append(piece.id).append(":\n");
-            for (Instruction instruction : piece.code) {
-                String statement = statement(script, procedure, instruction, blockOf, emitted);
-                if (statement == null) {
-                    continue;
-                }
-                out.append("                ").append(statement).append("\n");
-            }
-            // The block falls through to the next one, unless its last
-            // instruction already transferred the control.
-            Instruction last = piece.code.isEmpty() ? null : piece.code.get(piece.code.size() - 1);
-            if (last != null && !leavesTheMethod(last) && !leavesTheBlock(procedure, last)) {
-                if (isTailJump(procedure, last) && last.targetProcedure != -1) {
-                    // The original jumps into another procedure and does
-                    // not come back here, so the compiled code leaves the
-                    // method when the procedure it called returns. A jump
-                    // into the launcher ends the program, and the jump
-                    // itself says so.
-                    out.append("                return;\n");
-                } else {
-                    int next = piece.id + 1;
-                    if (next < blocks.size()) {
-                        out.append("                block = ").append(next).append("; continue;\n");
-                    }
-                }
-            }
-        }
-        out.append("            }\n");
-        out.append("        }\n");
-        out.append("    }\n\n");
-    }
-
-    /**
-     * The blocks of a procedure.
+     * One block of a procedure.
      *
      * <p>A block ends where the execution can leave it: at a branch, at a
      * return or at a call. The code that the execution never comes to is
      * left out: the original keeps it - the exit sequence under an
      * EXIT_PROGRAM, for one - and the compiled code has no use for it.
      */
+    private static final class Block {
+        /** The instructions of the block. */
+        final List<Instruction> code = new ArrayList<>();
+
+        /** Where the block starts. */
+        final Label label = new Label();
+    }
+
+    /** Emits one procedure. */
+    private static void emitProcedure(CompiledScript script, Procedure procedure,
+            ClassWriter writer, Emitted emitted) {
+        // The launcher is the way into the script, and the VM stops a
+        // program that fails, so the launcher catches the failure and
+        // leaves quietly. The code of the script itself goes into a method
+        // of its own, so that the catch has something to hold.
+        boolean launcher = procedure.index == -1;
+        int access = launcher ? Opcodes.ACC_PRIVATE : Opcodes.ACC_PROTECTED;
+        String name = launcher ? "runBody" : methodName(procedure);
+        MethodVisitor method = writer.visitMethod(access, name, "()V", null, null);
+        method.visitCode();
+        Code code = new Code(method, emitted.className);
+
+        List<Block> blocks = blocks(procedure);
+        Map<Integer, Block> byOffset = new HashMap<>();
+        for (Block block : blocks) {
+            byOffset.put(block.code.get(0).offset, block);
+        }
+
+        for (int i = 0; i < blocks.size(); i++) {
+            Block block = blocks.get(i);
+            method.visitLabel(block.label);
+
+            int state = CONTINUE;
+            for (Instruction instruction : block.code) {
+                state = emitInstruction(script, procedure, instruction, code, byOffset, emitted);
+                if (state != CONTINUE) {
+                    break;
+                }
+            }
+
+            if (state == CONTINUE) {
+                // The block falls through to the next one.
+                if (i + 1 < blocks.size()) {
+                    method.visitJumpInsn(Opcodes.GOTO, blocks.get(i + 1).label);
+                } else {
+                    method.visitInsn(Opcodes.RETURN);
+                }
+            }
+        }
+
+        if (blocks.isEmpty()) {
+            // The execution never comes to the procedure, so it has no code
+            // of its own.
+            method.visitInsn(Opcodes.RETURN);
+        }
+
+        try {
+            method.visitMaxs(0, 0);
+        } catch (RuntimeException failure) {
+            throw new IllegalStateException(script.name + ": the procedure "
+                + methodName(procedure) + " does not fit: " + failure, failure);
+        }
+        method.visitEnd();
+
+        if (launcher) {
+            emitLauncher(writer, emitted);
+        }
+    }
+
+    /**
+     * The way into the script.
+     *
+     * <p>The VM stops a program that fails, and it does it quietly: the
+     * error leaves the interpreter and the program ends. The launcher
+     * catches the failure of the script and leaves the same way.
+     */
+    private static void emitLauncher(ClassWriter writer, Emitted emitted) {
+        MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC, "run", "()V", null, null);
+        method.visitCode();
+        Label start = new Label();
+        Label end = new Label();
+        Label failure = new Label();
+        method.visitTryCatchBlock(start, end, failure, "org/fallout2ce/ScriptBase$FatalError");
+        method.visitLabel(start);
+        method.visitVarInsn(Opcodes.ALOAD, 0);
+        method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, emitted.className, "runBody", "()V", false);
+        method.visitLabel(end);
+        method.visitInsn(Opcodes.RETURN);
+        method.visitLabel(failure);
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(0, 0);
+        method.visitEnd();
+    }
+
+    /**
+     * The blocks of a procedure.
+     *
+     * <p>The branch targets start a block: the execution can land there from
+     * anywhere. A block also ends where the execution leaves it, so that
+     * every block ends with a jump and the code that follows one is only
+     * reached through it.
+     */
     private static List<Block> blocks(Procedure procedure) {
         List<Block> blocks = new ArrayList<>();
-        Map<Integer, Block> byOffset = new HashMap<>();
 
-        // The branch targets start a block: the execution can land there
-        // from anywhere.
-        Set<Integer> targets = new HashSet<>();
+        // The branch targets: the execution can land on them from anywhere.
+        List<Integer> targets = new ArrayList<>();
         for (Instruction instruction : procedure.code) {
-            if (instruction.branch && instruction.target > 0) {
+            if (instruction.reached && instruction.branch && instruction.target > 0) {
                 targets.add(instruction.target);
             }
         }
@@ -219,9 +301,7 @@ final class ScriptEmitter {
             }
             if (current == null || endsBlock(instruction) || targets.contains(instruction.offset)) {
                 current = new Block();
-                current.id = blocks.size();
                 blocks.add(current);
-                byOffset.put(instruction.offset, current);
             }
             current.code.add(instruction);
         }
@@ -229,23 +309,420 @@ final class ScriptEmitter {
     }
 
     /**
-     * Whether an instruction is a jump into another procedure that the
-     * original does not come back from.
+     * Whether the execution can leave the code after an instruction.
      *
-     * <p>The original's calls are a jump with the address of the
-     * instruction after it on the return stack, and the execution comes
-     * back there. A jump without it is a tail jump: the execution goes
-     * into the other procedure and the return goes wherever the return
-     * stack says.
+     * <p>A branch leaves it: the path the condition does not take carries
+     * on. A call leaves it: the code under the call belongs to the caller
+     * and comes back when the callee returns. A return leaves it for good.
+     * A jump into another procedure does not: the call comes back.
      */
-    private static boolean isTailJump(Procedure procedure, Instruction instruction) {
-        if (instruction.slot != 0x004) {
-            return false;
+    private static boolean endsBlock(Instruction instruction) {
+        int slot = instruction.slot;
+        return instruction.branch || slot == 0x005 || slot == 0x00E
+            || slot == 0x010 || slot == 0x011
+            || (slot >= 0x01C && slot <= 0x026);
+    }
+
+    /**
+     * Emits one instruction.
+     *
+     * @return whether the method ends with it, or whether the control has
+     *         gone somewhere else
+     */
+    private static int emitInstruction(CompiledScript script, Procedure procedure,
+            Instruction instruction, Code code, Map<Integer, Block> byOffset, Emitted emitted) {
+        int slot = instruction.slot;
+
+        switch (slot) {
+        case 0x000:
+            return CONTINUE;
+        case 0x001:
+            // A constant. The type of the value is in the opcode itself:
+            // the VM reads the type out of the opcode it dispatched on.
+            code.loadThis();
+            switch (instruction.opcode & 0xFFFF) {
+            case Program.VALUE_TYPE_FLOAT:
+                code.constant(Float.intBitsToFloat(instruction.immediate));
+                code.callOnStack("pushFloat", "(F)V");
+                break;
+            case Program.VALUE_TYPE_STRING:
+                code.constant(instruction.immediate);
+                code.callOnStack("pushStaticString", "(I)V");
+                break;
+            default:
+                code.constant(instruction.immediate);
+                code.callOnStack("pushInt", "(I)V");
+                break;
+            }
+            return CONTINUE;
+        case 0x002:
+        case 0x04A:
+            code.call("enterCritical", "()V");
+            return CONTINUE;
+        case 0x003:
+        case 0x04B:
+            code.call("leaveCritical", "()V");
+            return CONTINUE;
+        case 0x004:
+            return emitJump(script, procedure, instruction, code, byOffset, emitted);
+        case 0x005: {
+            // The procedure is named on the stack, so the call is a switch
+            // the generated class has.
+            int index = code.callInt("popInt");
+            code.loadThis();
+            code.loadInt(index);
+            code.callOnStack("callProcedure", "(I)V");
+            return CONTINUE;
         }
+        case 0x00C:
+            code.call("addressToData", "()V");
+            return CONTINUE;
+        case 0x00D:
+            code.call("dataToAddress", "()V");
+            return CONTINUE;
+        case 0x00E:
+            code.call("exitScript", "()V");
+            code.returning();
+            return ENDED;
+        case 0x00F:
+            code.call("detach", "()V");
+            return CONTINUE;
+        case 0x010:
+            code.call("exitProgram", "()V");
+            code.returning();
+            return ENDED;
+        case 0x011:
+            code.call("stopProgram", "()V");
+            code.returning();
+            return ENDED;
+        case 0x012: {
+            // One of the script's globals.
+            int index = code.callInt("popInt");
+            int value = code.callValue("fetchGlobal", index);
+            code.pushValue(value);
+            return CONTINUE;
+        }
+        case 0x013: {
+            // The address comes off the stack first, then the value.
+            int index = code.callInt("popInt");
+            int value = code.callValue("popValue");
+            code.loadThis();
+            code.loadInt(index);
+            code.load(value);
+            code.callOnStack("storeGlobal", "(I" + VALUE_DESC + ")V");
+            return CONTINUE;
+        }
+        case 0x014:
+        case 0x015:
+        case 0x016: {
+            // An external variable: the name is on the stack, and the
+            // original reads it out of the script's identifiers. The
+            // compiled code knows the name when it is written.
+            String identifier = externalName(script, instruction);
+            if (identifier == null) {
+                emitted.problems.add(script.name + ": the external variable at "
+                    + instruction.offset + " has no name");
+                return CONTINUE;
+            }
+            if (slot == 0x014) {
+                // The identifier comes off the stack, and the value goes
+                // on it.
+                code.discardInt("popInt");
+                code.loadThis();
+                code.constant(identifier);
+                code.callOnStack("fetchExternal", "(Ljava/lang/String;)V");
+                return CONTINUE;
+            }
+            if (slot == 0x015) {
+                // The identifier comes off the stack first, then the value.
+                code.discardInt("popInt");
+                int value = code.callValue("popValue");
+                code.loadThis();
+                code.constant(identifier);
+                code.load(value);
+                code.callOnStack("storeExternal",
+                    "(Ljava/lang/String;" + VALUE_DESC + ")V");
+                return CONTINUE;
+            }
+            // The export: the identifier comes off the stack and nothing
+            // goes on it.
+            code.discardInt("popInt");
+            code.loadThis();
+            code.constant(identifier);
+            code.callOnStack("exportVariable", "(Ljava/lang/String;)V");
+            return CONTINUE;
+        }
+        case 0x018:
+            code.call("swap", "()V");
+            return CONTINUE;
+        case 0x019:
+            code.call("swapReturn", "()V");
+            return CONTINUE;
+        case 0x01A:
+            code.discardValue("popValue");
+            return CONTINUE;
+        case 0x01B:
+            code.call("duplicate", "()V");
+            return CONTINUE;
+        case 0x01C:
+            code.discardInt("popReturnInt");
+            code.returning();
+            return ENDED;
+        case 0x01D:
+            code.discardInt("popReturnInt");
+            code.call("exitProgram", "()V");
+            code.returning();
+            return ENDED;
+        case 0x01F:
+            code.call("popFlags", "()V");
+            return CONTINUE;
+        case 0x020:
+        case 0x022:
+            code.call("popFlags", "()V");
+            code.discardInt("popReturnInt");
+            code.returning();
+            return ENDED;
+        case 0x021:
+        case 0x023:
+            code.call("popFlags", "()V");
+            code.discardInt("popReturnInt");
+            code.call("exitProgram", "()V");
+            code.returning();
+            return ENDED;
+        case 0x024:
+        case 0x025:
+        case 0x026: {
+            // The value survives the return.
+            int value = code.callValue("popValue");
+            code.call("popFlags", "()V");
+            code.discardInt("popReturnInt");
+            if (slot != 0x024) {
+                code.call("exitProgram", "()V");
+            }
+            code.pushValue(value);
+            code.returning();
+            return ENDED;
+        }
+        case 0x029:
+            code.call("popBase", "()V");
+            return CONTINUE;
+        case 0x02A:
+            code.call("popToBase", "()V");
+            return CONTINUE;
+        case 0x02B: {
+            // The argument count comes off the stack.
+            int count = code.callInt("popInt");
+            code.loadThis();
+            code.loadInt(count);
+            code.callOnStack("pushBase", "(I)V");
+            return CONTINUE;
+        }
+        case 0x02C:
+            code.call("setGlobalBase", "()V");
+            return CONTINUE;
+        case 0x02F:
+        case 0x030:
+            return emitBranch(script, procedure, instruction, code, byOffset, emitted);
+        case 0x031: {
+            int index = code.callInt("popInt");
+            int value = code.callValue("popValue");
+            code.loadThis();
+            code.loadInt(index);
+            code.load(value);
+            code.callOnStack("setFrameLocal", "(I" + VALUE_DESC + ")V");
+            return CONTINUE;
+        }
+        case 0x032: {
+            int index = code.callInt("popInt");
+            int value = code.callValue("frameLocal", index);
+            code.pushValue(value);
+            return CONTINUE;
+        }
+        case 0x033:
+            code.call("compareEqual", "()V");
+            return CONTINUE;
+        case 0x034:
+            code.call("compareNotEqual", "()V");
+            return CONTINUE;
+        case 0x035:
+            code.call("compareLessOrEqual", "()V");
+            return CONTINUE;
+        case 0x036:
+            code.call("compareGreaterOrEqual", "()V");
+            return CONTINUE;
+        case 0x037:
+            code.call("compareLess", "()V");
+            return CONTINUE;
+        case 0x038:
+            code.call("compareGreater", "()V");
+            return CONTINUE;
+        case 0x039:
+            code.call("add", "()V");
+            return CONTINUE;
+        case 0x03A:
+            code.call("subtract", "()V");
+            return CONTINUE;
+        case 0x03B:
+            code.call("multiply", "()V");
+            return CONTINUE;
+        case 0x03C:
+            code.call("divide", "()V");
+            return CONTINUE;
+        case 0x03D:
+            code.call("modulo", "()V");
+            return CONTINUE;
+        case 0x03E:
+            code.call("logicalAnd", "()V");
+            return CONTINUE;
+        case 0x03F:
+            code.call("logicalOr", "()V");
+            return CONTINUE;
+        case 0x040:
+            code.call("bitwiseAnd", "()V");
+            return CONTINUE;
+        case 0x041:
+            code.call("bitwiseOr", "()V");
+            return CONTINUE;
+        case 0x042:
+            code.call("bitwiseXor", "()V");
+            return CONTINUE;
+        case 0x043:
+            code.call("bitwiseNot", "()V");
+            return CONTINUE;
+        case 0x044:
+            code.call("floor", "()V");
+            return CONTINUE;
+        case 0x045:
+            code.call("logicalNot", "()V");
+            return CONTINUE;
+        case 0x046:
+            code.call("negate", "()V");
+            return CONTINUE;
+        default:
+            break;
+        }
+
+        // The game's builtins.
+        String builtin = GameApiSlots.METHOD[slot];
+        if (builtin != null) {
+            emitApiCall(slot, builtin, code);
+            return CONTINUE;
+        }
+
+        emitted.problems.add(script.name + ": the opcode 0x"
+            + Integer.toHexString(instruction.opcode) + " has no code yet");
+        return CONTINUE;
+    }
+
+    /**
+     * The name of an external variable.
+     *
+     * <p>The name is on the stack, and the original reads it out of the
+     * script's identifiers.
+     */
+    private static String externalName(CompiledScript script, Instruction instruction) {
+        Integer offset = instruction.topValue;
+        return offset == null ? null : script.identifierAt(offset);
+    }
+
+    /**
+     * Emits a branch.
+     *
+     * <p>The target of a branch is a value on the stack, and the analysis
+     * has resolved it, so the jump goes where the analysis says. The VM
+     * jumps when the condition is empty, and that is what the code does.
+     */
+    private static int emitBranch(CompiledScript script, Procedure procedure,
+            Instruction instruction, Code code, Map<Integer, Block> byOffset, Emitted emitted) {
+        Block target = byOffset.get(instruction.target);
+        if (target == null) {
+            // The branch lands in another procedure, and the compiled code
+            // has no way to jump into the middle of one.
+            return CONTINUE;
+        }
+
+        // The condition comes off the stack, and under it the target.
+        int condition = code.callValue("popValue");
+        if (instruction.slot == 0x02F) {
+            // The if: the target comes off the stack too.
+            code.discardValue("popValue");
+            code.isEmpty(condition);
+            code.jumpWhenEmpty(target.label);
+            return CONTINUE;
+        }
+
+        // The while: the target stays on the stack while the body runs, and
+        // it comes off the stack when the execution goes back.
+        code.isEmpty(condition);
+        Label otherwise = code.label();
+        code.jumpWhenNotEmpty(otherwise);
+        code.discardValue("popValue");
+        code.jump(target.label);
+        code.mark(otherwise);
+        return CONTINUE;
+    }
+
+    /**
+     * Emits a jump.
+     *
+     * <p>The original's calls are a jump with the return address on the
+     * return stack, and that is what the emitter looks for: a jump to
+     * another procedure, with the address of the instruction after it on the
+     * return stack, is a call. A jump to another procedure without one is a
+     * tail jump, which in the compiled code is a return.
+     */
+    private static int emitJump(CompiledScript script, Procedure procedure,
+            Instruction instruction, Code code, Map<Integer, Block> byOffset, Emitted emitted) {
+        // The jump pops the address it goes to.
+        code.discardValue("popValue");
+
         if (instruction.targetProcedure == procedure.index) {
-            return false;
+            // A jump inside the procedure: the execution continues there.
+            Block target = byOffset.get(instruction.target);
+            if (target == null) {
+                code.returning();
+                return ENDED;
+            }
+            code.jump(target.label);
+            return JUMPED;
         }
-        return !hasReturnAddress(procedure, instruction);
+
+        if (instruction.targetProcedure == -1) {
+            // The launcher: the original jumps to the end of the program
+            // there.
+            code.call("exitProgram", "()V");
+            code.returning();
+            return ENDED;
+        }
+
+        Procedure target = procedureByIndex(script, instruction.targetProcedure);
+        if (target == null) {
+            code.returning();
+            return ENDED;
+        }
+
+        // The execution continues in the procedure it jumps to, so it is a
+        // call. The original leaves the return address on the return stack
+        // before it, and the compiled code does the same, so the two agree
+        // on where the return goes.
+        code.call(methodName(target), "()V");
+        if (!hasReturnAddress(procedure, instruction)) {
+            // A tail jump: the procedure it jumped to does not come back
+            // here.
+            code.returning();
+            return ENDED;
+        }
+        return CONTINUE;
+    }
+
+    /** The procedure with an index, or null. */
+    private static Procedure procedureByIndex(CompiledScript script, int index) {
+        for (Procedure procedure : script.procedures) {
+            if (procedure.index == index) {
+                return procedure;
+            }
+        }
+        return null;
     }
 
     /**
@@ -278,360 +755,386 @@ final class ScriptEmitter {
         return false;
     }
 
-    /**
-     * Whether an instruction already transfers the control elsewhere.
-     *
-     * <p>A jump to another block of the same procedure does: it names the
-     * block it goes to. A jump to another procedure does not: it calls the
-     * procedure, and the call comes back. A branch does not either: the path
-     * the condition does not take falls through to the next block.
-     */
-    private static boolean leavesTheBlock(Procedure procedure, Instruction instruction) {
-        return instruction.slot == 0x004 && instruction.targetProcedure == procedure.index;
-    }
-
-    /** Whether an instruction leaves the method. */
-    private static boolean leavesTheMethod(Instruction instruction) {
-        int slot = instruction.slot;
-        return slot == 0x00E || slot == 0x010 || slot == 0x011
-            || (slot >= 0x01C && slot <= 0x026);
-    }
-
-    /** Whether the execution can leave the code after an instruction. */
-    private static boolean endsBlock(Instruction instruction) {
-        return instruction.branch || instruction.slot == 0x005 || instruction.slot == 0x00E
-            || instruction.slot == 0x010 || instruction.slot == 0x011
-            || (instruction.slot >= 0x01C && instruction.slot <= 0x026);
-    }
-
-    /**
-     * The code of one instruction.
-     *
-     * @return the code, or null when the opcode has none
-     */
-    private static String statement(CompiledScript script, Procedure procedure,
-            Instruction instruction, Map<Integer, Integer> blockOf, Emitted emitted) {
-        int slot = instruction.slot;
-        switch (slot) {
-        case 0x000:
-            return ";";
-        case 0x001:
-            return "pushInt(" + instruction.immediate + ");";
-        case 0x002:
-        case 0x04A:
-            return "enterCritical();";
-        case 0x003:
-        case 0x04B:
-            return "leaveCritical();";
-        case 0x004:
-            return jump(script, procedure, instruction, blockOf);
-        case 0x005:
-            // The procedure is named on the stack, so the call is a switch
-            // the generated class has.
-            return "callProcedure(popInt());";
-        case 0x00C:
-            return "addressToData();";
-        case 0x00D:
-            return "dataToAddress();";
-        case 0x00E:
-            return "exitScript(); return;";
-        case 0x00F:
-            return "detach();";
-        case 0x010:
-            return "exitProgram(); return;";
-        case 0x011:
-            return "stopProgram(); return;";
-        case 0x012:
-            return "pushValue(fetchGlobal(popInt()));";
-        case 0x014:
-            return external(script, instruction, "fetchExternal");
-        case 0x015:
-            return external(script, instruction, "storeExternal");
-        case 0x016:
-            return external(script, instruction, "exportVariable");
-        case 0x013:
-            return "storeGlobal(popInt(), popValue());";
-        case 0x018:
-            return "swap();";
-        case 0x019:
-            return "swapReturn();";
-        case 0x01A:
-            return "popValue();";
-        case 0x01B:
-            return "duplicate();";
-        case 0x01C:
-            return "popReturnInt(); return;";
-        case 0x01D:
-            return "popReturnInt(); exitProgram(); return;";
-        case 0x01F:
-            return "popFlags();";
-        case 0x020:
-        case 0x022:
-            return "popFlags(); popReturnInt(); return;";
-        case 0x021:
-        case 0x023:
-            return "popFlags(); popReturnInt(); exitProgram(); return;";
-        case 0x024:
-            return "{ Program.ProgramValue result = popValue(); popFlags(); popReturnInt(); "
-                + "pushValue(result); return; }";
-        case 0x025:
-        case 0x026:
-            return "{ Program.ProgramValue result = popValue(); popFlags(); popReturnInt(); "
-                + "exitProgram(); pushValue(result); return; }";
-        case 0x029:
-            return "popBase();";
-        case 0x02A:
-            return "popToBase();";
-        case 0x02B:
-            return "pushBase(popInt());";
-        case 0x02C:
-            return "setGlobalBase();";
-        case 0x02F:
-            return branch(script, instruction, blockOf, "if");
-        case 0x030:
-            return branch(script, instruction, blockOf, "while");
-        case 0x031:
-            return "setFrameLocal(popInt(), popValue());";
-        case 0x033:
-            return "compare(Compare.EQUAL);";
-        case 0x034:
-            return "compare(Compare.NOT_EQUAL);";
-        case 0x035:
-            return "compare(Compare.LESS_OR_EQUAL);";
-        case 0x036:
-            return "compare(Compare.GREATER_OR_EQUAL);";
-        case 0x037:
-            return "compare(Compare.LESS);";
-        case 0x038:
-            return "compare(Compare.GREATER);";
-        case 0x039:
-            return "add();";
-        case 0x03A:
-            return "subtract();";
-        case 0x03B:
-            return "multiply();";
-        case 0x03C:
-            return "divide();";
-        case 0x03D:
-            return "modulo();";
-        case 0x040:
-            return "bitwise(0);";
-        case 0x041:
-            return "bitwise(1);";
-        case 0x042:
-            return "bitwise(2);";
-        case 0x03E:
-            return "logical(0);";
-        case 0x03F:
-            return "logical(1);";
-        case 0x043:
-            return "bitwiseNot();";
-        case 0x045:
-            return "logicalNot();";
-        case 0x044:
-            return "floor();";
-        case 0x046:
-            return "negate();";
-        case 0x032:
-            return "pushValue(frameLocal(popInt()));";
-        default:
-            break;
-        }
-
-        String method = GameApiSlots.METHOD[slot];
-        if (method == null) {
-            emitted.problems.add(script.name + ": the opcode 0x"
-                + Integer.toHexString(instruction.opcode) + " has no code yet");
-            return null;
-        }
-        return apiCall(slot, method);
-    }
-
-    /**
-     * A jump: to a label of the same procedure, a call, or a tail jump.
-     *
-     * <p>The original's calls are a jump with the address of the
-     * instruction after it on the return stack. So a jump to another
-     * procedure, with that address on the return stack, is a call; a jump
-     * to another procedure without it is a tail jump, and in the compiled
-     * code a tail jump is a return.
-     */
-    /**
-     * An external variable: the name is on the stack, and the original
-     * reads it out of the script's identifiers.
-     */
-    private static String external(CompiledScript script, Instruction instruction, String method) {
-        Integer offset = instruction.topValue;
-        String name = offset == null ? null : script.identifiers.get(offset);
-        if (name == null) {
-            return null;
-        }
-        StringBuilder out = new StringBuilder();
-        out.append(method).append("(\"");
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            if (c == '\\' || c == '"') {
-                out.append('\\');
-            }
-            out.append(c);
-        }
-        out.append("\");");
-        return out.toString();
-    }
-
-    private static String jump(CompiledScript script, Procedure procedure, Instruction instruction,
-            Map<Integer, Integer> blockOf) {
-        StringBuilder out = new StringBuilder();
-        out.append("popValue();");
-
-        if (instruction.targetProcedure == procedure.index) {
-            Integer block = blockOf.get(instruction.target);
-            if (block == null) {
-                return "return;";
-            }
-            out.append(" block = ").append(block).append("; continue;");
-            return out.toString();
-        }
-
-        if (instruction.targetProcedure == -1) {
-            // The launcher: the original jumps to the end of the program
-            // there, so the compiled code ends the program.
-            out.append(" exitProgram(); return;");
-            return out.toString();
-        }
-
-        Procedure target = procedureByIndex(script, instruction.targetProcedure);
-        if (target == null) {
-            out.append(" return;");
-            return out.toString();
-        }
-
-        // The address of the instruction after the jump, which is what a
-        // call leaves on the return stack. The original pushes it before
-        // the address of the procedure it calls, so the emitter looks back
-        // for it.
-        int continuation = -1;
-        for (Instruction candidate : procedure.code) {
-            if (candidate.offset > instruction.offset) {
-                continuation = candidate.offset;
-                break;
-            }
-        }
-        boolean call = false;
-        for (Instruction candidate : procedure.code) {
-            if (candidate.offset >= instruction.offset) {
-                break;
-            }
-            if (candidate.slot == 0x00D && candidate.topValue != null
-                    && candidate.topValue == continuation) {
-                call = true;
-                break;
-            }
-            if (candidate.branch) {
-                break;
-            }
-        }
-
-        // The execution continues in the procedure it jumps to, so it is a
-        // call. The original leaves the return address on the return stack
-        // before it, and the compiled code does the same, so the two agree
-        // on where the return goes.
-        out.append(' ').append(methodName(target)).append("();");
-        return out.toString();
-    }
-
-    /** The procedure with an index, or null. */
-    private static Procedure procedureByIndex(CompiledScript script, int index) {
-        for (Procedure procedure : script.procedures) {
-            if (procedure.index == index) {
-                return procedure;
-            }
-        }
-        return null;
-    }
-
-    /** A branch: an if or a while. */
-    private static String branch(CompiledScript script, Instruction instruction,
-            Map<Integer, Integer> blockOf, String kind) {
-        Integer block = blockOf.get(instruction.target);
-        if (block == null) {
-            return null;
-        }
-        StringBuilder out = new StringBuilder();
-        out.append("{ Program.ProgramValue condition = popValue();");
-        if ("if".equals(kind)) {
-            out.append(" Program.ProgramValue target = popValue();");
-            out.append(" if (condition.isEmpty()) { block = ").append(block).append("; continue; } }");
-        } else {
-            out.append(" if (condition.isEmpty()) { popValue(); block = ")
-                .append(block).append("; continue; } }");
-        }
-        return out.toString();
-    }
-
-    /**
-     * A call on the game API.
-     *
-     * <p>The arguments come off the stack the way the VM takes them off and
-     * the method is called with them in the order it declares them, so the
-     * arguments go into locals first.
-     */
-    private static String apiCall(int slot, String method) {
+    /** Emits a call on the game API. */
+    private static void emitApiCall(int slot, String name, Code code) {
         String kinds = GameApiSlots.KINDS[slot];
-        String result = GameApiSlots.RESULTS[slot];
         String[] parts = kinds.isEmpty() ? new String[0] : kinds.split(",");
 
         // The arguments come off the stack in the reverse order of the
         // method's parameters, into locals of their own.
-        StringBuilder arguments = new StringBuilder();
+        int[] arguments = new int[parts.length];
         for (int i = parts.length - 1; i >= 0; i--) {
-            arguments.append(pop(parts[i], "a" + i)).append(" ");
-        }
-        StringBuilder call = new StringBuilder();
-        call.append("gameApi.").append(method).append('(');
-        for (int i = 0; i < parts.length; i++) {
-            if (i > 0) {
-                call.append(", ");
+            switch (parts[i]) {
+            case "int":
+                arguments[i] = code.callInt("popInt");
+                break;
+            case "string":
+                arguments[i] = code.callString("popString");
+                break;
+            case "ptr":
+                arguments[i] = code.callObject("popPointer");
+                break;
+            default:
+                arguments[i] = code.callValue("popValue");
+                break;
             }
-            call.append('a').append(i);
         }
-        call.append(')');
 
-        StringBuilder out = new StringBuilder();
-        out.append("{ ").append(arguments);
-        if (result.isEmpty()) {
-            out.append(call).append("; }");
-        } else {
-            out.append("push").append(pushKind(result)).append('(').append(call).append("); }");
+        // The call.
+        code.loadApi();
+        StringBuilder descriptor = new StringBuilder("(");
+        for (String part : parts) {
+            descriptor.append(argumentDescriptor(part));
         }
-        return out.toString();
+        descriptor.append(')').append(resultDescriptor(GameApiSlots.RESULTS[slot]));
+        for (int i = 0; i < parts.length; i++) {
+            if ("int".equals(parts[i])) {
+                code.loadInt(arguments[i]);
+            } else {
+                code.load(arguments[i]);
+            }
+        }
+        code.callInterface(name, descriptor.toString());
+
+        // And what it leaves behind. The value goes into a local first, so
+        // the JVM's stack is empty again.
+        switch (GameApiSlots.RESULTS[slot]) {
+        case "int": {
+            int number = code.local();
+            code.storeInt(number);
+            code.pushInt(number);
+            break;
+        }
+        case "string": {
+            int text = code.local();
+            code.store(text);
+            code.pushString(text);
+            break;
+        }
+        case "ptr": {
+            int pointer = code.local();
+            code.store(pointer);
+            code.pushPointer(pointer);
+            break;
+        }
+        case "value": {
+            int value = code.local();
+            code.store(value);
+            code.pushValue(value);
+            break;
+        }
+        default:
+            break;
+        }
     }
 
-    /** The code that takes one value off the stack. */
-    private static String pop(String kind, String name) {
+    /** The descriptor of an argument. */
+    private static String argumentDescriptor(String kind) {
         switch (kind) {
-        case "int":
-            return "int " + name + " = popInt();";
-        case "string":
-            return "String " + name + " = popString();";
-        case "ptr":
-            return "Object " + name + " = popPointer();";
-        default:
-            return "Program.ProgramValue " + name + " = popValue();";
+        case "int": return "I";
+        case "string": return STRING_DESC;
+        case "ptr": return OBJECT_DESC;
+        default: return VALUE_DESC;
         }
     }
 
-    /** The name of the push helper for a kind of value. */
-    private static String pushKind(String kind) {
+    /** The descriptor of what a call leaves behind. */
+    private static String resultDescriptor(String kind) {
         switch (kind) {
-        case "int":
-            return "Int";
-        case "string":
-            return "String";
-        case "ptr":
-            return "Pointer";
-        default:
-            return "Value";
+        case "int": return "I";
+        case "string": return STRING_DESC;
+        case "ptr": return OBJECT_DESC;
+        case "value": return VALUE_DESC;
+        default: return "V";
+        }
+    }
+
+    /**
+     * The call of a procedure by index.
+     *
+     * <p>The original names the procedure on the stack and jumps to it, so
+     * the compiled code looks the name up.
+     */
+    private static void emitCallProcedure(CompiledScript script, ClassWriter writer) {
+        MethodVisitor method = writer.visitMethod(Opcodes.ACC_PROTECTED, "callProcedure",
+            "(I)V", null, null);
+        method.visitCode();
+        Code code = new Code(method, className(script));
+
+        List<Procedure> procedures = new ArrayList<>();
+        for (Procedure procedure : script.procedures) {
+            if (procedure.index >= 0) {
+                procedures.add(procedure);
+            }
+        }
+        procedures.sort((left, right) -> Integer.compare(left.index, right.index));
+
+        int[] keys = new int[procedures.size()];
+        Label[] labels = new Label[procedures.size()];
+        for (int i = 0; i < procedures.size(); i++) {
+            keys[i] = procedures.get(i).index;
+            labels[i] = new Label();
+        }
+        Label none = new Label();
+        method.visitVarInsn(Opcodes.ILOAD, 1);
+        method.visitLookupSwitchInsn(none, keys, labels);
+        for (int i = 0; i < procedures.size(); i++) {
+            method.visitLabel(labels[i]);
+            if ((procedures.get(i).flags & 0x10) != 0) {
+                // The procedure wants the critical section.
+                code.call("enterCritical", "()V");
+            }
+            code.call(methodName(procedures.get(i)), "()V");
+            method.visitInsn(Opcodes.RETURN);
+        }
+        method.visitLabel(none);
+        method.visitInsn(Opcodes.RETURN);
+
+        method.visitMaxs(0, 0);
+        method.visitEnd();
+    }
+
+    /**
+     * The code of one method.
+     *
+     * <p>Every value the code works with goes into a local of its own, so
+     * that the JVM's stack is empty again after every step. That is what
+     * lets the branches land anywhere: the stack is the same wherever the
+     * execution comes from.
+     */
+    private static final class Code {
+        /** The method the code goes into. */
+        private final MethodVisitor method;
+
+        /** The class the code belongs to: the owner of the inherited members. */
+        private final String owner;
+
+        /** The next free local slot. */
+        private int nextLocal = 1;
+
+        Code(MethodVisitor method, String owner) {
+            this.method = method;
+            this.owner = owner;
+        }
+
+        /** A local slot of its own, so that no two values share one. */
+        int local() {
+            return nextLocal++;
+        }
+
+        /** The script itself. */
+        void loadThis() {
+            method.visitVarInsn(Opcodes.ALOAD, 0);
+        }
+
+        /** A local of its own, loaded. */
+        void load(int slot) {
+            method.visitVarInsn(Opcodes.ALOAD, slot);
+        }
+
+        /** A local of its own, loaded as an integer. */
+        void loadInt(int slot) {
+            method.visitVarInsn(Opcodes.ILOAD, slot);
+        }
+
+        /** A local of its own, kept. */
+        void store(int slot) {
+            method.visitVarInsn(Opcodes.ASTORE, slot);
+        }
+
+        /** A local of its own, kept as an integer. */
+        void storeInt(int slot) {
+            method.visitVarInsn(Opcodes.ISTORE, slot);
+        }
+
+        /** A constant. */
+        void constant(int value) {
+            method.visitLdcInsn(value);
+        }
+
+        /** A constant float. */
+        void constant(float value) {
+            method.visitLdcInsn(value);
+        }
+
+        /** A constant string. */
+        void constant(String value) {
+            method.visitLdcInsn(value);
+        }
+
+        /** Throws a value off the JVM's stack. */
+        void discard() {
+            method.visitInsn(Opcodes.POP);
+        }
+
+        /**
+         * Calls one of the base class's methods and throws what it gives
+         * back away.
+         *
+         * <p>The value goes off the JVM's stack right away and not through a
+         * local: a value that is stored and then dropped is a shape that
+         * makes the frame computation of the class file library stumble.
+         */
+        void discardValue(String name) {
+            loadThis();
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, "()" + VALUE_DESC, false);
+            method.visitInsn(Opcodes.POP);
+        }
+
+        /** The same for a method that gives an integer back. */
+        void discardInt(String name) {
+            loadThis();
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, "()I", false);
+            method.visitInsn(Opcodes.POP);
+        }
+
+        /** The method ends. */
+        void returning() {
+            method.visitInsn(Opcodes.RETURN);
+        }
+
+        /**
+         * Calls one of the base class's methods.
+         *
+         * <p>The receiver goes on the stack first, so the method takes no
+         * arguments of its own.
+         */
+        void call(String name, String descriptor) {
+            loadThis();
+            callOnStack(name, descriptor);
+        }
+
+        /**
+         * Calls one of the base class's methods.
+         *
+         * <p>The receiver and the arguments are on the stack already.
+         */
+        void callOnStack(String name, String descriptor) {
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, descriptor, false);
+        }
+
+        /** Calls a method of the game API. */
+        void callInterface(String name, String descriptor) {
+            method.visitMethodInsn(Opcodes.INVOKEINTERFACE, API, name, descriptor, true);
+        }
+
+        /** The game API the script talks to. */
+        void loadApi() {
+            loadThis();
+            method.visitFieldInsn(Opcodes.GETFIELD, owner, "gameApi", "L" + API + ";");
+        }
+
+        /** Calls one of the base class's methods that gives an integer back. */
+        int callInt(String name) {
+            loadThis();
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, "()I", false);
+            int slot = local();
+            method.visitVarInsn(Opcodes.ISTORE, slot);
+            return slot;
+        }
+
+        /** Calls one of the base class's methods that gives a value back. */
+        int callValue(String name) {
+            loadThis();
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, "()" + VALUE_DESC, false);
+            int slot = local();
+            method.visitVarInsn(Opcodes.ASTORE, slot);
+            return slot;
+        }
+
+        /** Calls one of the base class's methods that takes an index. */
+        int callValue(String name, int argument) {
+            loadThis();
+            method.visitVarInsn(Opcodes.ILOAD, argument);
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, "(I)" + VALUE_DESC, false);
+            int slot = local();
+            method.visitVarInsn(Opcodes.ASTORE, slot);
+            return slot;
+        }
+
+        /** Calls one of the base class's methods that gives a string back. */
+        int callString(String name) {
+            loadThis();
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, "()" + STRING_DESC, false);
+            int slot = local();
+            method.visitVarInsn(Opcodes.ASTORE, slot);
+            return slot;
+        }
+
+        /** Calls one of the base class's methods that gives a pointer back. */
+        int callObject(String name) {
+            loadThis();
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, name, "()" + OBJECT_DESC, false);
+            int slot = local();
+            method.visitVarInsn(Opcodes.ASTORE, slot);
+            return slot;
+        }
+
+        /** Pushes a value onto the script's stack. */
+        void pushValue(int value) {
+            loadThis();
+            method.visitVarInsn(Opcodes.ALOAD, value);
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, "pushValue",
+                "(" + VALUE_DESC + ")V", false);
+        }
+
+        /** Pushes an integer onto the script's stack. */
+        void pushInt(int value) {
+            loadThis();
+            method.visitVarInsn(Opcodes.ILOAD, value);
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, "pushInt", "(I)V", false);
+        }
+
+        /** Pushes a string onto the script's stack. */
+        void pushString(int value) {
+            loadThis();
+            method.visitVarInsn(Opcodes.ALOAD, value);
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, "pushString",
+                "(" + STRING_DESC + ")V", false);
+        }
+
+        /** Pushes a pointer onto the script's stack. */
+        void pushPointer(int value) {
+            loadThis();
+            method.visitVarInsn(Opcodes.ALOAD, value);
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, "pushPointer",
+                "(" + OBJECT_DESC + ")V", false);
+        }
+
+        /** Whether the value is empty, as the VM's branches ask. */
+        void isEmpty(int value) {
+            method.visitVarInsn(Opcodes.ALOAD, value);
+            method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, VALUE, "isEmpty", "()Z", false);
+        }
+
+        /**
+         * Jumps when the value is empty.
+         *
+         * <p>The VM's branches go to the target when the condition is
+         * empty, and the condition is empty when the value says so.
+         */
+        void jumpWhenEmpty(Label target) {
+            method.visitJumpInsn(Opcodes.IFNE, target);
+        }
+
+        /** Jumps when the value is not empty. */
+        void jumpWhenNotEmpty(Label target) {
+            method.visitJumpInsn(Opcodes.IFEQ, target);
+        }
+
+        /** Jumps. */
+        void jump(Label target) {
+            method.visitJumpInsn(Opcodes.GOTO, target);
+        }
+
+        /** A label of its own. */
+        Label label() {
+            return new Label();
+        }
+
+        /** Marks a label. */
+        void mark(Label label) {
+            method.visitLabel(label);
         }
     }
 }

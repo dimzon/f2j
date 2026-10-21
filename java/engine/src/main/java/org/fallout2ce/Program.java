@@ -121,7 +121,7 @@ import java.util.List;
  * {@link #programFatalError} longjmp.</li>
  * </ul>
  */
-public class Program {
+public class Program implements Export.StringHeap {
 
     /** Port of {@code VALUE_TYPE_INT} (0xC001, {@code src/interpreter.h}). */
     public static final int VALUE_TYPE_INT = 0xC001;
@@ -1530,7 +1530,7 @@ public class Program {
         ProgramValue addr = programStackPopValue(program);
         String identifier = programGetIdentifier(program, addr.integerValue);
 
-        if (Export.createVariable(program, identifier) != 0) {
+        if (Export.createVariable(program.name, identifier) != 0) {
             programFatalError("External variable " + identifier + " already exists");
         }
     }
@@ -2128,6 +2128,13 @@ public class Program {
             this.pointerValue = null;
         }
 
+        /** A value of a type of its own, with an integer of its own. */
+        public ProgramValue(int opcode, int integerValue) {
+            this.opcode = opcode;
+            this.integerValue = integerValue;
+            this.pointerValue = null;
+        }
+
         public ProgramValue(long value) {
             this.opcode = VALUE_TYPE_INT;
             this.integerValue = (int) value;
@@ -2667,6 +2674,23 @@ public class Program {
             return readCString(program.data, program.staticStrings + 4 + offset);
         }
         return null;
+    }
+
+    /**
+     * The offset of a string in the program's own heap.
+     *
+     * <p>The external variable registry asks the script for this, because
+     * a string it hands out belongs to the script it came from.
+     */
+    @Override
+    public int heapString(String value) {
+        return programPushString(this, value);
+    }
+
+    /** The string at an offset of the program's own heap. */
+    @Override
+    public String heapText(int opcode, int offset) {
+        return programGetString(this, opcode, offset);
     }
 
     // 0x467A80 programPushString: bump-allocated heap with free-block reuse
