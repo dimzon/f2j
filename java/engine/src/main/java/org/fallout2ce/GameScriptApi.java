@@ -65,6 +65,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80F4, // op_destroy_object
         0x8116, // op_add_mult_objs_to_inven
         0x8117, // op_rm_mult_objs_from_inven
+        0x8144, // op_destroy_mult_objs
         0x814C, // op_rotation_to_tile
         0x80CB, // op_set_critter_stat
     };
@@ -580,6 +581,34 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 Item.RemoveInventoryObjectHookReason.ITEM_REMOVED_MULTI, null);
         }
         return quantity;
+    }
+
+    /**
+     * op_destroy_mult_objs (0x8144): destroy a number of objects.
+     *
+     * <p>Not more objects are destroyed than there are, and the number of
+     * the objects that were destroyed is the answer.
+     */
+    @Override
+    public int destroyMultObjs(Object a0, int a1) {
+        if (a0 == null) {
+            return 0;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        int destroyed = 0;
+        if (object.owner != null) {
+            int quantity = Item.itemGetQuantity(object.owner, object);
+            if (quantity > a1) {
+                quantity = a1;
+            }
+            if (quantity != 0) {
+                Item.itemRemoveWithReason(object.owner, object, quantity,
+                    Item.RemoveInventoryObjectHookReason.ITEM_DESTROY_MULTI, null);
+                destroyed = quantity;
+            }
+        }
+        ObjectSystem.objectDestroy(object);
+        return destroyed;
     }
 
     /**
