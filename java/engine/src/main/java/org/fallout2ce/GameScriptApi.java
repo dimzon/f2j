@@ -63,6 +63,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D8, // op_add_obj_to_inven
         0x80D9, // op_rm_obj_from_inven
         0x80F4, // op_destroy_object
+        0x8116, // op_add_mult_objs_to_inven
+        0x8117, // op_rm_mult_objs_from_inven
         0x814C, // op_rotation_to_tile
         0x80CB, // op_set_critter_stat
     };
@@ -538,6 +540,46 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public String objName(Object a0) {
         return null;
+    }
+
+    /**
+     * op_add_mult_objs_to_inven (0x8116): put a number of objects into the
+     * inventory of another one.
+     *
+     * <p>One object is put in when the number is not a number of objects,
+     * and nothing is put in when there is no owner or no object at all.
+     */
+    @Override
+    public void addMultObjsToInven(Object a0, Object a1, int a2) {
+        if (a0 == null || a1 == null) {
+            return;
+        }
+        Item.itemAdd((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, a2 < 0 ? 1 : a2);
+    }
+
+    /**
+     * op_rm_mult_objs_from_inven (0x8117): take a number of objects out of
+     * the inventory of another one.
+     *
+     * <p>Not more objects are taken than the inventory holds, and nothing
+     * is taken when there is no owner or no object at all.
+     */
+    @Override
+    public int rmMultObjsFromInven(Object a0, Object a1, int a2) {
+        if (a0 == null || a1 == null) {
+            return 0;
+        }
+        ObjTypes.GameObject owner = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject item = (ObjTypes.GameObject) a1;
+        int quantity = Item.itemGetQuantity(owner, item);
+        if (quantity > a2) {
+            quantity = a2;
+        }
+        if (quantity != 0) {
+            Item.itemRemoveWithReason(owner, item, quantity,
+                Item.RemoveInventoryObjectHookReason.ITEM_REMOVED_MULTI, null);
+        }
+        return quantity;
     }
 
     /**
