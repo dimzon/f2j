@@ -56,6 +56,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D2, // op_tile_distance
         0x80D3, // op_tile_distance_objs
         0x80D5, // op_tile_num_in_direction
+        0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
         0x80CB, // op_set_critter_stat
     };
@@ -421,6 +422,29 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return a0;
         }
         return TileMath.tileGetTileInDirection(a0, Rotation.fromInt(a1), a2);
+    }
+
+    /**
+     * op_item_subtype (0x80C9): the type of an item.
+     *
+     * <p>Something that is not an item has no type at all, and the original
+     * answers the invalid type for it.
+     */
+    @Override
+    public int itemSubtype(Object a0) {
+        if (a0 == null) {
+            return ProtoTypes.ItemType.ITEM_TYPE_INVALID.id();
+        }
+        ObjTypes.GameObject item = (ObjTypes.GameObject) a0;
+        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofGameObject(item);
+        if (protoId.objectType() != ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
+            return ProtoTypes.ItemType.ITEM_TYPE_INVALID.id();
+        }
+        ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+        if (ProtoDb.protoGetProto(protoId, slot) == -1) {
+            return ProtoTypes.ItemType.ITEM_TYPE_INVALID.id();
+        }
+        return Item.itemGetType(item).id();
     }
 
     /**
