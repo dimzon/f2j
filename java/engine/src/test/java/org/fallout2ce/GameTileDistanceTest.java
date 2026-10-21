@@ -7,12 +7,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The tile distance builtins of the game.
+ * The tile builtins of the game: the distance between two tiles and the
+ * tile that lies a step away.
  *
  * <p>The numbers are the ones the reference harness prints: the distance
  * between the tiles 17488 and 15288 is 11, a tile has no distance to
  * itself but zero, and a tile that is not on the grid has no distance at
- * all ({@code [tilemath]} in the golden vectors).
+ * all. One step north-east from the tile 17488 is the tile 17487, and
+ * three steps are 17285 ({@code [tilemath]} in the golden vectors).
  */
 class GameTileDistanceTest {
 
@@ -58,5 +60,14 @@ class GameTileDistanceTest {
         // And an object that is not there has no distance either.
         assertEquals(TileMath.TILE_MAX_DISTANCE, api.tileDistanceObjs(first, null));
         assertEquals(TileMath.TILE_MAX_DISTANCE, api.tileDistanceObjs(null, second));
+    }
+
+    @Test
+    void theTileAStepAway() {
+        assertEquals(17487, api.tileNumInDirection(17488, Rotation.NE.value(), 1));
+        assertEquals(17285, api.tileNumInDirection(17488, Rotation.NE.value(), 3));
+
+        // A direction that is not one of the six has nowhere to go.
+        assertEquals(17488, api.tileNumInDirection(17488, 6, 1));
     }
 }

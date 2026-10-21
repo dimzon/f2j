@@ -55,6 +55,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8100, // op_obj_pid
         0x80D2, // op_tile_distance
         0x80D3, // op_tile_distance_objs
+        0x80D5, // op_tile_num_in_direction
     };
 
     @Override
@@ -403,6 +404,21 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return TileMath.TILE_MAX_DISTANCE;
         }
         return TileMath.tileDistanceBetween(first.tile, second.tile);
+    }
+
+    /**
+     * op_tile_num_in_direction (0x80D5): the tile that lies so many steps
+     * away in a direction.
+     *
+     * <p>The direction is the number the script names it by, and a tile at
+     * the edge of the grid has nowhere to go.
+     */
+    @Override
+    public int tileNumInDirection(int a0, int a1, int a2) {
+        if (!Rotation.isValid(a1)) {
+            return a0;
+        }
+        return TileMath.tileGetTileInDirection(a0, Rotation.fromInt(a1), a2);
     }
 
     /**
