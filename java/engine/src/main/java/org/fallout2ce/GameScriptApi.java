@@ -62,6 +62,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
         0x80D9, // op_rm_obj_from_inven
+        0x80F3, // op_has_trait
         0x80F4, // op_destroy_object
         0x8116, // op_add_mult_objs_to_inven
         0x8117, // op_rm_mult_objs_from_inven
@@ -609,6 +610,52 @@ public class GameScriptApi extends UnsupportedScriptApi {
         }
         ObjectSystem.objectDestroy(object);
         return destroyed;
+    }
+
+    /** The kind of a trait the original knows. */
+    private static final int CRITTER_TRAIT_PERK = 0;
+    private static final int CRITTER_TRAIT_OBJECT = 1;
+    private static final int CRITTER_TRAIT_TRAIT = 2;
+
+    /** The thing of an object the original knows. */
+    private static final int CRITTER_TRAIT_OBJECT_AI_PACKET = 5;
+    private static final int CRITTER_TRAIT_OBJECT_TEAM = 6;
+    private static final int CRITTER_TRAIT_OBJECT_ROTATION = 10;
+    private static final int CRITTER_TRAIT_OBJECT_IS_INVISIBLE = 666;
+    private static final int CRITTER_TRAIT_OBJECT_GET_INVENTORY_WEIGHT = 669;
+
+    /**
+     * op_has_trait (0x80F3): a trait of a critter.
+     *
+     * <p>The kind of the trait is the number the game gives it, and the
+     * number of the trait is the number of the perk or of the thing of the
+     * object. The perks need the perk engine and the traits the trait
+     * engine, and the port has neither of them yet, so only the things of
+     * the object are known.
+     */
+    @Override
+    public int hasTrait(int a0, Object a1, int a2) {
+        if (a1 == null) {
+            return 0;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a1;
+        switch (a0) {
+        case CRITTER_TRAIT_PERK:
+            return 0;
+        case CRITTER_TRAIT_OBJECT:
+            switch (a2) {
+            case CRITTER_TRAIT_OBJECT_ROTATION:
+                return object.rotation.id();
+            case CRITTER_TRAIT_OBJECT_IS_INVISIBLE:
+                return object.flags.and(ObjTypes.ObjectFlags.HIDDEN).bits() == 0 ? 1 : 0;
+            case CRITTER_TRAIT_OBJECT_GET_INVENTORY_WEIGHT:
+                return Item.objectGetInventoryWeight(object);
+            default:
+                return 0;
+            }
+        default:
+            return 0;
+        }
     }
 
     /**
