@@ -58,6 +58,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D5, // op_tile_num_in_direction
         0x80A4, // op_obj_name
         0x80B7, // op_create_object
+        0x80A1, // op_give_exp_points
+        0x80AC, // op_roll_vs_skill
         0x80AF, // op_success
         0x80B0, // op_critical
         0x80BD, // op_source_obj
@@ -729,6 +731,36 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void floatMsg(Program.ProgramValue a0, int a1) {
+    }
+
+    /**
+     * op_roll_vs_skill (0x80AC): roll a skill of a critter.
+     *
+     * <p>The roll is the number the game gives it: a critical failure is
+     * zero, a failure is one, a success is two and a critical success is
+     * three. A critter that is not there has no roll at all, and the
+     * original answers a critical failure for it.
+     */
+    @Override
+    public int rollVsSkill(Object a0, int a1, int a2) {
+        if (a0 == null) {
+            return GameRandom.Roll.CRITICAL_FAILURE.ordinal();
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        if (ProtoTypes.ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return GameRandom.Roll.CRITICAL_FAILURE.ordinal();
+        }
+        return Skill.skillRoll(object, a1, a2, new int[1]).ordinal();
+    }
+
+    /**
+     * op_give_exp_points (0x80A1): give experience to the player.
+     *
+     * <p>The experience goes to the player, and the port has no player
+     * yet, so the experience goes nowhere.
+     */
+    @Override
+    public void giveExpPoints(int a0) {
     }
 
     /**
