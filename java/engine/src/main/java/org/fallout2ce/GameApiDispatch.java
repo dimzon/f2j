@@ -1053,6 +1053,9 @@ final class GameApiDispatch {
             }
             int a0 = Program.programStackPopInteger(program);
             Program.ProgramValue a1 = Program.programStackPopValue(program);
+            // The object the text belongs to is taken off the stack, but the
+            // floating text needs the render engine, which the port has not.
+            Program.programStackPopPointer(program);
             api.floatMsg(a1, a0);
         };
         // 0x810B op_metarule

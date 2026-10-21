@@ -61,6 +61,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80AF, // op_success
         0x80B0, // op_critical
         0x80BD, // op_source_obj
+        0x810A, // op_float_msg
         0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
@@ -717,6 +718,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
         default:
             return -1;
         }
+    }
+
+    /**
+     * op_float_msg (0x810A): show a text over an object.
+     *
+     * <p>The text is a floating one that the render engine draws over the
+     * object, and the port has no render engine yet, so the text is not
+     * shown.
+     */
+    @Override
+    public void floatMsg(Program.ProgramValue a0, int a1) {
     }
 
     /**
