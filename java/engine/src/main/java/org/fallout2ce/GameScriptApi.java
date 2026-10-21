@@ -56,6 +56,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D2, // op_tile_distance
         0x80D3, // op_tile_distance_objs
         0x80D5, // op_tile_num_in_direction
+        0x80A4, // op_obj_name
         0x80B7, // op_create_object
         0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
@@ -526,6 +527,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return;
         }
         ObjectSystem.objectDestroy((ObjTypes.GameObject) a0);
+    }
+
+    /**
+     * op_obj_name (0x80A4): the name of an object.
+     *
+     * <p>The name comes with the game's message stack, and the port has no
+     * game phase yet, so the name of an object is not known.
+     */
+    @Override
+    public String objName(Object a0) {
+        return null;
     }
 
     /**
