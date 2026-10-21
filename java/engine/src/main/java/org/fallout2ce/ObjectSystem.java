@@ -824,8 +824,6 @@ public final class ObjectSystem {
      * <p>The game makes the player when the game starts, and the port has
      * no game phase yet, so there is no player until the game makes one.
      */
-    public static GameObject gDude = null;
-
     public static GameObject objectFindFirst() {
         findElevation = 0;
 

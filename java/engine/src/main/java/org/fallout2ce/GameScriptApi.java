@@ -179,9 +179,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
 
     @Override
     public Object opGetDude() {
-        // The player is the object the game made when the game started, and
-        // the port has no game phase yet, so there is no player.
-        return ObjectSystem.gDude;
+        // The player is the object the game makes when the objects of the
+        // game are made, and the port has made it in objectsInit.
+        return ObjectSystem.getDude();
     }
 
     /**
