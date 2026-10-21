@@ -58,6 +58,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D5, // op_tile_num_in_direction
         0x80A4, // op_obj_name
         0x80B7, // op_create_object
+        0x80AF, // op_success
+        0x80B0, // op_critical
         0x80BD, // op_source_obj
         0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
@@ -669,6 +671,52 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public Object sourceObj() {
         return null;
+    }
+
+    /** The rolls the game knows. */
+    private static final int ROLL_CRITICAL_FAILURE = 0;
+    private static final int ROLL_FAILURE = 1;
+    private static final int ROLL_SUCCESS = 2;
+    private static final int ROLL_CRITICAL_SUCCESS = 3;
+
+    /**
+     * op_success (0x80AF): whether a roll was a success.
+     *
+     * <p>The roll is the number the game gives it, and a roll that is none
+     * of the four the game knows has no answer.
+     */
+    @Override
+    public int success(int a0) {
+        switch (a0) {
+        case ROLL_CRITICAL_FAILURE:
+        case ROLL_FAILURE:
+            return 0;
+        case ROLL_SUCCESS:
+        case ROLL_CRITICAL_SUCCESS:
+            return 1;
+        default:
+            return -1;
+        }
+    }
+
+    /**
+     * op_critical (0x80B0): whether a roll was a critical one.
+     *
+     * <p>The roll is the number the game gives it, and a roll that is none
+     * of the four the game knows has no answer.
+     */
+    @Override
+    public int critical(int a0) {
+        switch (a0) {
+        case ROLL_CRITICAL_FAILURE:
+        case ROLL_CRITICAL_SUCCESS:
+            return 1;
+        case ROLL_FAILURE:
+        case ROLL_SUCCESS:
+            return 0;
+        default:
+            return -1;
+        }
     }
 
     /**
