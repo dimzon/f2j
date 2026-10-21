@@ -1493,14 +1493,14 @@ public final class Item {
         if (isDude(critter)) {
             int attackType = weaponGetAttackTypeForHitMode(weapon, hitMode);
 
-            if (perkHasRank(G_DUDE, PerkDefs.Perk.PERK_BONUS_HTH_ATTACKS)) {
+            if (perkHasRank(gDude(), PerkDefs.Perk.PERK_BONUS_HTH_ATTACKS)) {
                 if (attackType == AttackType.ATTACK_TYPE_MELEE.id()
                         || attackType == AttackType.ATTACK_TYPE_UNARMED.id()) {
                     actionPoints -= 1;
                 }
             }
 
-            if (perkHasRank(G_DUDE, PerkDefs.Perk.PERK_BONUS_RATE_OF_FIRE)) {
+            if (perkHasRank(gDude(), PerkDefs.Perk.PERK_BONUS_RATE_OF_FIRE)) {
                 if (attackType == AttackType.ATTACK_TYPE_RANGED.id()) {
                     actionPoints -= 1;
                 }
@@ -1780,10 +1780,16 @@ public final class Item {
     // Port of gDude (src/object.cc, unported): null headless, so every
     // critter == gDude check reads false for non-null critters (a null
     // critter is never "the dude"; see Stat#isDude).
-    private static final GameObject G_DUDE = null;
+    /**
+     * The player of the game ({@code gDude} in C). The object system makes
+     * it with the objects of the game.
+     */
+    private static GameObject gDude() {
+        return ObjectSystem.getDude();
+    }
 
     private static boolean isDude(GameObject critter) {
-        return critter != null && critter == G_DUDE;
+        return critter != null && critter == gDude();
     }
 
     // Seams for the perk engine (unported): only reachable from the dormant

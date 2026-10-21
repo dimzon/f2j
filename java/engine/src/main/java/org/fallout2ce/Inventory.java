@@ -435,10 +435,16 @@ public final class Inventory {
     // Port of gDude (src/object.cc, unported): null headless, so every
     // critter == gDude check reads false for non-null critters (a null
     // critter is never "the dude"; see Stat#isDude).
-    private static final GameObject G_DUDE = null;
+    /**
+     * The player of the game ({@code gDude} in C). The object system makes
+     * it with the objects of the game.
+     */
+    private static GameObject gDude() {
+        return ObjectSystem.getDude();
+    }
 
     private static boolean isDude(GameObject critter) {
-        return critter != null && critter == G_DUDE;
+        return critter != null && critter == gDude();
     }
 
     // scriptHooks_InvenWield (src/sfall_script_hooks.cc): with no hooks

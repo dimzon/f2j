@@ -83,10 +83,16 @@ public final class Stat {
      * Port of {@code gDude} ({@code src/object.cc}, unported): null headless,
      * so all dude branches are dormant (see class notes).
      */
-    private static final GameObject G_DUDE = null;
+    /**
+     * The player of the game ({@code gDude} in C). The object system makes
+     * it with the objects of the game.
+     */
+    private static GameObject gDude() {
+        return ObjectSystem.getDude();
+    }
 
     private static boolean isDude(GameObject critter) {
-        return critter != null && critter == G_DUDE;
+        return critter != null && critter == gDude();
     }
 
     // Port of `unspentApBonus` / `unspentApPerkBonus` (src/stat.cc, init 4).

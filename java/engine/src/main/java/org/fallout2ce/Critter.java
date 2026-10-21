@@ -42,11 +42,7 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * <ul>
  * <li>{@code killTypeGetName}/{@code killTypeGetDescription} are omitted:
  * they need the proto message stack (game phase).</li>
- * <li>{@code gDude} is modelled as a {@code null} holder (no dude in
- * {@link ObjectSystem} yet): the dude-gender branch of
- * {@code critterGetKillType} is dormant headless (see {@link Stat}/
- * {@link Skill} for the same rule); the {@code null == null} C quirk is
- * avoided via a null guard in {@link #isDude}.</li>
+ * <li>{@code gDude} is the player that the object system made.</li>
  * <li>Null {@code critterGetBodyType} input returns BIPED silently (C++
  * debugPrints; Java ports stay silent, see {@link Reaction}).</li>
  * <li>{@code scriptHooks_MoveCost} arrives as a dormant identity seam
@@ -419,9 +415,15 @@ public final class Critter {
     // Port of gDude (src/object.cc, unported): null headless, so every
     // critter == gDude check reads false for non-null critters (a null
     // critter is never "the dude"; see Stat#isDude).
-    private static final GameObject G_DUDE = null;
+    /**
+     * The player of the game ({@code gDude} in C). The object system makes
+     * it with the objects of the game.
+     */
+    private static GameObject gDude() {
+        return ObjectSystem.getDude();
+    }
 
     private static boolean isDude(GameObject critter) {
-        return critter != null && critter == G_DUDE;
+        return critter != null && critter == gDude();
     }
 }

@@ -17,10 +17,7 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  *
  * <p>NOTES / seams (all documented at the use site too):
  * <ul>
- * <li>{@code gDude} is modelled as a {@code null} holder (no dude in
- * {@link ObjectSystem} yet): every {@code critter == gDude} check reads
- * false, so the tagged-bonus / trait / perk / difficulty block is dormant
- * until the game phase. The {@code null == null} C quirk is avoided via a
+ * <li>{@code gDude} is the player that the object system made. The {@code null == null} C quirk is avoided via a
  * null guard in {@link #isDude}.</li>
  * <li>Perk lookups ({@code perkGetRank}, {@code perkGetSkillModifier}) need
  * the perk engine (unported; {@link Perk} only carries property ids). The
@@ -216,10 +213,16 @@ public final class Skill {
      * Port of {@code gDude}: null headless, so the dude block of
      * {@link #skillGetValue} is dormant (see class notes).
      */
-    private static final GameObject G_DUDE = null;
+    /**
+     * The player of the game ({@code gDude} in C). The object system makes
+     * it with the objects of the game.
+     */
+    private static GameObject gDude() {
+        return ObjectSystem.getDude();
+    }
 
     private static boolean isDude(GameObject critter) {
-        return critter != null && critter == G_DUDE;
+        return critter != null && critter == gDude();
     }
 
     // Seams for the perk engine (unported): only reachable from the dormant
@@ -445,7 +448,7 @@ public final class Skill {
      * headless) and {@code howMuch} follows the same {@code int[]} out-param
      * convention as {@link GameRandom#randomRoll} ({@code null} allowed).
      *
-     * <p>Dude branches (dormant headless: {@code G_DUDE} is null so
+     * <p>Dude branches (dormant headless: the player is not there so
      * {@link #isDude} reads false with a null guard): the
      * {@code partyMemberGetBestInSkill} substitution (non-steal skills) and
      * the steal sneak {@code +30} bonus never fire. The party helpers live
