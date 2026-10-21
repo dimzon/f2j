@@ -818,6 +818,14 @@ public final class ObjectSystem {
 
     // 0x48B3A8 obj_find_first: tile-head scan (floating objects are
     // invisible), exactly like C.
+    /**
+     * The player ({@code gDude} in C).
+     *
+     * <p>The game makes the player when the game starts, and the port has
+     * no game phase yet, so there is no player until the game makes one.
+     */
+    public static GameObject gDude = null;
+
     public static GameObject objectFindFirst() {
         findElevation = 0;
 
