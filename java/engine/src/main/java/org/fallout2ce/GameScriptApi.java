@@ -59,6 +59,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80C9, // op_item_subtype
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
+        0x80D9, // op_rm_obj_from_inven
         0x80CB, // op_set_critter_stat
     };
 
@@ -461,6 +462,20 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return;
         }
         Item.itemAdd((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, 1);
+    }
+
+    /**
+     * op_rm_obj_from_inven (0x80D9): take an object out of the inventory of
+     * another one.
+     *
+     * <p>Nothing happens when there is no owner or no object at all.
+     */
+    @Override
+    public void rmObjFromInven(Object a0, Object a1) {
+        if (a0 == null || a1 == null) {
+            return;
+        }
+        Item.itemRemove((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, 1);
     }
 
     /**

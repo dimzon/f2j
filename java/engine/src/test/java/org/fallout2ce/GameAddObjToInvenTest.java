@@ -79,4 +79,27 @@ class GameAddObjToInvenTest {
         api.addObjToInven(dog, null);
         assertNull(Inventory.objectGetCarriedObjectByProtoId(dog, ProtoId.ofPid(41)));
     }
+
+    @Test
+    void anObjectGoesOutOfTheInventory() {
+        GameObject[] dogSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dogSlot, ProtoId.ofPid(16777558)));
+        assertNotNull(dogSlot[0]);
+        GameObject dog = dogSlot[0];
+
+        GameObject[] stimSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(stimSlot, ProtoId.ofPid(40)));
+        assertNotNull(stimSlot[0]);
+        GameObject stim = stimSlot[0];
+
+        api.addObjToInven(dog, stim);
+        assertEquals(stim, Inventory.objectGetCarriedObjectByProtoId(dog, ProtoId.ofPid(40)));
+
+        api.rmObjFromInven(dog, stim);
+        assertNull(Inventory.objectGetCarriedObjectByProtoId(dog, ProtoId.ofPid(40)));
+
+        // Nothing happens without an owner or without an object.
+        api.rmObjFromInven(null, stim);
+        api.rmObjFromInven(dog, null);
+    }
 }
