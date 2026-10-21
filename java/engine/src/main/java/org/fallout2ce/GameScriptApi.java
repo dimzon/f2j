@@ -57,6 +57,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D3, // op_tile_distance_objs
         0x80D5, // op_tile_num_in_direction
         0x80CA, // op_get_critter_stat
+        0x80CB, // op_set_critter_stat
     };
 
     @Override
@@ -434,6 +435,19 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return -1;
         }
         return Stat.critterGetStat((ObjTypes.GameObject) a0, a1);
+    }
+
+    /**
+     * op_set_critter_stat (0x80CB): change a stat of a critter.
+     *
+     * <p>The stat is changed by an amount and not set, and only the dude's
+     * own stats may be changed: the original refuses anybody else. The
+     * object system keeps the dude as a game-phase global that the port
+     * does not have, so there is nobody whose stats may be changed.
+     */
+    @Override
+    public int setCritterStat(Object a0, int a1, int a2) {
+        return -1;
     }
 
     /**
