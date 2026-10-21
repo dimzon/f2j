@@ -56,6 +56,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D2, // op_tile_distance
         0x80D3, // op_tile_distance_objs
         0x80D5, // op_tile_num_in_direction
+        0x80CA, // op_get_critter_stat
     };
 
     @Override
@@ -419,6 +420,20 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return a0;
         }
         return TileMath.tileGetTileInDirection(a0, Rotation.fromInt(a1), a2);
+    }
+
+    /**
+     * op_get_critter_stat (0x80CA): a stat of a critter.
+     *
+     * <p>The stat is the number the game gives it, and a critter that is
+     * not there has no stat at all.
+     */
+    @Override
+    public int getCritterStat(Object a0, int a1) {
+        if (a0 == null) {
+            return -1;
+        }
+        return Stat.critterGetStat((ObjTypes.GameObject) a0, a1);
     }
 
     /**
