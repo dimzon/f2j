@@ -405,35 +405,52 @@ public abstract class ScriptBase implements Export.StringHeap {
     protected final void add() {
         Program.ProgramValue right = popValue();
         Program.ProgramValue left = popValue();
-        switch (right.opcode) {
+        switch (left.opcode) {
         case Program.VALUE_TYPE_STRING:
         case Program.VALUE_TYPE_DYNAMIC_STRING:
-            pushString(stringAt(right) + text(left));
+            pushString(text(left) + text(right));
             break;
         case Program.VALUE_TYPE_FLOAT:
-            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
-                pushFloat(right.floatValue + left.floatValue);
-            } else {
-                pushFloat(right.floatValue + left.integerValue);
+            switch (right.opcode) {
+            case Program.VALUE_TYPE_STRING:
+            case Program.VALUE_TYPE_DYNAMIC_STRING:
+                pushString(text(left) + text(right));
+                break;
+            case Program.VALUE_TYPE_FLOAT:
+                pushFloat(left.floatValue + right.floatValue);
+                break;
+            case Program.VALUE_TYPE_INT:
+                pushFloat(left.floatValue + right.integerValue);
+                break;
+            default:
+                break;
             }
             break;
         case Program.VALUE_TYPE_INT:
-            if (isString(left)) {
-                pushString(Integer.toString(right.integerValue) + text(left));
-            } else if (left.opcode == Program.VALUE_TYPE_FLOAT) {
-                pushFloat(right.integerValue + left.floatValue);
-            } else {
-                int sum = right.integerValue + left.integerValue;
-                if (((right.integerValue ^ sum) & (left.integerValue ^ sum)) < 0) {
-                    // The sum overflowed, so it is a float.
-                    pushFloat((float) right.integerValue + left.integerValue);
+            switch (right.opcode) {
+            case Program.VALUE_TYPE_STRING:
+            case Program.VALUE_TYPE_DYNAMIC_STRING:
+                pushString(text(left) + text(right));
+                break;
+            case Program.VALUE_TYPE_FLOAT:
+                pushFloat(left.integerValue + right.floatValue);
+                break;
+            case Program.VALUE_TYPE_INT:
+                if ((right.integerValue <= 0
+                        || (Integer.MAX_VALUE - right.integerValue) > left.integerValue)
+                        && (right.integerValue >= 0
+                                || (Integer.MIN_VALUE - right.integerValue) <= left.integerValue)) {
+                    pushInt(left.integerValue + right.integerValue);
                 } else {
-                    pushInt(sum);
+                    // The sum overflowed, so it is a float.
+                    pushFloat((float) left.integerValue + (float) right.integerValue);
                 }
+                break;
+            default:
+                break;
             }
             break;
         default:
-            pushString(text(right) + text(left));
             break;
         }
     }
@@ -442,16 +459,19 @@ public abstract class ScriptBase implements Export.StringHeap {
     protected final void subtract() {
         Program.ProgramValue right = popValue();
         Program.ProgramValue left = popValue();
-        switch (right.opcode) {
+        switch (left.opcode) {
         case Program.VALUE_TYPE_FLOAT:
-            pushFloat(right.floatValue - (left.opcode == Program.VALUE_TYPE_FLOAT
-                ? left.floatValue : left.integerValue));
+            if (right.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(left.floatValue - right.floatValue);
+            } else {
+                pushFloat(left.floatValue - right.integerValue);
+            }
             break;
         case Program.VALUE_TYPE_INT:
-            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
-                pushFloat(right.integerValue - left.floatValue);
+            if (right.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(left.integerValue - right.floatValue);
             } else {
-                pushInt(right.integerValue - left.integerValue);
+                pushInt(left.integerValue - right.integerValue);
             }
             break;
         default:
@@ -463,14 +483,17 @@ public abstract class ScriptBase implements Export.StringHeap {
     protected final void multiply() {
         Program.ProgramValue right = popValue();
         Program.ProgramValue left = popValue();
-        switch (right.opcode) {
+        switch (left.opcode) {
         case Program.VALUE_TYPE_FLOAT:
-            pushFloat(right.floatValue * (left.opcode == Program.VALUE_TYPE_FLOAT
-                ? left.floatValue : left.integerValue));
+            if (right.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(left.floatValue * right.floatValue);
+            } else {
+                pushFloat(left.floatValue * right.integerValue);
+            }
             break;
         case Program.VALUE_TYPE_INT:
-            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
-                pushFloat(right.integerValue * left.floatValue);
+            if (right.opcode == Program.VALUE_TYPE_FLOAT) {
+                pushFloat(left.integerValue * right.floatValue);
             } else {
                 pushInt(left.integerValue * right.integerValue);
             }
@@ -484,27 +507,27 @@ public abstract class ScriptBase implements Export.StringHeap {
     protected final void divide() {
         Program.ProgramValue right = popValue();
         Program.ProgramValue left = popValue();
-        switch (right.opcode) {
+        switch (left.opcode) {
         case Program.VALUE_TYPE_FLOAT: {
-            float divisor = left.opcode == Program.VALUE_TYPE_FLOAT
-                ? left.floatValue : left.integerValue;
+            float divisor = right.opcode == Program.VALUE_TYPE_FLOAT
+                ? right.floatValue : right.integerValue;
             if (divisor == 0.0f) {
                 throw new FatalError("Division (DIV) by zero");
             }
-            pushFloat(right.floatValue / divisor);
+            pushFloat(left.floatValue / divisor);
             break;
         }
         case Program.VALUE_TYPE_INT:
-            if (left.opcode == Program.VALUE_TYPE_FLOAT) {
-                if (left.floatValue == 0.0f) {
+            if (right.opcode == Program.VALUE_TYPE_FLOAT) {
+                if (right.floatValue == 0.0f) {
                     throw new FatalError("Division (DIV) by zero");
                 }
-                pushFloat((float) right.integerValue / left.floatValue);
+                pushFloat(left.integerValue / right.floatValue);
             } else {
-                if (left.integerValue == 0) {
+                if (right.integerValue == 0) {
                     throw new FatalError("Division (DIV) by zero");
                 }
-                pushInt(right.integerValue / left.integerValue);
+                pushInt(left.integerValue / right.integerValue);
             }
             break;
         default:
@@ -516,19 +539,19 @@ public abstract class ScriptBase implements Export.StringHeap {
     protected final void modulo() {
         Program.ProgramValue right = popValue();
         Program.ProgramValue left = popValue();
-        if (right.opcode == Program.VALUE_TYPE_FLOAT) {
+        if (left.opcode == Program.VALUE_TYPE_FLOAT) {
             throw new FatalError("Trying to MOD a float");
         }
-        if (right.opcode != Program.VALUE_TYPE_INT) {
+        if (left.opcode != Program.VALUE_TYPE_INT) {
             return;
         }
-        if (left.opcode == Program.VALUE_TYPE_FLOAT) {
+        if (right.opcode == Program.VALUE_TYPE_FLOAT) {
             throw new FatalError("Trying to MOD with a float");
         }
-        if (left.integerValue == 0) {
+        if (right.integerValue == 0) {
             throw new FatalError("Division (MOD) by zero");
         }
-        pushInt(right.integerValue % left.integerValue);
+        pushInt(left.integerValue % right.integerValue);
     }
 
     /** op_floor (0x44). */
@@ -604,12 +627,33 @@ public abstract class ScriptBase implements Export.StringHeap {
 
     /** op_bitwise_and (0x40), op_bitwise_or (0x41), op_bitwise_xor (0x42). */
     protected final void bitwise(int kind) {
-        int right = popInt();
-        int left = popInt();
+        Program.ProgramValue right = popValue();
+        Program.ProgramValue left = popValue();
+
+        // The original works on the numbers, and a float is cut down to an
+        // integer first. The other types have no answer, and the original
+        // leaves the stack as it is.
+        int first;
+        int second;
+        switch (left.opcode) {
+        case Program.VALUE_TYPE_FLOAT:
+            first = (int) left.floatValue;
+            second = right.opcode == Program.VALUE_TYPE_FLOAT
+                ? (int) right.floatValue : right.integerValue;
+            break;
+        case Program.VALUE_TYPE_INT:
+            first = left.integerValue;
+            second = right.opcode == Program.VALUE_TYPE_FLOAT
+                ? (int) right.floatValue : right.integerValue;
+            break;
+        default:
+            return;
+        }
+
         switch (kind) {
-        case 0: pushInt(left & right); break;
-        case 1: pushInt(left | right); break;
-        default: pushInt(left ^ right); break;
+        case 0: pushInt(first & second); break;
+        case 1: pushInt(first | second); break;
+        default: pushInt(first ^ second); break;
         }
     }
 
@@ -635,43 +679,32 @@ public abstract class ScriptBase implements Export.StringHeap {
         Program.ProgramValue left = popValue();
 
         boolean result;
-        switch (right.opcode) {
+        switch (left.opcode) {
         case Program.VALUE_TYPE_STRING:
         case Program.VALUE_TYPE_DYNAMIC_STRING: {
-            String first = stringAt(right);
-            String second = text(left);
-            result = kind == Compare.EQUAL ? first.equals(second)
-                : kind == Compare.NOT_EQUAL ? !first.equals(second)
-                : kind == Compare.LESS ? first.compareTo(second) < 0
-                : kind == Compare.LESS_OR_EQUAL ? first.compareTo(second) <= 0
-                : kind == Compare.GREATER ? first.compareTo(second) > 0
-                : first.compareTo(second) >= 0;
+            String first = text(left);
+            String second = text(right);
+            result = compareTexts(kind, first, second);
             break;
         }
         case Program.VALUE_TYPE_FLOAT: {
-            float first = right.floatValue;
-            float second = left.opcode == Program.VALUE_TYPE_FLOAT ? left.floatValue
-                : left.opcode == Program.VALUE_TYPE_INT ? left.integerValue
+            float first = left.floatValue;
+            float second = right.opcode == Program.VALUE_TYPE_FLOAT ? right.floatValue
+                : right.opcode == Program.VALUE_TYPE_INT ? right.integerValue
                 : 0.0f;
             result = compareFloats(kind, first, second);
             break;
         }
         case Program.VALUE_TYPE_INT: {
-            if (left.opcode == Program.VALUE_TYPE_STRING
-                    || left.opcode == Program.VALUE_TYPE_DYNAMIC_STRING) {
-                String first = Integer.toString(right.integerValue);
-                String second = text(left);
-                result = kind == Compare.EQUAL ? first.equals(second)
-                    : kind == Compare.NOT_EQUAL ? !first.equals(second)
-                    : kind == Compare.LESS ? first.compareTo(second) < 0
-                    : kind == Compare.LESS_OR_EQUAL ? first.compareTo(second) <= 0
-                    : kind == Compare.GREATER ? first.compareTo(second) > 0
-                    : first.compareTo(second) >= 0;
+            if (isString(right)) {
+                String first = Integer.toString(left.integerValue);
+                String second = text(right);
+                result = compareTexts(kind, first, second);
                 break;
             }
-            float first = right.integerValue;
-            float second = left.opcode == Program.VALUE_TYPE_FLOAT ? left.floatValue
-                : left.integerValue;
+            float first = left.integerValue;
+            float second = right.opcode == Program.VALUE_TYPE_FLOAT ? right.floatValue
+                : right.integerValue;
             result = compareFloats(kind, first, second);
             break;
         }
@@ -683,6 +716,16 @@ public abstract class ScriptBase implements Export.StringHeap {
         }
         }
         pushInt(result ? 1 : 0);
+    }
+
+    /** The comparison of two texts. */
+    private static boolean compareTexts(Compare kind, String first, String second) {
+        return kind == Compare.EQUAL ? first.equals(second)
+            : kind == Compare.NOT_EQUAL ? !first.equals(second)
+            : kind == Compare.LESS ? first.compareTo(second) < 0
+            : kind == Compare.LESS_OR_EQUAL ? first.compareTo(second) <= 0
+            : kind == Compare.GREATER ? first.compareTo(second) > 0
+            : first.compareTo(second) >= 0;
     }
 
     /** The comparison of two floats. */
@@ -707,6 +750,8 @@ public abstract class ScriptBase implements Export.StringHeap {
             return String.format(java.util.Locale.ROOT, "%.5f", value.floatValue);
         case Program.VALUE_TYPE_INT:
             return Integer.toString(value.integerValue);
+        case Program.VALUE_TYPE_PTR:
+            return Program.formatPointer(value.pointerValue);
         default:
             return "";
         }

@@ -315,6 +315,28 @@ final class Export {
     }
 
     /**
+     * Forgets every variable and procedure in the registry.
+     *
+     * <p>The registry is shared by every script of the game, so a test that
+     * runs the same script twice has to start from a clean one, or the
+     * second run finds what the first one left behind.
+     */
+    static void clear() {
+        for (ExternalVariable var : VARIABLES) {
+            var.name = "";
+            var.programName = null;
+            var.value = new Program.ProgramValue();
+            var.stringValue = null;
+        }
+        for (ExternalProcedure proc : PROCEDURES) {
+            proc.name = "";
+            proc.program = null;
+            proc.argumentCount = 0;
+            proc.address = 0;
+        }
+    }
+
+    /**
      * Clears every entry owned by {@code program}. Port of
      * {@code _removeProgramReferences} (0x441920).
      *

@@ -184,6 +184,7 @@ final class ScriptCompiler {
     private static final int OP_JUMP = 0x004;
     private static final int OP_CALL = 0x005;
     private static final int OP_A_TO_D = 0x00C;
+    private static final int OP_SWAP_RETURN = 0x019;
     private static final int OP_D_TO_A = 0x00D;
     private static final int OP_POP_BASE = 0x029;
     private static final int OP_POP_TO_BASE = 0x02A;
@@ -226,17 +227,18 @@ final class ScriptCompiler {
         if (staticStringLen == -1) {
             staticStringLen = -4;
         }
-        int codePos = staticStringsPos + 4 + staticStringLen + 4;
 
         // The static strings: the table the code names its strings with.
-        int staticStringStart = staticStringsPos + 4;
-        int staticStringEnd = staticStringStart + Math.max(0, staticStringLen);
+        // The table starts with its length, and the VM reads the strings
+        // from the table itself, so the offsets the code uses count from
+        // there and not from the first name.
+        int staticStringEnd = staticStringsPos + 4 + staticStringLen;
         if (staticStringEnd > data.length) {
             staticStringEnd = data.length;
         }
-        if (staticStringEnd > staticStringStart) {
-            script.staticStrings = new String(data, staticStringStart,
-                staticStringEnd - staticStringStart,
+        if (staticStringEnd > staticStringsPos) {
+            script.staticStrings = new String(data, staticStringsPos,
+                staticStringEnd - staticStringsPos,
                 java.nio.charset.StandardCharsets.ISO_8859_1);
         }
 
@@ -586,6 +588,17 @@ final class ScriptCompiler {
                 break;
             }
 
+            case OP_SWAP_RETURN: {
+                // The two values on top of the return stack change places.
+                // The exit sequence of a procedure relies on it: it puts the
+                // address to return to on the stack and swaps it past the
+                // address that was there.
+                next.returnSwap();
+                instruction.depthAfter = next.depth();
+                addFallthrough(work, procedure, item.index + 1, next);
+                break;
+            }
+
             case OP_PUSH_BASE: {
                 // The argument count on top; the frame pointer becomes the
                 // stack size less the argument count, and the old frame
@@ -747,6 +760,16 @@ final class ScriptCompiler {
         /** A value goes onto the return stack. */
         void returnPush(Integer value) {
             returns = new Value(value, returns);
+        }
+
+        /** The two values on top of the return stack change places. */
+        void returnSwap() {
+            if (returns == null || returns.tail == null) {
+                return;
+            }
+            Value top = returns;
+            Value next = returns.tail;
+            returns = new Value(next.value, new Value(top.value, next.tail));
         }
 
         /** A value comes off the return stack. */

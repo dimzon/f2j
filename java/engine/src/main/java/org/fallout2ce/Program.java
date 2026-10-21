@@ -1966,7 +1966,7 @@ public class Program implements Export.StringHeap {
     // C's "%p" prints the raw address, which Java cannot reproduce. This is a
     // debug-only path (object + string concatenation); it keeps a stable
     // non-null rendering instead. Deliberate divergence, untested.
-    private static String formatPointer(Object pointer) {
+    static String formatPointer(Object pointer) {
         return pointer == null ? "(nil)" : pointer.toString();
     }
 
