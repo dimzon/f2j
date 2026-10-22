@@ -123,5 +123,21 @@ class GameGetDudeTest {
         // is empty.
         assertEquals(Inventory.Hand.HAND_LEFT, Interface.interfaceGetCurrentHand());
         assertNull(api.critterInvenObj(dude, 1).pointerValue);
+
+        // A critter that is not the player holds the item in the hand it is
+        // flagged with.
+        GameObject[] dogSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dogSlot, ProtoId.ofPid(16777558)));
+        assertNotNull(dogSlot[0]);
+        GameObject dog = dogSlot[0];
+        GameObject[] dogStimSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(dogStimSlot, ProtoId.ofPid(40)));
+        assertNotNull(dogStimSlot[0]);
+        assertEquals(0, Item.itemAdd(dog, dogStimSlot[0], 1));
+        GameObject dogInHand = Inventory.inventoryItemByIndex(dog, 0);
+        assertNotNull(dogInHand);
+        dogInHand.flags = dogInHand.flags.or(ObjTypes.ObjectFlags.IN_RIGHT_HAND);
+        assertSame(dogInHand, Inventory.critterGetItem2(dog));
+        assertSame(dogInHand, api.critterInvenObj(dog, 1).pointerValue);
     }
 }
