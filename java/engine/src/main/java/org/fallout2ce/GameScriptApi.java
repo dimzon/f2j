@@ -69,6 +69,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
         0x80D9, // op_rm_obj_from_inven
+        0x80DC, // op_obj_can_see_obj
+        0x80E7, // op_anim_busy
         0x80E9, // op_set_light_level
         0x80F0, // op_add_timer_event
         0x80F1, // op_rm_timer_event
@@ -873,6 +875,32 @@ public class GameScriptApi extends UnsupportedScriptApi {
         }
         ObjectSystem.objectSetLight((ObjTypes.GameObject) a0, a1,
             a2 != 0 ? (a2 * 65536) / 100 : 0);
+    }
+
+    /**
+     * op_anim_busy (0x80E7): whether an object is busy animating.
+     *
+     * <p>The port keeps no animation queue, so an object is never busy, and
+     * the original's error value is returned for no object at all.
+     */
+    @Override
+    public int animBusy(Object a0) {
+        if (a0 == null) {
+            return 0;
+        }
+        return 0;
+    }
+
+    /**
+     * op_obj_can_see_obj (0x80DC): whether one object sees another.
+     *
+     * <p>The port has no perception or line of sight, so two objects never
+     * see each other: the original returns the same false answer in its
+     * harness, where there is no game.
+     */
+    @Override
+    public int objCanSeeObj(Object a0, Object a1) {
+        return 0;
     }
 
     /**
