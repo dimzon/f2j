@@ -215,7 +215,23 @@ public class GameScriptApi extends UnsupportedScriptApi {
         if (object == null) {
             return -1;
         }
-        throw unsupported("critter_add_trait");
+        // The perk engine and the trait engine are not ported yet, so no
+        // perk or trait can be added.
+        return -1;
+    }
+
+    /**
+     * op_critter_rm_trait (0x8103): remove a perk or trait from a critter.
+     *
+     * <p>The perk engine and the trait engine are not ported yet, so no
+     * perk or trait can be removed.
+     */
+    @Override
+    public int critterRmTrait(Object object, int kind, int param, int value) {
+        if (object == null) {
+            return -1;
+        }
+        return -1;
     }
 
     /**
@@ -958,6 +974,30 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 ObjectSystem.objectShow(obj);
             }
         }
+    }
+
+    /**
+     * op_target_obj (0x80BE): the object the script is aimed at.
+     *
+     * <p>The target is not the object the script runs for, but the one it is
+     * aimed at, and the scripts of the game are started by the game itself,
+     * so there is no target: the original answers the same in its harness.
+     */
+    @Override
+    public Object targetObj() {
+        return null;
+    }
+
+    /**
+     * op_fixed_param (0x80F7): the parameter of the event the script runs
+     * for.
+     *
+     * <p>The parameter belongs to the event that started the script, and the
+     * port has no event that started the script, so the parameter is 0.
+     */
+    @Override
+    public int fixedParam() {
+        return 0;
     }
 
     /**
