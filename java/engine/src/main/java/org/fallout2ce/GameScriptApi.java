@@ -82,6 +82,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8144, // op_destroy_mult_objs
         0x814C, // op_rotation_to_tile
         0x80CB, // op_set_critter_stat
+        0x8109, // op_inven_cmds
     };
 
     @Override
@@ -901,6 +902,31 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public int objCanSeeObj(Object a0, Object a1) {
         return 0;
+    }
+
+    /**
+     * op_inven_cmds (0x8109): an item of an object by its index.
+     *
+     * <p>Only the command 13 is known: the item at the given index. A
+     * critter that is not a critter or an index that is not an item
+     * answers nothing, and the original answers nothing then as well.
+     */
+    @Override
+    public Object invenCmds(Object a0, int a1, int a2) {
+        if (a0 == null) {
+            return null;
+        }
+        if (!(a0 instanceof ObjTypes.GameObject)) {
+            return null;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        if (ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return null;
+        }
+        if (a1 != 13) {
+            return null;
+        }
+        return Inventory.inventoryItemByIndex(object, a2);
     }
 
     /**
