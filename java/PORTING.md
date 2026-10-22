@@ -168,3 +168,16 @@ powershell -File docker/refharness/check-refharness.ps1  # эталон цел
 - Имена прототипов лежат в message stack игровой фазы, поэтому ProtoDb.protoGetName()
   возвращает 
 ull и найти прототип игрока по имени «Player» пока нечем.
+### Статы игрока в харнессе
+
+- Секция [partyobjects] эталонного харнесса печатает базовые статы игрока:
+  dude-str=5 dude-agi=5 dude-luck=5 (golden 138.txt). Это числа **после**
+  сброса прото игрока: в C++ их ставит _ResetPlayer →
+  protoCritterDataResetStats (src/stat.cc:707, значения из
+  gStatDescriptions[stat].defaultValue), а он живёт в игровой фазе
+  (создание персонажа/новая игра).
+- Порт этот сброс не делает, поэтому Stat.critterGetBaseStat(dude, ...)
+  читает сырое прото из  0000000.pro и возвращает 0. Расхождение
+  зафиксировано вектором в харнессе; чтобы его закрыть, нужно портировать
+  protoCritterDataResetStats (src/stat.cc) и решить, дергать ли его без
+  игровой фазы.

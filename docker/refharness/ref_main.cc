@@ -6905,6 +6905,12 @@ void sectionPartyObjects()
         egg != nullptr ? egg->pid : -999,
         egg != nullptr ? egg->id : -999);
 
+    // The stats of the player come from the proto of the player.
+    std::printf("dude-str=%d dude-agi=%d dude-luck=%d\n",
+        dude != nullptr ? fallout::critterGetBaseStat(dude, fallout::STAT_STRENGTH) : -999,
+        dude != nullptr ? fallout::critterGetBaseStat(dude, fallout::STAT_AGILITY) : -999,
+        dude != nullptr ? fallout::critterGetBaseStat(dude, fallout::STAT_LUCK) : -999);
+
     // Re-adding the dude is a no-op (pid match), not a duplicate.
     int dupRc = dude != nullptr ? fallout::partyMemberAdd(dude) : -99;
     std::printf("dup-add=%d\n", dupRc);
