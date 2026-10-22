@@ -35,8 +35,23 @@ public final class ProtoDb {
 
     static final ProtoTypes.ProtoList[] protoLists = new ProtoTypes.ProtoList[ObjTypes.OBJ_TYPE_COUNT];
 
-    /** Mirror of {@code gDudeProto} (Dude shortcut target; vectors never touch it). */
+    /** Mirror of {@code gDudeProto} (Dude shortcut target). */
     static final Proto dudeProto = new Proto();
+
+    // Port of the {@code gDudeProto} static initializer (src/proto.cc:92):
+    // the proto of the player is not loaded from a file, it is this table.
+    static {
+        dudeProto.pid = ProtoId.ofCritterType(CritterProtoTypeId.Dude).pid();
+        dudeProto.messageId = -1;
+        dudeProto.fid = 0x1000001;
+        dudeProto.flags = ProtoTypes.ProtoFlags.LIGHT_THRU;
+        dudeProto.sid = -1;
+        int[] stats = {
+            5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+            18, 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 23, 0,
+        };
+        System.arraycopy(stats, 0, dudeProto.critter.data.baseStats, 0, stats.length);
+    }
 
     static {
         for (int i = 0; i < protoLists.length; i++) {

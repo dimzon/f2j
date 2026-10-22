@@ -93,5 +93,12 @@ class GameGetDudeTest {
         // The player is the critter proto zero.
         assertEquals(16777216, dude.pid);
         assertEquals(0, ProtoId.ofCritterType(ProtoTypes.CritterProtoTypeId.Dude).protoId());
+
+        // The base stats of the player are the ones of its proto table: the
+        // reference harness prints dude-str=5 dude-agi=5 dude-luck=5 in
+        // [partyobjects] (golden v138.txt).
+        assertEquals(5, Stat.critterGetBaseStat(dude, StatDefs.Stat.STAT_STRENGTH.id()));
+        assertEquals(5, Stat.critterGetBaseStat(dude, StatDefs.Stat.STAT_AGILITY.id()));
+        assertEquals(5, Stat.critterGetBaseStat(dude, StatDefs.Stat.STAT_LUCK.id()));
     }
 }
