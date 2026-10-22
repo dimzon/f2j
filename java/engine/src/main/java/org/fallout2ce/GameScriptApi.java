@@ -72,6 +72,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x80DE, // op_start_gdialog
+        0x80DF, // op_end_gdialog
+        0x80F9, // op_dialogue_system_enter
+        0x811E, // op_gsay_reply
+        0x8120, // op_gsay_message
+        0x8121, // op_giq_option
         0x80E1, // op_metarule3
         0x80E9, // op_set_light_level
         0x80F0, // op_add_timer_event
@@ -1043,6 +1049,62 @@ public class GameScriptApi extends UnsupportedScriptApi {
             }
         }
         return new Program.ProgramValue(0);
+    }
+
+    /**
+     * op_start_gdialog (0x80DE): start a dialog with a critter.
+     *
+     * <p>The dialog needs the dialog system, and the port has no dialog
+     * system yet, so nothing is shown.
+     */
+    @Override
+    public void startGdialog(int a0, Object a1, int a2, int a3, int a4) {
+    }
+
+    /**
+     * op_end_gdialog (0x80DF): end the dialog.
+     *
+     * <p>The port has no dialog system, so nothing is ended.
+     */
+    @Override
+    public void endGdialog() {
+    }
+
+    /**
+     * op_dialogue_system_enter (0x80F9): enter the dialog system.
+     *
+     * <p>The port has no dialog system, so nothing is entered.
+     */
+    @Override
+    public void dialogueSystemEnter() {
+    }
+
+    /**
+     * op_gsay_reply (0x811E): the reply of a dialog.
+     *
+     * <p>The port has no dialog system, so the reply is not shown.
+     */
+    @Override
+    public void gsayReply(int a0, Program.ProgramValue a1) {
+    }
+
+    /**
+     * op_gsay_message (0x8120): a message of a dialog.
+     *
+     * <p>The port has no dialog system, so the message is not shown.
+     */
+    @Override
+    public void gsayMessage(int a0, Program.ProgramValue a1, int a2) {
+    }
+
+    /**
+     * op_giq_option (0x8121): an option of a dialog.
+     *
+     * <p>The port has no dialog system, so the option is not shown.
+     */
+    @Override
+    public void giqOption(int a0, int a1, Program.ProgramValue a2,
+            Program.ProgramValue a3, int a4) {
     }
 
     /**
