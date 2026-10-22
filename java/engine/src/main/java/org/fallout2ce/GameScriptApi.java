@@ -326,10 +326,24 @@ public class GameScriptApi extends UnsupportedScriptApi {
             item = Inventory.critterGetArmor(object);
             break;
         case 1:
-            item = Inventory.critterGetItem2(object);
+            if (object == ObjectSystem.getDude()) {
+                // The player holds the item in the hand the interface has
+                // chosen, and the other hand is empty.
+                item = Interface.interfaceGetCurrentHand() != Inventory.Hand.HAND_LEFT
+                        ? Inventory.critterGetItem2(object)
+                        : null;
+            } else {
+                item = Inventory.critterGetItem2(object);
+            }
             break;
         case 2:
-            item = Inventory.critterGetItem1(object);
+            if (object == ObjectSystem.getDude()) {
+                item = Interface.interfaceGetCurrentHand() == Inventory.Hand.HAND_LEFT
+                        ? Inventory.critterGetItem1(object)
+                        : null;
+            } else {
+                item = Inventory.critterGetItem1(object);
+            }
             break;
         default:
             return new Program.ProgramValue(0);

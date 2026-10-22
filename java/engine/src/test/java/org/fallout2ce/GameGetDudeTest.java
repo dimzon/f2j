@@ -2,6 +2,7 @@ package org.fallout2ce;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -100,5 +101,27 @@ class GameGetDudeTest {
         assertEquals(5, Stat.critterGetBaseStat(dude, StatDefs.Stat.STAT_STRENGTH.id()));
         assertEquals(5, Stat.critterGetBaseStat(dude, StatDefs.Stat.STAT_AGILITY.id()));
         assertEquals(5, Stat.critterGetBaseStat(dude, StatDefs.Stat.STAT_LUCK.id()));
+    }
+
+    @Test
+    void theInventoryOfThePlayer() {
+        assertEquals(0, PartyMembers.partyMembersInit());
+        assertEquals(0, ObjectSystem.objectsInit(new byte[640 * 480], 640, 480, 640));
+        GameObject dude = ObjectSystem.getDude();
+        assertNotNull(dude);
+
+        // A stim in the inventory of the player.
+        GameObject[] stimSlot = new GameObject[1];
+        assertEquals(0, ObjectSystem.objectCreateWithProtoId(stimSlot, ProtoId.ofPid(40)));
+        assertNotNull(stimSlot[0]);
+        assertEquals(0, Item.itemAdd(dude, stimSlot[0], 1));
+
+        // The number of the items the player carries.
+        assertEquals(1, api.critterInvenObj(dude, -2).integerValue);
+
+        // The interface holds the left hand, so the right hand of the player
+        // is empty.
+        assertEquals(Inventory.Hand.HAND_LEFT, Interface.interfaceGetCurrentHand());
+        assertNull(api.critterInvenObj(dude, 1).pointerValue);
     }
 }
