@@ -72,6 +72,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x80E1, // op_metarule3
         0x80E9, // op_set_light_level
         0x80F0, // op_add_timer_event
         0x80F1, // op_rm_timer_event
@@ -1023,6 +1024,25 @@ public class GameScriptApi extends UnsupportedScriptApi {
             object = ObjectSystem.objectFindNextAtLocation();
         }
         return 0;
+    }
+
+    /**
+     * op_metarule3 (0x80E1): a metarule of the game.
+     *
+     * <p>The rule is the number the game gives it, and the parameter is the
+     * number or the object it asks about. The port has no metarules, so the
+     * answer is 0 and the events of a timer are not cleared.
+     */
+    @Override
+    public Program.ProgramValue metarule3(int a0, Program.ProgramValue a1,
+            Program.ProgramValue a2, Program.ProgramValue a3) {
+        if (a0 == 100) {
+            // CLR_FIXED_TIMED_EVENTS: clear the timer events of an object.
+            if (a1.pointerValue instanceof ObjTypes.GameObject) {
+                EventQueue.queueRemoveEvents((ObjTypes.GameObject) a1.pointerValue);
+            }
+        }
+        return new Program.ProgramValue(0);
     }
 
     /**
