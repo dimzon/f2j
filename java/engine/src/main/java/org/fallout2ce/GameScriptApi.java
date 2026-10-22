@@ -74,6 +74,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80F1, // op_rm_timer_event
         0x80F3, // op_has_trait
         0x80F4, // op_destroy_object
+        0x8107, // op_obj_set_light_level
         0x8116, // op_add_mult_objs_to_inven
         0x8117, // op_rm_mult_objs_from_inven
         0x8144, // op_destroy_mult_objs
@@ -857,6 +858,21 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 ? middle + a0 * (max - middle) / 100
                 : min + a0 * (middle - min) / 100;
         Light.lightSetAmbientIntensity(intensity, true);
+    }
+
+    /**
+     * op_obj_set_light_level (0x8107): the light of an object.
+     *
+     * <p>The intensity is a percentage of the full light, and a light of
+     * zero puts the object out.
+     */
+    @Override
+    public void objSetLightLevel(Object a0, int a1, int a2) {
+        if (a0 == null) {
+            return;
+        }
+        ObjectSystem.objectSetLight((ObjTypes.GameObject) a0, a1,
+            a2 != 0 ? (a2 * 65536) / 100 : 0);
     }
 
     /**
