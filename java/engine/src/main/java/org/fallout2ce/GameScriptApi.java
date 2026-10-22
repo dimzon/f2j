@@ -69,6 +69,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
         0x80D9, // op_rm_obj_from_inven
+        0x80E9, // op_set_light_level
         0x80F0, // op_add_timer_event
         0x80F1, // op_rm_timer_event
         0x80F3, // op_has_trait
@@ -834,6 +835,28 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return;
         }
         EventQueue.queueRemoveEvents((ObjTypes.GameObject) a0);
+    }
+
+    /**
+     * op_set_light_level (0x80E9): the ambient light of the map.
+     *
+     * <p>The level is a percentage: 50 is the middle of the range, above it
+     * the light goes up to the top of the range and below it down to the
+     * bottom, the way the original spreads it over the two halves.
+     */
+    @Override
+    public void setLightLevel(int a0) {
+        int min = Light.LIGHT_INTENSITY_MIN;
+        int max = Light.LIGHT_INTENSITY_MAX;
+        int middle = (min + max) / 2;
+        if (a0 == 50) {
+            Light.lightSetAmbientIntensity(middle, true);
+            return;
+        }
+        int intensity = a0 > 50
+                ? middle + a0 * (max - middle) / 100
+                : min + a0 * (middle - min) / 100;
+        Light.lightSetAmbientIntensity(intensity, true);
     }
 
     /**
