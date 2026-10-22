@@ -83,6 +83,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8144, // op_destroy_mult_objs
         0x814C, // op_rotation_to_tile
         0x80CB, // op_set_critter_stat
+        0x80BB, // op_tile_contains_obj_pid
         0x8109, // op_inven_cmds
     };
 
@@ -997,6 +998,29 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public int fixedParam() {
+        return 0;
+    }
+
+    /**
+     * op_tile_contains_obj_pid (0x80BB): whether an object of a proto is on
+     * a tile.
+     *
+     * <p>The proto id is the number the game gives it, and the tile of
+     * "nowhere" has nothing on it.
+     */
+    @Override
+    public int tileContainsObjPid(int a0, int a1, int a2) {
+        if (a2 == -1) {
+            return 0;
+        }
+        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofPid(a0);
+        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtLocation(a1, a2);
+        while (object != null) {
+            if (ProtoTypes.ProtoId.ofGameObject(object).equals(protoId)) {
+                return 1;
+            }
+            object = ObjectSystem.objectFindNextAtLocation();
+        }
         return 0;
     }
 
