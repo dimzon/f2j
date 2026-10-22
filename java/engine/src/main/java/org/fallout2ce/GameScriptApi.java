@@ -71,6 +71,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D9, // op_rm_obj_from_inven
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
+        0x80E3, // op_set_obj_visibility
         0x80E9, // op_set_light_level
         0x80F0, // op_add_timer_event
         0x80F1, // op_rm_timer_event
@@ -927,6 +928,36 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return null;
         }
         return Inventory.inventoryItemByIndex(object, a2);
+    }
+
+    /**
+     * op_set_obj_visibility (0x80E3): show or hide an object.
+     *
+     * <p>A non-zero value hides the object and a zero shows it. Nothing
+     * happens when there is no object at all, and hiding a critter also
+     * makes it not block the way.
+     */
+    @Override
+    public void setObjVisibility(Object a0, int a1) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) a0;
+        if (a1 != 0) {
+            if (obj.flags.and(ObjTypes.ObjectFlags.HIDDEN).equals(ObjTypes.ObjectFlags.NONE)) {
+                if (ProtoId.ofGameObject(obj).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+                    obj.flags = obj.flags.or(ObjTypes.ObjectFlags.NO_BLOCK);
+                }
+                ObjectSystem.objectHide(obj);
+            }
+        } else {
+            if (!obj.flags.and(ObjTypes.ObjectFlags.HIDDEN).equals(ObjTypes.ObjectFlags.NONE)) {
+                if (ProtoId.ofGameObject(obj).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+                    obj.flags = obj.flags.and(ObjTypes.ObjectFlags.NO_BLOCK.not());
+                }
+                ObjectSystem.objectShow(obj);
+            }
+        }
     }
 
     /**
