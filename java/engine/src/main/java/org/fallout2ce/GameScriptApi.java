@@ -84,6 +84,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x814C, // op_rotation_to_tile
         0x80CB, // op_set_critter_stat
         0x80BB, // op_tile_contains_obj_pid
+        0x80F7, // op_fixed_param
         0x8109, // op_inven_cmds
     };
 
