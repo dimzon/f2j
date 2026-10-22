@@ -69,6 +69,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80CA, // op_get_critter_stat
         0x80D8, // op_add_obj_to_inven
         0x80D9, // op_rm_obj_from_inven
+        0x80F0, // op_add_timer_event
+        0x80F1, // op_rm_timer_event
         0x80F3, // op_has_trait
         0x80F4, // op_destroy_object
         0x8116, // op_add_mult_objs_to_inven
@@ -800,6 +802,38 @@ public class GameScriptApi extends UnsupportedScriptApi {
             object = ObjectSystem.objectFindNextAtLocation();
         }
         return null;
+    }
+
+    /**
+     * op_add_timer_event (0x80F0): set a timer event for the script of an
+     * object.
+     *
+     * <p>The event fires after the delay in game ticks and carries the
+     * parameter the script reads back. The original looks the script of the
+     * object up and refuses the event when the script is not there; the port
+     * has no registry of the scripts yet, so the event is always set.
+     */
+    @Override
+    public void addTimerEvent(Object a0, int a1, int a2) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        EventQueue.queueAddEvent(a1, object, new EventQueue.ScriptEvent(object.sid, a2),
+            EventQueue.EventType.SCRIPT);
+    }
+
+    /**
+     * op_rm_timer_event (0x80F1): take the timer events of an object away.
+     *
+     * <p>Nothing happens when there is no object at all.
+     */
+    @Override
+    public void rmTimerEvent(Object a0) {
+        if (a0 == null) {
+            return;
+        }
+        EventQueue.queueRemoveEvents((ObjTypes.GameObject) a0);
     }
 
     /**

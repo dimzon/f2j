@@ -443,6 +443,21 @@ public final class EventQueue {
     }
 
     // 0x4A258C queue_add
+    /**
+     * Port of {@code ScriptEvent} ({@code src/scripts.cc}): the data of a
+     * timer event — the script it belongs to and the parameter the script
+     * reads back when the event fires.
+     */
+    public static final class ScriptEvent {
+        public final int sid;
+        public final int fixedParam;
+
+        public ScriptEvent(int sid, int fixedParam) {
+            this.sid = sid;
+            this.fixedParam = fixedParam;
+        }
+    }
+
     public static int queueAddEvent(int delay, Object owner, Object data, EventType type) {
         QueueListNode newNode = new QueueListNode();
 
