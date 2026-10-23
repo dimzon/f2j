@@ -122,6 +122,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DB, // op_use_obj
         0x813D, // op_sfx_build_char_name
         0x814E, // op_gdialog_set_barter_mod
+        0x80A2, // op_scr_return
+        0x80A8, // op_set_map_start
+        0x80D7, // op_drop_obj
+        0x80F5, // op_obj_can_hear_obj
+        0x80F8, // op_tile_is_visible
+        0x8113, // op_reg_anim_obj_move_to_tile
+        0x8141, // op_sfx_build_weapon_name
+        0x8145, // op_use_obj_on_obj
+        0x8146, // op_endgame_slideshow
+        0x8155, // op_critter_stop_attacking
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2006,6 +2016,112 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void gdialogSetBarterMod(int a0) {
+    }
+
+    /**
+     * op_scr_return (0x80A2): return a value from the script.
+     *
+     * <p>The value is returned to the caller of the script, and the port
+     * has no script registry, so there is no caller.
+     */
+    @Override
+    public void scrReturn(int a0) {
+    }
+
+    /**
+     * op_set_map_start (0x80A8): set the start of a map.
+     *
+     * <p>The start of a map belongs to the map system, and the port has no
+     * map system, so there is no start.
+     */
+    @Override
+    public void setMapStart(int a0, int a1, int a2, int a3) {
+    }
+
+    /**
+     * op_drop_obj (0x80D7): drop an object.
+     *
+     * <p>The drop is played by the animation engine, and the port has no
+     * animation engine, so nothing is dropped.
+     */
+    @Override
+    public void dropObj(Object a0) {
+    }
+
+    /**
+     * op_obj_can_hear_obj (0x80F5): whether one object hears another.
+     *
+     * <p>The port has no perception, so two objects never hear each other:
+     * the original answers the same in its harness, where there is no game.
+     */
+    @Override
+    public int objCanHearObj(Object a0, Object a1) {
+        return 0;
+    }
+
+    /**
+     * op_tile_is_visible (0x80F8): whether a tile is visible.
+     *
+     * <p>The visibility belongs to the render engine, and the port has no
+     * render engine, so no tile is visible.
+     */
+    @Override
+    public int tileIsVisible(int a0) {
+        return 0;
+    }
+
+    /**
+     * op_reg_anim_obj_move_to_tile (0x8113): move an object to a tile with
+     * an animation.
+     *
+     * <p>The animation needs the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void regAnimObjMoveToTile(Object a0, int a1, int a2) {
+    }
+
+    /**
+     * op_sfx_build_weapon_name (0x8141): the name of the sound of a
+     * weapon.
+     *
+     * <p>The names of the sounds belong to the sound engine, and the port
+     * has no sound engine, so there is no name.
+     */
+    @Override
+    public String sfxBuildWeaponName(int a0, Object a1, int a2, Object a3) {
+        return null;
+    }
+
+    /**
+     * op_use_obj_on_obj (0x8145): use one object on another.
+     *
+     * <p>The use needs the action system, and the port has no action
+     * system, so nothing is used.
+     */
+    @Override
+    public void useObjOnObj(Object a0, Object a1) {
+    }
+
+    /**
+     * op_endgame_slideshow (0x8146): play the slideshow of the end of the
+     * game.
+     *
+     * <p>The slideshow is played by the render engine, and the port has no
+     * render engine, so nothing is played.
+     */
+    @Override
+    public void endgameSlideshow() {
+    }
+
+    /**
+     * op_critter_stop_attacking (0x8155): stop a critter attacking.
+     *
+     * <p>The attack belongs to the combat system, and the port has no
+     * combat system, so there is no attack to stop.
+     */
+    @Override
+    public void critterStopAttacking(Object a0) {
     }
 
     /**
