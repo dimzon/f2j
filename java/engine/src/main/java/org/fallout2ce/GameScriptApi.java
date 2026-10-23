@@ -78,6 +78,10 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8151, // op_critter_is_fleeing
         0x80FC, // op_game_time_advance
         0x8147, // op_move_obj_inven_to_obj
+        0x80FA, // op_action_being_used
+        0x8136, // op_gfade_out
+        0x8137, // op_gfade_in
+        0x80EF, // op_critter_damage
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1409,6 +1413,49 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return;
         }
         Item.itemMoveAll((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1);
+    }
+
+    /**
+     * op_action_being_used (0x80FA): the action the script is being used
+     * for.
+     *
+     * <p>The action belongs to the script, and the port has no script
+     * registry, so there is no action, and the original answers -1 for a
+     * program with no script.
+     */
+    @Override
+    public int actionBeingUsed() {
+        return -1;
+    }
+
+    /**
+     * op_gfade_out (0x8136): fade the screen out.
+     *
+     * <p>The fade is drawn by the render engine, and the port has no render
+     * engine, so the screen is not faded.
+     */
+    @Override
+    public void gfadeOut(int a0) {
+    }
+
+    /**
+     * op_gfade_in (0x8137): fade the screen in.
+     *
+     * <p>The fade is drawn by the render engine, and the port has no render
+     * engine, so the screen is not faded.
+     */
+    @Override
+    public void gfadeIn(int a0) {
+    }
+
+    /**
+     * op_critter_damage (0x80EF): damage a critter.
+     *
+     * <p>The damage is given by the combat system, and the port has no
+     * combat system, so there is no damage.
+     */
+    @Override
+    public void critterDamage(Object a0, int a1, int a2) {
     }
 
     /**
