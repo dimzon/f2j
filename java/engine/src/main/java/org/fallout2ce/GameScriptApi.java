@@ -133,6 +133,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8146, // op_endgame_slideshow
         0x8155, // op_critter_stop_attacking
         0x80E4, // op_load_map
+        0x80A9, // op_override_map_start
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2146,6 +2147,31 @@ public class GameScriptApi extends UnsupportedScriptApi {
             transition.tile = -1;
             transition.rotation = Rotation.INVALID;
             Map.mapSetTransition(transition);
+        }
+    }
+
+    /**
+     * op_override_map_start (0x80A9): move the player to the start of the
+     * map.
+     *
+     * <p>The player is moved to the tile of the start, and the center of
+     * the view is moved there as well. The player is the object the game
+     * made with the objects of the game.
+     */
+    @Override
+    public void overrideMapStart(int x, int y, int elevation, int rotation) {
+        ObjTypes.GameObject dude = ObjectSystem.getDude();
+        if (dude == null) {
+            return;
+        }
+        int tile = 200 * y + x;
+        int previousTile = TileMath.gCenterTile;
+        if (tile != -1) {
+            ObjectSystem.objectSetRotation(dude, rotation);
+            if (ObjectSystem.objectSetLocation(dude, tile, elevation) != 0) {
+                ObjectSystem.objectSetLocation(dude, previousTile, elevation);
+            }
+            TileMath.tileSetCenter(tile, TileMath.TILE_SET_CENTER_REFRESH_WINDOW);
         }
     }
 
