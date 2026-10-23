@@ -76,6 +76,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8128, // op_is_in_combat
         0x812D, // op_obj_is_locked
         0x8151, // op_critter_is_fleeing
+        0x80FC, // op_game_time_advance
+        0x8147, // op_move_obj_inven_to_obj
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1375,6 +1377,38 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public int isInCombat() {
         return 0;
+    }
+
+    /**
+     * op_game_time_advance (0x80FC): advance the game's clock.
+     *
+     * <p>The clock is advanced by the ticks, and the events of the queue
+     * that are due are processed after each day and at the end.
+     */
+    @Override
+    public void gameTimeAdvance(int a0) {
+        int days = a0 / GameTime.TICKS_PER_DAY;
+        int remainder = a0 % GameTime.TICKS_PER_DAY;
+        for (int day = 0; day < days; day++) {
+            GameTime.gameTimeAddTicks(GameTime.TICKS_PER_DAY);
+            EventQueue.queueProcessEvents();
+        }
+        GameTime.gameTimeAddTicks(remainder);
+        EventQueue.queueProcessEvents();
+    }
+
+    /**
+     * op_move_obj_inven_to_obj (0x8147): move every item of an object into
+     * the inventory of another one.
+     *
+     * <p>Nothing happens when there is no object at all.
+     */
+    @Override
+    public void moveObjInvenToObj(Object a0, Object a1) {
+        if (a0 == null || a1 == null) {
+            return;
+        }
+        Item.itemMoveAll((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1);
     }
 
     /**
