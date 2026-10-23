@@ -84,6 +84,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80EF, // op_critter_damage
         0x80AE, // op_do_check
         0x810C, // op_anim
+        0x8132, // op_obj_close
+        0x80E8, // op_critter_heal
+        0x8123, // op_get_poison
+        0x8127, // op_critter_injure
+        0x8104, // op_proto_data
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1487,6 +1492,89 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void anim(Object a0, int a1, int a2, Program.ProgramValue a3) {
+    }
+
+    /**
+     * op_obj_close (0x8132): close a door.
+     *
+     * <p>The close is played by the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void objClose(Object a0) {
+    }
+
+    /**
+     * op_critter_heal (0x80E8): heal a critter.
+     *
+     * <p>The hit points of the critter are healed by the amount, and a
+     * critter that is not a critter is not healed.
+     */
+    @Override
+    public int critterHeal(Object a0, int a1) {
+        return Critter.critterAdjustHitPoints((ObjTypes.GameObject) a0, a1);
+    }
+
+    /**
+     * op_get_poison (0x8123): the poison of a critter.
+     *
+     * <p>A critter that is not a critter has no poison, and the original
+     * answers 0 for it.
+     */
+    @Override
+    public int getPoison(Object a0) {
+        if (a0 == null) {
+            return 0;
+        }
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) a0;
+        if (ProtoTypes.ProtoId.ofGameObject(obj).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return 0;
+        }
+        return Critter.critterGetPoison(obj);
+    }
+
+    /**
+     * op_critter_injure (0x8127): injure a critter.
+     *
+     * <p>The injure sets the crippling flags on the critter, and the
+     * reverse clears them instead, the way the original does.
+     */
+    @Override
+    public void critterInjure(Object a0, int a1) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject critter = (ObjTypes.GameObject) a0;
+        boolean reverse = (a1 & ObjTypes.Dam.PERFORM_REVERSE.bits()) != 0;
+        ObjTypes.Dam flags = new ObjTypes.Dam(a1 & ObjTypes.Dam.CRIP.bits());
+        if (reverse) {
+            critter.data.critter.combat.results =
+                critter.data.critter.combat.results.and(flags.not());
+        } else {
+            critter.data.critter.combat.results =
+                critter.data.critter.combat.results.or(flags);
+        }
+    }
+
+    /**
+     * op_proto_data (0x8104): read a member of the proto of an object.
+     *
+     * <p>The member is the number the game gives it, and the answer is the
+     * value of the member, or 0 when the game has no such member.
+     */
+    @Override
+    public Program.ProgramValue protoData(int a0, int a1) {
+        ProtoDefs.ProtoDataMemberValue value = new ProtoDefs.ProtoDataMemberValue();
+        int valueType = ProtoDb.protoGetDataMember(ProtoTypes.ProtoId.ofPid(a0), a1, value);
+        Program.ProgramValue result = new Program.ProgramValue();
+        if (valueType == ProtoDefs.ProtoDataMemberType.PROTO_DATA_MEMBER_TYPE_STRING.id()) {
+            result.opcode = Program.VALUE_TYPE_STRING;
+            result.pointerValue = value.stringValue;
+        } else {
+            result.opcode = Program.VALUE_TYPE_INT;
+            result.integerValue = value.integerValue;
+        }
+        return result;
     }
 
     /**
