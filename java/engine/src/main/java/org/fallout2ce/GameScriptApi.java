@@ -92,6 +92,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80AB, // op_using_skill
         0x8125, // op_party_remove
         0x80E6, // op_set_exit_grids
+        0x80A3, // op_play_sfx
+        0x810F, // op_reg_anim_animate
+        0x8110, // op_reg_anim_animate_reverse
+        0x8111, // op_reg_anim_animate_forever
+        0x8112, // op_reg_anim_play_sfx
+        0x811A, // op_explosion
+        0x811F, // op_gsay_option
+        0x8129, // op_gdialog_barter
+        0x8131, // op_obj_open
+        0x8133, // op_game_ui_disable
+        0x8134, // op_game_ui_enable
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1625,6 +1636,117 @@ public class GameScriptApi extends UnsupportedScriptApi {
             }
             object = ObjectSystem.objectFindNextAtElevation();
         }
+    }
+
+    /**
+     * op_play_sfx (0x80A3): play a sound effect.
+     *
+     * <p>The sound is played by the sound engine, and the port has no sound
+     * engine, so nothing is played.
+     */
+    @Override
+    public void playSfx(String a0) {
+    }
+
+    /**
+     * op_reg_anim_animate (0x810F): play an animation of an object.
+     *
+     * <p>The animation needs the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void regAnimAnimate(Object a0, int a1, int a2) {
+    }
+
+    /**
+     * op_reg_anim_animate_reverse (0x8110): play an animation of an object
+     * backwards.
+     *
+     * <p>The animation needs the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void regAnimAnimateReverse(Object a0, int a1, int a2) {
+    }
+
+    /**
+     * op_reg_anim_animate_forever (0x8111): play an animation of an object
+     * forever.
+     *
+     * <p>The animation needs the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void regAnimAnimateForever(Object a0, int a1) {
+    }
+
+    /**
+     * op_reg_anim_play_sfx (0x8112): play a sound effect with an animation.
+     *
+     * <p>The sound and the animation need their engines, and the port has
+     * neither, so nothing is played.
+     */
+    @Override
+    public void regAnimPlaySfx(Object a0, String a1, int a2) {
+    }
+
+    /**
+     * op_explosion (0x811A): explode at a tile.
+     *
+     * <p>The explosion needs the combat system, and the port has no combat
+     * system, so there is no explosion.
+     */
+    @Override
+    public void explosion(int a0, int a1, int a2) {
+    }
+
+    /**
+     * op_gsay_option (0x811F): an option of a dialog.
+     *
+     * <p>The port has no dialog system, so the option is not shown.
+     */
+    @Override
+    public void gsayOption(int a0, Program.ProgramValue a1,
+            Program.ProgramValue a2, int a3) {
+    }
+
+    /**
+     * op_gdialog_barter (0x8129): start a barter in a dialog.
+     *
+     * <p>The port has no dialog system, so the barter is not started.
+     */
+    @Override
+    public void gdialogBarter(int a0) {
+    }
+
+    /**
+     * op_obj_open (0x8131): open a door.
+     *
+     * <p>The open is played by the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void objOpen(Object a0) {
+    }
+
+    /**
+     * op_game_ui_disable (0x8133): disable the interface of the game.
+     *
+     * <p>The interface belongs to the render engine, and the port has no
+     * render engine, so the interface is not disabled.
+     */
+    @Override
+    public void gameUiDisable() {
+    }
+
+    /**
+     * op_game_ui_enable (0x8134): enable the interface of the game.
+     *
+     * <p>The interface belongs to the render engine, and the port has no
+     * render engine, so the interface is not enabled.
+     */
+    @Override
+    public void gameUiEnable() {
     }
 
     /**
