@@ -127,11 +127,77 @@ public final class MapAreas {
         return null;
     }
 
+    /**
+     * City of a number the game gives, invalid when it is none of them.
+     *
+     * <p>The C cast turns any out-of-range number into an invalid city
+     * value, which the validity checks then refuse; this turns it into
+     * {@link City#CITY_INVALID}, which they refuse the same way.
+     */
+    public static City cityFromInt(int value) {
+        City city = cityOf(value);
+        return city != null ? city : City.CITY_INVALID;
+    }
+
     /** Port of {@code CityState}. */
     public enum CityState {
         CITY_STATE_UNKNOWN,
         CITY_STATE_KNOWN
     }
+
+    /** Port of {@code VisitedState} ({@code src/worldmap.h}). */
+    public enum VisitedState {
+        UNKNOWN(0),
+        KNOWN(1),
+        VISITED(2),
+        KNOWN_FO1(3),
+        INVISIBLE(-66);
+
+        private final int id;
+
+        VisitedState(int id) {
+            this.id = id;
+        }
+
+        public int id() {
+            return id;
+        }
+
+        /** The state of a number the game gives, unknown when it is none of them. */
+        public static VisitedState fromInt(int value) {
+            for (VisitedState state : values()) {
+                if (state.id == value) {
+                    return state;
+                }
+            }
+            return UNKNOWN;
+        }
+    }
+
+    /** WM_TILE_WIDTH: the worldmap tile is 350 world units wide. */
+    static final int WM_TILE_WIDTH = 350;
+
+    /** WM_TILE_HEIGHT: the worldmap tile is 300 world units tall. */
+    static final int WM_TILE_HEIGHT = 300;
+
+    /** WM_VIEW_X: where the mark sits in the worldmap view. */
+    static final int WM_VIEW_X = 22;
+
+    /** WM_VIEW_Y. */
+    static final int WM_VIEW_Y = 21;
+
+    /** SUBTILE_GRID_WIDTH: the subtile grid inside a tile. */
+    static final int SUBTILE_GRID_WIDTH = 7;
+
+    /** SUBTILE_GRID_HEIGHT. */
+    static final int SUBTILE_GRID_HEIGHT = 6;
+
+    // 0x51DDF0 wmMaxTileNum / 0x51DDF4 wmNumHorizontalTiles: the tiles of
+    // the worldmap. The worldmap parse that loads them is not ported, so
+    // they stay zero - the same zero the C statics hold before that parse
+    // runs - and the bounds they gate refuse everything, as they do in C.
+    private static int wmMaxTileNum;
+    private static int wmNumHorizontalTiles;
 
     /** Port of {@code CitySize}. */
     public enum CitySize {
@@ -412,6 +478,208 @@ public final class MapAreas {
         }
 
         return -1;
+    }
+
+    /**
+     * Port of {@code wmMapMarkVisited} (0x4BFB08): mark the area a map
+     * belongs to as visited.
+     *
+     * <p>A map that is not saved is not marked: the original looks and
+     * walks away. A map that no area names is a miss. The marking itself
+     * is {@link #wmAreaMarkVisitedState}, and its answer is not asked for
+     * here, the way the original does not ask.
+     */
+    public static int wmMapMarkVisited(int mapIdx) {
+        if (!MapRegistry.mapIsValid(mapIdx)) {
+            return -1;
+        }
+
+        if (!MapRegistry.wmMapIdxIsSaveable(mapIdx)) {
+            return 0;
+        }
+
+        City[] areaIdxPtr = new City[1];
+        if (wmMatchAreaContainingMapIdx(mapIdx, areaIdxPtr) == -1) {
+            return -1;
+        }
+
+        wmAreaMarkVisited(areaIdxPtr[0]);
+
+        return 0;
+    }
+
+    /**
+     * Port of {@code wmAreaSetVisibleState} (0x4C46CC): set whether an
+     * area is on the worldmap at all. A locked area refuses, unless the
+     * change is forced.
+     */
+    public static boolean wmAreaSetVisibleState(City areaIdx, CityState state, boolean force) {
+        if (!cityIsValid(areaIdx.id())) {
+            return false;
+        }
+
+        CityInfo city = areaInfoList.get(areaIdx.id());
+        if (city.lockState != LockState.LOCK_STATE_LOCKED || force) {
+            city.state = state;
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Port of {@code wmAreaMarkVisited} (0x4C4624): mark an area visited.
+     */
+    public static int wmAreaMarkVisited(City areaIdx) {
+        return wmAreaMarkVisitedState(areaIdx, VisitedState.VISITED) ? 1 : 0;
+    }
+
+    /**
+     * Port of {@code wmAreaMarkVisitedState} (0x4C4634): mark how much the
+     * player knows of an area.
+     *
+     * <p>The state is kept on the city, and the subtile under the city's
+     * mark is looked up first: the marking stops when there is no subtile
+     * there. The subtile grid comes with the worldmap tiles, which the
+     * port does not have, so the coordinates are never valid and the
+     * marking stops for every city - the same place it stops in C before
+     * the worldmap parse runs.
+     */
+    public static boolean wmAreaMarkVisitedState(City areaIdx, VisitedState state) {
+        if (!cityIsValid(areaIdx.id())) {
+            return false;
+        }
+
+        CityInfo city = areaInfoList.get(areaIdx.id());
+        VisitedState oldVisitedState = visitedStateOf(city);
+        boolean noRadius = state == VisitedState.KNOWN_FO1;
+        if (noRadius) {
+            state = VisitedState.KNOWN;
+        }
+
+        int[] markPos = new int[2];
+        wmAreaGetMarkWorldPos(city, markPos);
+
+        if (!wmSubtileCoordsValid(markPos[0], markPos[1])) {
+            return false;
+        }
+
+        if (city.state == CityState.CITY_STATE_KNOWN && state != VisitedState.UNKNOWN) {
+            if (state == VisitedState.VISITED) {
+                wmMarkSubTileRadiusVisited(markPos[0], markPos[1]);
+            } else if (!noRadius) {
+                wmSubTileMarkRadiusKnown(markPos[0], markPos[1], 1);
+            }
+        }
+
+        city.visitedState = state;
+
+        // The subtile's own state goes known with the city in C's Known
+        // branch; there is no subtile to write it to here.
+
+        if (state == VisitedState.VISITED && oldVisitedState == VisitedState.UNKNOWN) {
+            city.visitedState = VisitedState.KNOWN;
+        }
+
+        return true;
+    }
+
+    /**
+     * Port of {@code wmAreaSetWorldPos} (0x4C4710): move an area on the
+     * worldmap.
+     *
+     * <p>The position is checked against the tiles of the worldmap, which
+     * the worldmap parse loads and the port does not have, so every
+     * position is refused - the same refusal C gives before that parse
+     * runs. The x check refuses first, so the division of the y bound is
+     * never reached, exactly as in C.
+     */
+    public static int wmAreaSetWorldPos(City areaIdx, int x, int y) {
+        if (!cityIsValid(areaIdx.id())) {
+            return -1;
+        }
+
+        if (x < 0 || x >= WM_TILE_WIDTH * wmNumHorizontalTiles) {
+            return -1;
+        }
+
+        if (y < 0 || y >= WM_TILE_HEIGHT * (wmMaxTileNum / wmNumHorizontalTiles)) {
+            return -1;
+        }
+
+        CityInfo city = areaInfoList.get(areaIdx.id());
+        city.x = x;
+        city.y = y;
+
+        return 0;
+    }
+
+    /**
+     * The visited state a city holds.
+     *
+     * <p>The slot init leaves the field empty, and the empty field is the
+     * C zero - {@link VisitedState#UNKNOWN}.
+     */
+    private static VisitedState visitedStateOf(CityInfo city) {
+        return city.visitedState instanceof VisitedState
+            ? (VisitedState) city.visitedState
+            : VisitedState.UNKNOWN;
+    }
+
+    /**
+     * Port of {@code wmAreaGetMarkWorldPos}: where the mark of a city sits
+     * in the world, from the city's own position and the half of its size.
+     */
+    private static void wmAreaGetMarkWorldPos(CityInfo city, int[] pos) {
+        int markHalfWidth = WM_VIEW_X;
+        int markHalfHeight = WM_VIEW_Y;
+
+        switch (city.size) {
+        case CITY_SIZE_SMALL:
+            markHalfWidth = 7;
+            markHalfHeight = 6;
+            break;
+        case CITY_SIZE_MEDIUM:
+            markHalfWidth = 12;
+            markHalfHeight = 11;
+            break;
+        default:
+            break;
+        }
+
+        pos[0] = Math.max(city.x + markHalfWidth - WM_VIEW_X, 0);
+        pos[1] = Math.max(city.y + markHalfHeight - WM_VIEW_Y, 0);
+    }
+
+    /**
+     * Port of {@code wmSubtileCoordsValid}: the subtile coordinates are
+     * inside the tiles of the worldmap. The tiles are not loaded (see
+     * {@link #wmNumHorizontalTiles}), so no coordinates are valid yet -
+     * the same false the guard gives in C before the worldmap parse.
+     */
+    private static boolean wmSubtileCoordsValid(int x, int y) {
+        if (wmNumHorizontalTiles <= 0 || wmMaxTileNum <= 0) {
+            return false;
+        }
+
+        return x >= 0
+            && x < SUBTILE_GRID_WIDTH * wmNumHorizontalTiles
+            && y >= 0
+            && y < SUBTILE_GRID_HEIGHT * (wmMaxTileNum / wmNumHorizontalTiles);
+    }
+
+    /**
+     * Seam for {@code wmMarkSubTileRadiusVisited}: the subtile grid is not
+     * ported, so the radius around a visited city is marked nowhere.
+     */
+    private static void wmMarkSubTileRadiusVisited(int x, int y) {
+    }
+
+    /**
+     * Seam for {@code wmSubTileMarkRadiusKnown}: the subtile grid is not
+     * ported, so the radius around a known city is marked nowhere.
+     */
+    private static void wmSubTileMarkRadiusKnown(int x, int y, int radius) {
     }
 
     /** Test seam: fresh-process mirror (empty table). */

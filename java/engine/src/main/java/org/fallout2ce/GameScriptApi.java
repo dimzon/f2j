@@ -138,6 +138,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80EE, // op_kill_critter_type
         0x80A6, // op_get_pc_stat
         0x813C, // op_critter_mod_skill
+        0x80B2, // op_mark_area_known
+        0x80E5, // op_wm_area_set_pos
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2297,6 +2299,51 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 Skill.skillSubForce(dude, skill);
             }
         }
+    }
+
+    /**
+     * op_mark_area_known (0x80B2): mark an area or a map of the worldmap
+     * as known.
+     *
+     * <p>The id names an area or a map, by the switch the script gives.
+     * An area goes on the worldmap - taken off it when the script asks
+     * for the invisible state, put on it as known and marked visited
+     * otherwise. The visited marking is kept the way the worldmap keeps
+     * it: while the worldmap tiles are not ported, the marking stops at
+     * the subtile the original looks up first. A map marks the area it
+     * belongs to, when the map is one the game saves.
+     */
+    @Override
+    public void markAreaKnown(int isMap, int id, int visitedState) {
+        if (isMap == 0) {
+            MapAreas.City city = MapAreas.cityFromInt(id);
+            if (MapAreas.VisitedState.fromInt(visitedState)
+                    == MapAreas.VisitedState.INVISIBLE) {
+                MapAreas.wmAreaSetVisibleState(city,
+                    MapAreas.CityState.CITY_STATE_UNKNOWN, true);
+            } else {
+                MapAreas.wmAreaSetVisibleState(city,
+                    MapAreas.CityState.CITY_STATE_KNOWN, true);
+                MapAreas.wmAreaMarkVisitedState(city,
+                    MapAreas.VisitedState.fromInt(visitedState));
+            }
+        } else if (isMap == 1) {
+            MapAreas.wmMapMarkVisited(id);
+        }
+    }
+
+    /**
+     * op_wm_area_set_pos (0x80E5): move an area on the worldmap.
+     *
+     * <p>The position is checked against the tiles of the worldmap, and
+     * the tiles come with the worldmap parse the port does not have, so
+     * the move is refused for now, the way the original refuses it before
+     * that parse runs. The invalid-parameter error the original prints
+     * for a refusal is not printed: the game's errors are quiet here.
+     */
+    @Override
+    public void wmAreaSetPos(int city, int x, int y) {
+        MapAreas.wmAreaSetWorldPos(MapAreas.cityFromInt(city), x, y);
     }
 
     /**

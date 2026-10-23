@@ -136,4 +136,62 @@ class MapAreasTest {
         Map.gMapHeader.index = WorldmapDefs.ofMap(111);
         assertEquals(47, Map.mapGetLoadedAreaId());
     }
+
+    /**
+     * The area setters of the mark_area_known and wm_area_set_pos
+     * builtins. The worldmap tiles are not ported, so the setters run the
+     * same control flow C runs before its worldmap parse: the visible
+     * state of an unlocked area is written, the world position is refused
+     * by the tile bounds, and the visited marking stops at the subtile
+     * the original looks up first.
+     */
+    @Test
+    void areaSettersRunWithTheTilesUnloaded() {
+        loadAreas();
+
+        MapAreas.City arroyo = MapAreas.City.CITY_ARROYO;
+        assertTrue(MapAreas.wmAreaSetVisibleState(arroyo,
+            MapAreas.CityState.CITY_STATE_KNOWN, true));
+        assertFalse(MapAreas.wmAreaSetVisibleState(MapAreas.City.CITY_INVALID,
+            MapAreas.CityState.CITY_STATE_KNOWN, true));
+
+        // Every position is refused while the tiles are not loaded: the x
+        // bound is zero wide, whatever y would say.
+        assertEquals(-1, MapAreas.wmAreaSetWorldPos(arroyo, 100, 100));
+        assertEquals(-1, MapAreas.wmAreaSetWorldPos(arroyo, -1, 100));
+        assertEquals(-1, MapAreas.wmAreaSetWorldPos(MapAreas.City.CITY_INVALID, 0, 0));
+
+        // The marking stops at the subtile gate, so the city is not marked.
+        assertFalse(MapAreas.wmAreaMarkVisitedState(arroyo, MapAreas.VisitedState.VISITED));
+        assertFalse(MapAreas.wmAreaMarkVisitedState(MapAreas.City.CITY_INVALID,
+            MapAreas.VisitedState.VISITED));
+        assertEquals(0, MapAreas.wmAreaMarkVisited(arroyo));
+    }
+
+    /** The map marking of the mark_area_known builtin, on the real table. */
+    @Test
+    void mapMarkingFollowsTheSaveableGuard() {
+        loadAreas();
+
+        // An invalid map is a miss.
+        assertEquals(-1, MapAreas.wmMapMarkVisited(-1));
+
+        // Map 0 resolves to area 26 but is not saveable, so the guard
+        // walks away without marking anything.
+        assertEquals(0, MapAreas.wmMapMarkVisited(0));
+
+        // A saveable map that an area names goes through to the marking
+        // (which stops at the subtile gate, the same as above).
+        int saveableAndNamed = -1;
+        for (int mapIdx = 0; mapIdx < 151 && saveableAndNamed < 0; mapIdx++) {
+            if (MapRegistry.wmMapIdxIsSaveable(mapIdx)) {
+                MapAreas.City[] area = new MapAreas.City[1];
+                if (MapAreas.wmMatchAreaContainingMapIdx(mapIdx, area) == 0) {
+                    saveableAndNamed = mapIdx;
+                }
+            }
+        }
+        assertTrue(saveableAndNamed >= 0, "no saveable map names an area");
+        assertEquals(0, MapAreas.wmMapMarkVisited(saveableAndNamed));
+    }
 }
