@@ -72,6 +72,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x8118, // op_month
+        0x8138, // op_item_caps_total
+        0x8139, // op_item_caps_adjust
         0x80D0, // op_attack
         0x8143, // op_attack_setup
         0x80B9, // op_script_overrides
@@ -1150,6 +1153,38 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void attackSetup(Object a0, Object a1) {
+    }
+
+    /**
+     * op_month (0x8118): the month of the game's clock.
+     */
+    @Override
+    public int month() {
+        int[] monthOut = new int[1];
+        GameTime.gameTimeGetDate(monthOut, null, null);
+        return monthOut[0];
+    }
+
+    /**
+     * op_item_caps_total (0x8138): how many caps the object carries.
+     */
+    @Override
+    public int itemCapsTotal(Object a0) {
+        if (a0 == null) {
+            return 0;
+        }
+        return Item.itemGetTotalCaps((ObjTypes.GameObject) a0);
+    }
+
+    /**
+     * op_item_caps_adjust (0x8139): add or remove caps of an object.
+     */
+    @Override
+    public int itemCapsAdjust(Object a0, int a1) {
+        if (a0 == null) {
+            return -1;
+        }
+        return Item.itemCapsAdjust((ObjTypes.GameObject) a0, a1);
     }
 
     /**

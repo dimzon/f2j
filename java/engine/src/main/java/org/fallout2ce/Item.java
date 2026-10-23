@@ -261,6 +261,92 @@ public final class Item {
         return slot[0].item.type;
     }
 
+    /**
+     * Port of {@code itemGetTotalCaps} (src/item.cc): the number of caps
+     * the object carries, including the caps inside the containers it
+     * carries.
+     */
+    public static int itemGetTotalCaps(GameObject obj) {
+        int amount = 0;
+        for (ObjTypes.InventoryItem entry : obj.data.inventory.items) {
+            if (ProtoId.ofGameObject(entry.item).matchesItemType(ItemProtoTypeId.Money)) {
+                amount += entry.quantity;
+            } else if (itemGetType(entry.item) == ItemType.ITEM_TYPE_CONTAINER) {
+                amount += itemGetTotalCaps(entry.item);
+            }
+        }
+        return amount;
+    }
+
+    /**
+     * Port of {@code itemCapsAdjust} (src/item.cc): add or remove caps.
+     *
+     * <p>Not more caps are removed than the object has, and the caps are
+     * made when there are none.
+     */
+    public static int itemCapsAdjust(GameObject obj, int amount) {
+        int caps = itemGetTotalCaps(obj);
+        if (amount < 0 && caps < -amount) {
+            return -1;
+        }
+
+        if (amount <= 0 || caps != 0) {
+            List<ObjTypes.InventoryItem> items = obj.data.inventory.items;
+            for (int index = 0; index < items.size() && amount != 0; index++) {
+                ObjTypes.InventoryItem entry = items.get(index);
+                if (ProtoId.ofGameObject(entry.item).matchesItemType(ItemProtoTypeId.Money)) {
+                    if (amount <= 0 && -amount >= entry.quantity) {
+                        ObjectSystem.objectDestroy(entry.item);
+                        amount += entry.quantity;
+                        items.remove(index);
+                        index = -1;
+                    } else {
+                        entry.quantity += amount;
+                        amount = 0;
+                    }
+                }
+            }
+
+            for (int index = 0; index < items.size() && amount != 0; index++) {
+                ObjTypes.InventoryItem entry = items.get(index);
+                if (itemGetType(entry.item) == ItemType.ITEM_TYPE_CONTAINER) {
+                    int capsInContainer = itemGetTotalCaps(entry.item);
+                    if (amount <= 0 || capsInContainer <= 0) {
+                        if (amount < 0) {
+                            if (capsInContainer < -amount) {
+                                if (itemCapsAdjust(entry.item, capsInContainer) == 0) {
+                                    amount += capsInContainer;
+                                }
+                            } else {
+                                if (itemCapsAdjust(entry.item, amount) == 0) {
+                                    amount = 0;
+                                }
+                            }
+                        }
+                    } else {
+                        if (itemCapsAdjust(entry.item, amount) == 0) {
+                            amount = 0;
+                        }
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        GameObject[] slot = new GameObject[1];
+        if (ObjectSystem.objectCreateWithProtoId(slot,
+                ProtoId.ofItemType(ItemProtoTypeId.Money)) == 0) {
+            ObjectSystem.objectDisconnect(slot[0]);
+            if (itemAdd(obj, slot[0], amount) != 0) {
+                ObjectSystem.objectDestroy(slot[0]);
+                return -1;
+            }
+        }
+
+        return 0;
+    }
+
     // item_is_hidden (src/item.cc): proto extended HIDDEN flag, like C++.
     public static boolean itemIsHidden(GameObject item) {
         ProtoId protoId = ProtoId.ofGameObject(item);
