@@ -574,6 +574,53 @@ public final class PartyMembers {
         return 0;
     }
 
+    /**
+     * Port of {@code partyMemberRemove} (src/party_member.cc): take an
+     * object out of the party.
+     */
+    public static int partyMemberRemove(GameObject object) {
+        if (partyMembersLength == 0) {
+            return -1;
+        }
+
+        if (object == null) {
+            return -1;
+        }
+
+        int index;
+        for (index = 1; index < partyMembersLength; index++) {
+            PartyMemberListItem partyMember = partyMembers.get(index);
+            if (partyMember.object == object) {
+                break;
+            }
+        }
+
+        if (index == partyMembersLength) {
+            return -1;
+        }
+
+        if (partyStatePrepped != 0) {
+            Debug.print("\npartyMemberRemove DENIED: %s\n", object);
+            return -1;
+        }
+
+        if (index < partyMembersLength - 1) {
+            partyMembers.get(index).object = partyMembers.get(partyMembersLength - 1).object;
+        }
+
+        object.flags = object.flags.and(ObjectFlags.NO_REMOVE.not())
+                .and(ObjectFlags.NO_SAVE.not());
+
+        partyMembersLength--;
+
+        EventQueue.queueRemoveEventsByType(object, EventQueue.EventType.SCRIPT);
+
+        // _gdialogActive() is false headless (dialog unported), so the
+        // speaker/status tail is dormant.
+
+        return 0;
+    }
+
     /** Test seam: parsed description count. */
     static int descriptionCount() {
         return descriptionsLength;

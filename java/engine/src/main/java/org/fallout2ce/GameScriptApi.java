@@ -89,6 +89,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8123, // op_get_poison
         0x8127, // op_critter_injure
         0x8104, // op_proto_data
+        0x80AB, // op_using_skill
+        0x8125, // op_party_remove
+        0x80E6, // op_set_exit_grids
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1575,6 +1578,53 @@ public class GameScriptApi extends UnsupportedScriptApi {
             result.integerValue = value.integerValue;
         }
         return result;
+    }
+
+    /**
+     * op_using_skill (0x80AB): whether the player is using a skill.
+     *
+     * <p>Only the sneaking skill of the player is asked, and the sneaking
+     * state belongs to the game phase, so the player is never sneaking.
+     */
+    @Override
+    public int usingSkill(Object a0, int a1) {
+        if (a1 == SkillDefs.Skill.SKILL_SNEAK.id() && a0 == ObjectSystem.getDude()) {
+            return Critter.dudeHasState(Critter.DUDE_STATE_SNEAKING) ? 1 : 0;
+        }
+        return 0;
+    }
+
+    /**
+     * op_party_remove (0x8125): take an object out of the party.
+     *
+     * <p>Nothing happens when there is no object at all.
+     */
+    @Override
+    public void partyRemove(Object a0) {
+        if (a0 == null) {
+            return;
+        }
+        PartyMembers.partyMemberRemove((ObjTypes.GameObject) a0);
+    }
+
+    /**
+     * op_set_exit_grids (0x80E6): set the destination of the exit grids of
+     * an elevation.
+     *
+     * <p>The exit grids of the elevation get the destination, the way the
+     * original does.
+     */
+    @Override
+    public void setExitGrids(int a0, int a1, int a2, int a3, int a4) {
+        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtElevation(a0);
+        while (object != null) {
+            if (ProtoDefs.isExitGridProtoId(ProtoTypes.ProtoId.ofGameObject(object))) {
+                object.data.misc.map = WorldmapDefs.ofMap(a1);
+                object.data.misc.tile = a3;
+                object.data.misc.elevation = a2;
+            }
+            object = ObjectSystem.objectFindNextAtElevation();
+        }
     }
 
     /**
