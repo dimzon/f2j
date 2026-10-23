@@ -72,6 +72,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x812E, // op_obj_lock
+        0x812F, // op_obj_unlock
+        0x8130, // op_obj_is_open
         0x80DA, // op_wield_obj_critter
         0x8118, // op_month
         0x8138, // op_item_caps_total
@@ -1211,6 +1214,59 @@ public class GameScriptApi extends UnsupportedScriptApi {
             hand = Inventory.Hand.HAND_LEFT;
         }
         Inventory.inventoryEquipFunc(critter, (ObjTypes.GameObject) a1, hand, false);
+    }
+
+    /**
+     * op_obj_lock (0x812E): lock a container or a door.
+     *
+     * <p>Only a container or a door can be locked, and nothing happens for
+     * the other kinds of objects.
+     */
+    @Override
+    public void objLock(Object a0) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
+            object.data.flags |= ObjTypes.CONTAINER_FLAG_LOCKED;
+        } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
+            object.data.scenery.door.openFlags |= ObjTypes.DOOR_FLAG_LOCKED;
+        }
+    }
+
+    /**
+     * op_obj_unlock (0x812F): unlock a container or a door.
+     *
+     * <p>Only a container or a door can be unlocked, and nothing happens for
+     * the other kinds of objects.
+     */
+    @Override
+    public void objUnlock(Object a0) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
+            object.data.flags &= ~ObjTypes.CONTAINER_FLAG_LOCKED;
+        } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
+            object.data.scenery.door.openFlags &= ~ObjTypes.DOOR_FLAG_LOCKED;
+        }
+    }
+
+    /**
+     * op_obj_is_open (0x8130): whether a door is open.
+     *
+     * <p>A door is open when its frame is not the first one.
+     */
+    @Override
+    public int objIsOpen(Object a0) {
+        if (a0 == null) {
+            return 0;
+        }
+        return ((ObjTypes.GameObject) a0).frame != 0 ? 1 : 0;
     }
 
     /**
