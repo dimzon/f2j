@@ -71,6 +71,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D9, // op_rm_obj_from_inven
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
+        0x80B6, // op_move_to
+        0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
         0x812F, // op_obj_unlock
@@ -1267,6 +1269,39 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return 0;
         }
         return ((ObjTypes.GameObject) a0).frame != 0 ? 1 : 0;
+    }
+
+    /**
+     * op_move_to (0x80B6): move an object to a tile.
+     *
+     * <p>The new tile of the object is the answer, and the tile of
+     * "nowhere" has no tile to move to.
+     */
+    @Override
+    public int moveTo(Object a0, int a1, int a2) {
+        if (a0 == null) {
+            return -1;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        int newTile = ObjectSystem.objectSetLocation(object, a1, a2);
+        if (newTile != -1 && object == ObjectSystem.getDude()) {
+            TileMath.tileSetCenter(object.tile,
+                TileMath.TILE_SET_CENTER_REFRESH_WINDOW);
+        }
+        return newTile;
+    }
+
+    /**
+     * op_obj_being_used_with (0x80C0): the object the script is being used
+     * with.
+     *
+     * <p>The object is the one the script is used with, and the port has no
+     * script registry, so there is no such object: the original answers the
+     * same in its harness.
+     */
+    @Override
+    public Object objBeingUsedWith() {
+        return null;
     }
 
     /**
