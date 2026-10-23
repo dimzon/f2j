@@ -96,8 +96,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80A3, // op_play_sfx
         0x810F, // op_reg_anim_animate
         0x8110, // op_reg_anim_animate_reverse
-        0x8111, // op_reg_anim_animate_forever
-        0x8112, // op_reg_anim_play_sfx
+        0x8126, // op_reg_anim_animate_forever
+        0x813B, // op_reg_anim_play_sfx
         0x811A, // op_explosion
         0x811F, // op_gsay_option
         0x8129, // op_gdialog_barter
@@ -1699,7 +1699,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
     }
 
     /**
-     * op_reg_anim_animate_forever (0x8111): play an animation of an object
+     * op_reg_anim_animate_forever (0x8126): play an animation of an object
      * forever.
      *
      * <p>The animation needs the animation engine, and the port has no
@@ -1710,7 +1710,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
     }
 
     /**
-     * op_reg_anim_play_sfx (0x8112): play a sound effect with an animation.
+     * op_reg_anim_play_sfx (0x813B): play a sound effect with an animation.
      *
      * <p>The sound and the animation need their engines, and the port has
      * neither, so nothing is played.
