@@ -1,5 +1,7 @@
 package org.fallout2ce;
 
+import java.nio.charset.StandardCharsets;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -819,17 +821,16 @@ public abstract class ScriptBase implements Export.StringHeap {
      * <p>The name is on the stack in the VM, and the original reads it out
      * of the script's identifiers. The compiled code knows the name when
      * it is written, so the name is a constant there.
+     *
+     * <p>A stored string comes back the way the original brings it back:
+     * re-interned into this script's own heap, with the kind it was
+     * stored as.
      */
     protected final void fetchExternal(String identifier) {
         Program.ProgramValue value = new Program.ProgramValue();
         if (Export.getValue(this, identifier, value) != 0) {
             throw new FatalError(
                 "External variable " + identifier + " does not exist");
-        }
-        if (value.opcode == Program.VALUE_TYPE_DYNAMIC_STRING) {
-            // The script's own heap holds its strings, and they are not
-            // the dynamic kind.
-            value.opcode = Program.VALUE_TYPE_STRING;
         }
         pushValue(value);
     }
@@ -865,21 +866,107 @@ public abstract class ScriptBase implements Export.StringHeap {
     /** The script's static strings, as the file has them. */
     private final String staticStrings;
 
-    /** The strings the script made, by the offset it gave them. */
-    private final List<String> dynamicStrings = new ArrayList<>();
+    /**
+     * The strings the script made, as the VM keeps them.
+     *
+     * <p>A block heap, null until the first string is made: the same
+     * layout the VM's {@code dynamicStrings} has, so that the offsets the
+     * two hand out are the same.
+     */
+    private byte[] dynamicStrings;
 
-    /** Adds a string to the heap and returns its offset. */
+    /**
+     * Adds a string to the heap and returns its offset.
+     *
+     * <p>A mirror of the VM's {@code programPushString} (0x467A80), the
+     * same block math block for block: the even alignment, the
+     * truncation at 32766, the walk that hands back the offset of an
+     * equal string that is already there, the reuse of a free block, and
+     * the append past the 0x8000 terminator. The VM's version is in
+     * {@link Program#programPushString}; this one is its twin for the
+     * compiled code, the way the opcode handlers above are twins of the
+     * VM's handlers.
+     */
     protected final int intern(String value) {
-        dynamicStrings.add(value);
-        return dynamicStrings.size() - 1;
+        byte[] src = value.getBytes(StandardCharsets.ISO_8859_1);
+        int bufferLength = src.length + 1;
+        if ((bufferLength & 1) != 0) {
+            bufferLength++;
+        }
+        if (bufferLength > Program.DYNAMIC_STRINGS_MAX_BLOCK_SIZE) {
+            bufferLength = Program.DYNAMIC_STRINGS_MAX_BLOCK_SIZE;
+        }
+
+        if (dynamicStrings != null) {
+            byte[] heap = dynamicStrings;
+            int h = 4;
+            while (Program.getUint16Le(heap, h) != 0x8000) {
+                short blockLength = Program.getInt16Le(heap, h);
+                if (blockLength >= 0) {
+                    if (blockLength == bufferLength
+                            && Program.readCString(heap, h + 4)
+                                .equals(new String(src, StandardCharsets.ISO_8859_1))) {
+                        return h;
+                    }
+                } else {
+                    int freeLength = -blockLength;
+                    if (freeLength > bufferLength) {
+                        if (freeLength - bufferLength <= 4) {
+                            Program.putInt16Le(heap, h, (short) freeLength);
+                        } else {
+                            Program.putInt16Le(heap, h + bufferLength + 4,
+                                (short) (-(freeLength - bufferLength - 4)));
+                            Program.putInt16Le(heap, h + bufferLength + 6, (short) 0);
+                            Program.putInt16Le(heap, h, (short) bufferLength);
+                        }
+                        Program.putInt16Le(heap, h + 2, (short) 0);
+                        Program.writeHeapString(heap, h + 4, src, bufferLength);
+                        heap[h + bufferLength + 3] = 0;
+                        return h;
+                    }
+                }
+                h += Math.abs(blockLength) + 4;
+            }
+        } else {
+            dynamicStrings = new byte[8];
+            Program.putInt32Le(dynamicStrings, 0, 0);
+            Program.putUint16Le(dynamicStrings, 4, 0x8000);
+            Program.putInt16Le(dynamicStrings, 6, (short) 1);
+        }
+
+        int used = Program.getInt32Le(dynamicStrings, 0);
+        byte[] grown = new byte[used + 8 + 4 + bufferLength];
+        System.arraycopy(dynamicStrings, 0, grown, 0, dynamicStrings.length);
+        dynamicStrings = grown;
+
+        int newBlock = used + 4;
+        if (Program.getUint16Le(dynamicStrings, newBlock) != 0x8000) {
+            throw new IllegalStateException("Internal consistency error, string table mangled");
+        }
+
+        Program.putInt32Le(dynamicStrings, 0, used + bufferLength + 4);
+        Program.putInt16Le(dynamicStrings, newBlock, (short) bufferLength);
+        Program.putInt16Le(dynamicStrings, newBlock + 2, (short) 0);
+        Program.writeHeapString(dynamicStrings, newBlock + 4, src, bufferLength);
+
+        int newTerminator = newBlock + bufferLength;
+        dynamicStrings[newTerminator + 3] = 0;
+        Program.putUint16Le(dynamicStrings, newTerminator + 4, 0x8000);
+        Program.putInt16Le(dynamicStrings, newTerminator + 6, (short) 1);
+
+        return newBlock;
     }
 
-    /** The string at an offset of the script's own heap. */
+    /**
+     * The string at an offset of the script's own heap, the way the VM
+     * reads one: past the 4-byte header of the heap, at the block the
+     * offset names.
+     */
     protected final String dynamicStringAt(int offset) {
-        if (offset < 0 || offset >= dynamicStrings.size()) {
+        if (dynamicStrings == null || offset < 0) {
             return null;
         }
-        return dynamicStrings.get(offset);
+        return Program.readCString(dynamicStrings, 4 + offset);
     }
 
     /** The static string at an offset of the file's table. */

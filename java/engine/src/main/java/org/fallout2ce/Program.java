@@ -2774,34 +2774,36 @@ public class Program implements Export.StringHeap {
         return newBlock;
     }
 
-    // --- Little-endian heap accessors (C derefs native LE shorts/ints). ---
+    // --- Little-endian heap accessors (C derefs native LE shorts/ints).
+    // Package-visible: the compiled script's own heap twin (ScriptBase)
+    // reads and writes its blocks with the same ones. ---
 
-    private static short getInt16Le(byte[] data, int pos) {
+    static short getInt16Le(byte[] data, int pos) {
         return (short) ((data[pos] & 0xFF) | ((data[pos + 1] & 0xFF) << 8));
     }
 
-    private static int getUint16Le(byte[] data, int pos) {
+    static int getUint16Le(byte[] data, int pos) {
         return (data[pos] & 0xFF) | ((data[pos + 1] & 0xFF) << 8);
     }
 
-    private static void putInt16Le(byte[] data, int pos, short value) {
+    static void putInt16Le(byte[] data, int pos, short value) {
         data[pos] = (byte) (value & 0xFF);
         data[pos + 1] = (byte) ((value >> 8) & 0xFF);
     }
 
-    private static void putUint16Le(byte[] data, int pos, int value) {
+    static void putUint16Le(byte[] data, int pos, int value) {
         data[pos] = (byte) (value & 0xFF);
         data[pos + 1] = (byte) ((value >> 8) & 0xFF);
     }
 
-    private static int getInt32Le(byte[] data, int pos) {
+    static int getInt32Le(byte[] data, int pos) {
         return (data[pos] & 0xFF)
                 | ((data[pos + 1] & 0xFF) << 8)
                 | ((data[pos + 2] & 0xFF) << 16)
                 | ((data[pos + 3] & 0xFF) << 24);
     }
 
-    private static void putInt32Le(byte[] data, int pos, int value) {
+    static void putInt32Le(byte[] data, int pos, int value) {
         data[pos] = (byte) (value & 0xFF);
         data[pos + 1] = (byte) ((value >> 8) & 0xFF);
         data[pos + 2] = (byte) ((value >> 16) & 0xFF);
@@ -2809,7 +2811,7 @@ public class Program implements Export.StringHeap {
     }
 
     // NUL-terminated bytes decoded as Latin-1 (C char semantics for ASCII vectors).
-    private static String readCString(byte[] data, int pos) {
+    static String readCString(byte[] data, int pos) {
         int end = pos;
         while (end < data.length && data[end] != 0) {
             end++;
@@ -2819,7 +2821,7 @@ public class Program implements Export.StringHeap {
 
     // C strncpy(heap, string, bufferLength - 1) + NUL at [bufferLength - 1],
     // zero-padding a reused free block (fresh blocks are already zero).
-    private static void writeHeapString(byte[] heap, int pos, byte[] src, int bufferLength) {
+    static void writeHeapString(byte[] heap, int pos, byte[] src, int bufferLength) {
         int copyLength = Math.min(src.length, bufferLength - 1);
         System.arraycopy(src, 0, heap, pos, copyLength);
         for (int i = pos + copyLength; i < pos + bufferLength; i++) {

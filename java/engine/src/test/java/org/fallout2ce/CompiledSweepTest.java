@@ -17,15 +17,10 @@ import org.junit.jupiter.api.Test;
  * through the compiled code, both against a mock. The two must make the same
  * calls to the game and leave the same stack behind.
  *
- * <p>Three scripts are known to differ, and the reasons are in the notes of
+ * <p>One script is known to differ, and the reason is in the notes of
  * the port:
  *
  * <ul>
- * <li>{@code HUNTER.int} and {@code ROMERO.int} hand a string to the game.
- * The interpreter gives it an offset in its own heap, and the compiled code
- * gives it an offset in the heap of the script. The values are the same, the
- * offsets are not.
- *
  * <li>{@code KRUPPER.int} returns to an address that is not the return
  * address of the call. The interpreter jumps there; the compiled code has no
  * way to jump to an address it does not know when it is written.
@@ -35,9 +30,7 @@ class CompiledSweepTest {
 
     /** The scripts that are known to differ, and why. */
     private static final List<String> KNOWN = List.of(
-        "scripts\\HUNTER.int",
-        "scripts\\KRUPPER.int",
-        "scripts\\ROMERO.int");
+        "scripts\\KRUPPER.int");
 
     /** A run of a script. */
     private static final class Run {
