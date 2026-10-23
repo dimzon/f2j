@@ -82,6 +82,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8136, // op_gfade_out
         0x8137, // op_gfade_in
         0x80EF, // op_critter_damage
+        0x80AE, // op_do_check
+        0x810C, // op_anim
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1456,6 +1458,35 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void critterDamage(Object a0, int a1, int a2) {
+    }
+
+    /**
+     * op_do_check (0x80AE): roll a primary stat of a critter.
+     *
+     * <p>The roll is the number the game gives it: a critical failure is
+     * zero, a failure is one, a success is two and a critical success is
+     * three. Only the six primary stats can be rolled, and a critter that
+     * is not there has no roll at all.
+     */
+    @Override
+    public int doCheck(Object a0, int a1, int a2) {
+        if (a0 == null) {
+            return 0;
+        }
+        if (a1 < 0 || a1 > StatDefs.Stat.STAT_LUCK.id()) {
+            return 0;
+        }
+        return Stat.statRoll((ObjTypes.GameObject) a0, a1, a2, new int[1]).ordinal();
+    }
+
+    /**
+     * op_anim (0x810C): play an animation of an object.
+     *
+     * <p>The animation needs the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void anim(Object a0, int a1, int a2, Program.ProgramValue a3) {
     }
 
     /**
