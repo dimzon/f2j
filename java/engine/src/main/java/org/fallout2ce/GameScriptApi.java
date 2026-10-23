@@ -72,6 +72,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x810E, // op_reg_anim_func
         0x80DE, // op_start_gdialog
         0x80DF, // op_end_gdialog
         0x80F9, // op_dialogue_system_enter
@@ -1105,6 +1106,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public void giqOption(int a0, int a1, Program.ProgramValue a2,
             Program.ProgramValue a3, int a4) {
+    }
+
+    /**
+     * op_reg_anim_func (0x810E): begin, clear or end an animation.
+     *
+     * <p>The animation needs the animation queue, and the port has no
+     * animation queue yet, so nothing is registered.
+     */
+    @Override
+    public void regAnimFunc(int a0, Program.ProgramValue a1) {
     }
 
     /**
