@@ -136,6 +136,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80A9, // op_override_map_start
         0x810B, // op_metarule
         0x80EE, // op_kill_critter_type
+        0x80A6, // op_get_pc_stat
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2239,6 +2240,20 @@ public class GameScriptApi extends UnsupportedScriptApi {
             }
             object = ObjectSystem.objectFindNext();
         }
+    }
+
+    /**
+     * op_get_pc_stat (0x80A6): a stat of the player as a character.
+     *
+     * <p>The stat is the number the game gives it - the unspent skill
+     * points, the level, the experience, the reputation or the karma -
+     * and the answer is the one the stat engine keeps. The values start
+     * at the defaults of a fresh game; the character screens of the game
+     * phase are what changes them.
+     */
+    @Override
+    public int getPcStat(int pcStat) {
+        return Stat.pcGetStat(pcStat);
     }
 
     /**
