@@ -133,8 +133,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * range.
      */
     @Override
-    public int random(int a0, int a1) {
-        return GameRandom.randomBetween(a0, a1);
+    public int random(int min, int max) {
+        return GameRandom.randomBetween(min, max);
     }
 
     /**
@@ -143,9 +143,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>A variable the map does not have answers -1.
      */
     @Override
-    public Program.ProgramValue getMapVar(int a0) {
+    public Program.ProgramValue getMapVar(int variable) {
         MapVars.ProgramValue value = new MapVars.ProgramValue();
-        if (MapVars.mapGetGlobalVar(a0, value) == -1) {
+        if (MapVars.mapGetGlobalVar(variable, value) == -1) {
             value.opcode = MapVars.VALUE_TYPE_INT;
             value.integerValue = -1;
         }
@@ -156,13 +156,13 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * op_set_map_var (0x80C4): write one of the map's variables.
      */
     @Override
-    public void setMapVar(int a0, Program.ProgramValue a1) {
-        MapVars.ProgramValue value = new MapVars.ProgramValue();
-        value.opcode = a1.opcode;
-        value.integerValue = a1.integerValue;
-        value.floatValue = a1.floatValue;
-        value.pointerValue = a1.pointerValue;
-        MapVars.mapSetGlobalVar(a0, value);
+    public void setMapVar(int variable, Program.ProgramValue value) {
+        MapVars.ProgramValue mapValue = new MapVars.ProgramValue();
+        mapValue.opcode = value.opcode;
+        mapValue.integerValue = value.integerValue;
+        mapValue.floatValue = value.floatValue;
+        mapValue.pointerValue = value.pointerValue;
+        MapVars.mapSetGlobalVar(variable, mapValue);
     }
 
     /**
@@ -172,8 +172,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * of ticks is no ticks at all.
      */
     @Override
-    public int gameTicks(int a0) {
-        int ticks = a0 < 0 ? 0 : a0;
+    public int gameTicks(int seconds) {
+        int ticks = seconds < 0 ? 0 : seconds;
         return ticks * 10;
     }
 
@@ -200,9 +200,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * there, and the elevation of nothing is zero.
      */
     @Override
-    public int elevation(Object a0) {
-        if (a0 instanceof ObjTypes.GameObject object) {
-            return object.elevation;
+    public int elevation(Object object) {
+        if (object instanceof ObjTypes.GameObject obj) {
+            return obj.elevation;
         }
         return 0;
     }
@@ -463,8 +463,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * on the grid has no distance at all.
      */
     @Override
-    public int tileDistance(int a0, int a1) {
-        return TileMath.tileDistanceBetween(a0, a1);
+    public int tileDistance(int tile1, int tile2) {
+        return TileMath.tileDistanceBetween(tile1, tile2);
     }
 
     /**
@@ -475,17 +475,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * distance; the rest are as far apart as the grid allows.
      */
     @Override
-    public int tileDistanceObjs(Object a0, Object a1) {
-        if (a0 == null || a1 == null) {
+    public int tileDistanceObjs(Object first, Object second) {
+        if (first == null || second == null) {
             return TileMath.TILE_MAX_DISTANCE;
         }
 
-        ObjTypes.GameObject first = (ObjTypes.GameObject) a0;
-        ObjTypes.GameObject second = (ObjTypes.GameObject) a1;
-        if (first.elevation != second.elevation) {
+        ObjTypes.GameObject objFirst = (ObjTypes.GameObject) first;
+        ObjTypes.GameObject objSecond = (ObjTypes.GameObject) second;
+        if (objFirst.elevation != objSecond.elevation) {
             return TileMath.TILE_MAX_DISTANCE;
         }
-        return TileMath.tileDistanceBetween(first.tile, second.tile);
+        return TileMath.tileDistanceBetween(objFirst.tile, objSecond.tile);
     }
 
     /**
@@ -496,11 +496,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the edge of the grid has nowhere to go.
      */
     @Override
-    public int tileNumInDirection(int a0, int a1, int a2) {
-        if (!Rotation.isValid(a1)) {
-            return a0;
+    public int tileNumInDirection(int tile, int rotation, int distance) {
+        if (!Rotation.isValid(rotation)) {
+            return tile;
         }
-        return TileMath.tileGetTileInDirection(a0, Rotation.fromInt(a1), a2);
+        return TileMath.tileGetTileInDirection(tile, Rotation.fromInt(rotation), distance);
     }
 
     /**
@@ -510,11 +510,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * answers the invalid type for it.
      */
     @Override
-    public int itemSubtype(Object a0) {
-        if (a0 == null) {
+    public int itemSubtype(Object object) {
+        if (object == null) {
             return ProtoTypes.ItemType.ITEM_TYPE_INVALID.id();
         }
-        ObjTypes.GameObject item = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject item = (ObjTypes.GameObject) object;
         ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofGameObject(item);
         if (protoId.objectType() != ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
             return ProtoTypes.ItemType.ITEM_TYPE_INVALID.id();
@@ -534,11 +534,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * object that is attached to something else is not taken.
      */
     @Override
-    public void addObjToInven(Object a0, Object a1) {
-        if (a0 == null || a1 == null) {
+    public void addObjToInven(Object owner, Object item) {
+        if (owner == null || item == null) {
             return;
         }
-        Item.itemAdd((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, 1);
+        Item.itemAdd((ObjTypes.GameObject) owner, (ObjTypes.GameObject) item, 1);
     }
 
     /**
@@ -548,11 +548,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>Nothing happens when there is no owner or no object at all.
      */
     @Override
-    public void rmObjFromInven(Object a0, Object a1) {
-        if (a0 == null || a1 == null) {
+    public void rmObjFromInven(Object owner, Object item) {
+        if (owner == null || item == null) {
             return;
         }
-        Item.itemRemove((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, 1);
+        Item.itemRemove((ObjTypes.GameObject) owner, (ObjTypes.GameObject) item, 1);
     }
 
     /**
@@ -562,8 +562,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The direction is the number the game gives it: north-east is zero.
      */
     @Override
-    public int rotationToTile(int a0, int a1) {
-        return TileMath.tileGetRotationTo(a0, a1).value();
+    public int rotationToTile(int tile1, int tile2) {
+        return TileMath.tileGetRotationTo(tile1, tile2).value();
     }
 
     /**
@@ -575,17 +575,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the object is put on the tile zero when there is no tile.
      */
     @Override
-    public Object createObject(int a0, int a1, int a2, int a3) {
-        if (a0 == 0) {
+    public Object createObject(int protoId, int tile, int elevation, int sid) {
+        if (protoId == 0) {
             return null;
         }
         ObjTypes.GameObject[] slot = new ObjTypes.GameObject[1];
-        if (ObjectSystem.objectCreateWithProtoId(slot, ProtoTypes.ProtoId.ofPid(a0)) == -1) {
+        if (ObjectSystem.objectCreateWithProtoId(slot, ProtoTypes.ProtoId.ofPid(protoId)) == -1) {
             return null;
         }
         ObjTypes.GameObject object = slot[0];
-        object.sid = a3;
-        ObjectSystem.objectSetLocation(object, a1 == -1 ? 0 : a1, a2);
+        object.sid = sid;
+        ObjectSystem.objectSetLocation(object, tile == -1 ? 0 : tile, elevation);
         return object;
     }
 
@@ -595,11 +595,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>Nothing happens when there is no object at all.
      */
     @Override
-    public void destroyObject(Object a0) {
-        if (a0 == null) {
+    public void destroyObject(Object object) {
+        if (object == null) {
             return;
         }
-        ObjectSystem.objectDestroy((ObjTypes.GameObject) a0);
+        ObjectSystem.objectDestroy((ObjTypes.GameObject) object);
     }
 
     /**
@@ -609,7 +609,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * game phase yet, so the name of an object is not known.
      */
     @Override
-    public String objName(Object a0) {
+    public String objName(Object object) {
         return null;
     }
 
@@ -621,11 +621,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * and nothing is put in when there is no owner or no object at all.
      */
     @Override
-    public void addMultObjsToInven(Object a0, Object a1, int a2) {
-        if (a0 == null || a1 == null) {
+    public void addMultObjsToInven(Object owner, Object item, int count) {
+        if (owner == null || item == null) {
             return;
         }
-        Item.itemAdd((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1, a2 < 0 ? 1 : a2);
+        Item.itemAdd((ObjTypes.GameObject) owner, (ObjTypes.GameObject) item, count < 0 ? 1 : count);
     }
 
     /**
@@ -636,18 +636,18 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * is taken when there is no owner or no object at all.
      */
     @Override
-    public int rmMultObjsFromInven(Object a0, Object a1, int a2) {
-        if (a0 == null || a1 == null) {
+    public int rmMultObjsFromInven(Object owner, Object item, int count) {
+        if (owner == null || item == null) {
             return 0;
         }
-        ObjTypes.GameObject owner = (ObjTypes.GameObject) a0;
-        ObjTypes.GameObject item = (ObjTypes.GameObject) a1;
-        int quantity = Item.itemGetQuantity(owner, item);
-        if (quantity > a2) {
-            quantity = a2;
+        ObjTypes.GameObject objOwner = (ObjTypes.GameObject) owner;
+        ObjTypes.GameObject objItem = (ObjTypes.GameObject) item;
+        int quantity = Item.itemGetQuantity(objOwner, objItem);
+        if (quantity > count) {
+            quantity = count;
         }
         if (quantity != 0) {
-            Item.itemRemoveWithReason(owner, item, quantity,
+            Item.itemRemoveWithReason(objOwner, objItem, quantity,
                 Item.RemoveInventoryObjectHookReason.ITEM_REMOVED_MULTI, null);
         }
         return quantity;
@@ -660,24 +660,24 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the objects that were destroyed is the answer.
      */
     @Override
-    public int destroyMultObjs(Object a0, int a1) {
-        if (a0 == null) {
+    public int destroyMultObjs(Object object, int count) {
+        if (object == null) {
             return 0;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
         int destroyed = 0;
-        if (object.owner != null) {
-            int quantity = Item.itemGetQuantity(object.owner, object);
-            if (quantity > a1) {
-                quantity = a1;
+        if (obj.owner != null) {
+            int quantity = Item.itemGetQuantity(obj.owner, obj);
+            if (quantity > count) {
+                quantity = count;
             }
             if (quantity != 0) {
-                Item.itemRemoveWithReason(object.owner, object, quantity,
+                Item.itemRemoveWithReason(obj.owner, obj, quantity,
                     Item.RemoveInventoryObjectHookReason.ITEM_DESTROY_MULTI, null);
                 destroyed = quantity;
             }
         }
-        ObjectSystem.objectDestroy(object);
+        ObjectSystem.objectDestroy(obj);
         return destroyed;
     }
 
@@ -703,22 +703,22 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the object are known.
      */
     @Override
-    public int hasTrait(int a0, Object a1, int a2) {
-        if (a1 == null) {
+    public int hasTrait(int kind, Object object, int param) {
+        if (object == null) {
             return 0;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a1;
-        switch (a0) {
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        switch (kind) {
         case CRITTER_TRAIT_PERK:
             return 0;
         case CRITTER_TRAIT_OBJECT:
-            switch (a2) {
+            switch (param) {
             case CRITTER_TRAIT_OBJECT_ROTATION:
-                return object.rotation.id();
+                return obj.rotation.id();
             case CRITTER_TRAIT_OBJECT_IS_INVISIBLE:
-                return object.flags.and(ObjTypes.ObjectFlags.HIDDEN).bits() == 0 ? 1 : 0;
+                return obj.flags.and(ObjTypes.ObjectFlags.HIDDEN).bits() == 0 ? 1 : 0;
             case CRITTER_TRAIT_OBJECT_GET_INVENTORY_WEIGHT:
-                return Item.objectGetInventoryWeight(object);
+                return Item.objectGetInventoryWeight(obj);
             default:
                 return 0;
             }
@@ -752,8 +752,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * of the four the game knows has no answer.
      */
     @Override
-    public int success(int a0) {
-        switch (a0) {
+    public int success(int roll) {
+        switch (roll) {
         case ROLL_CRITICAL_FAILURE:
         case ROLL_FAILURE:
             return 0;
@@ -772,8 +772,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * of the four the game knows has no answer.
      */
     @Override
-    public int critical(int a0) {
-        switch (a0) {
+    public int critical(int roll) {
+        switch (roll) {
         case ROLL_CRITICAL_FAILURE:
         case ROLL_CRITICAL_SUCCESS:
             return 1;
@@ -793,7 +793,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * shown.
      */
     @Override
-    public void floatMsg(Program.ProgramValue a0, int a1) {
+    public void floatMsg(Program.ProgramValue message, int type) {
     }
 
     /**
@@ -805,15 +805,15 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * original answers a critical failure for it.
      */
     @Override
-    public int rollVsSkill(Object a0, int a1, int a2) {
-        if (a0 == null) {
+    public int rollVsSkill(Object object, int skill, int modifier) {
+        if (object == null) {
             return GameRandom.Roll.CRITICAL_FAILURE.ordinal();
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        if (ProtoTypes.ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        if (ProtoTypes.ProtoId.ofGameObject(obj).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
             return GameRandom.Roll.CRITICAL_FAILURE.ordinal();
         }
-        return Skill.skillRoll(object, a1, a2, new int[1]).ordinal();
+        return Skill.skillRoll(obj, skill, modifier, new int[1]).ordinal();
     }
 
     /**
@@ -823,7 +823,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * yet, so the experience goes nowhere.
      */
     @Override
-    public void giveExpPoints(int a0) {
+    public void giveExpPoints(int experience) {
     }
 
     /**
@@ -833,14 +833,14 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * object when the tile is the one of "nowhere".
      */
     @Override
-    public Object tileContainsPidObj(int a0, int a1, int a2) {
-        if (a2 == -1) {
+    public Object tileContainsPidObj(int protoId, int elevation, int tile) {
+        if (tile == -1) {
             return null;
         }
-        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofPid(a0);
-        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtLocation(a1, a2);
+        ProtoTypes.ProtoId target = ProtoTypes.ProtoId.ofPid(protoId);
+        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtLocation(elevation, tile);
         while (object != null) {
-            if (ProtoTypes.ProtoId.ofGameObject(object).equals(protoId)) {
+            if (ProtoTypes.ProtoId.ofGameObject(object).equals(target)) {
                 return object;
             }
             object = ObjectSystem.objectFindNextAtLocation();
@@ -858,12 +858,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * has no registry of the scripts yet, so the event is always set.
      */
     @Override
-    public void addTimerEvent(Object a0, int a1, int a2) {
-        if (a0 == null) {
+    public void addTimerEvent(Object object, int delay, int param) {
+        if (object == null) {
             return;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        EventQueue.queueAddEvent(a1, object, new EventQueue.ScriptEvent(object.sid, a2),
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        EventQueue.queueAddEvent(delay, obj, new EventQueue.ScriptEvent(obj.sid, param),
             EventQueue.EventType.SCRIPT);
     }
 
@@ -873,11 +873,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>Nothing happens when there is no object at all.
      */
     @Override
-    public void rmTimerEvent(Object a0) {
-        if (a0 == null) {
+    public void rmTimerEvent(Object object) {
+        if (object == null) {
             return;
         }
-        EventQueue.queueRemoveEvents((ObjTypes.GameObject) a0);
+        EventQueue.queueRemoveEvents((ObjTypes.GameObject) object);
     }
 
     /**
@@ -888,17 +888,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * bottom, the way the original spreads it over the two halves.
      */
     @Override
-    public void setLightLevel(int a0) {
+    public void setLightLevel(int level) {
         int min = Light.LIGHT_INTENSITY_MIN;
         int max = Light.LIGHT_INTENSITY_MAX;
         int middle = (min + max) / 2;
-        if (a0 == 50) {
+        if (level == 50) {
             Light.lightSetAmbientIntensity(middle, true);
             return;
         }
-        int intensity = a0 > 50
-                ? middle + a0 * (max - middle) / 100
-                : min + a0 * (middle - min) / 100;
+        int intensity = level > 50
+                ? middle + level * (max - middle) / 100
+                : min + level * (middle - min) / 100;
         Light.lightSetAmbientIntensity(intensity, true);
     }
 
@@ -909,12 +909,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * zero puts the object out.
      */
     @Override
-    public void objSetLightLevel(Object a0, int a1, int a2) {
-        if (a0 == null) {
+    public void objSetLightLevel(Object object, int distance, int intensity) {
+        if (object == null) {
             return;
         }
-        ObjectSystem.objectSetLight((ObjTypes.GameObject) a0, a1,
-            a2 != 0 ? (a2 * 65536) / 100 : 0);
+        ObjectSystem.objectSetLight((ObjTypes.GameObject) object, distance,
+            intensity != 0 ? (intensity * 65536) / 100 : 0);
     }
 
     /**
@@ -924,8 +924,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the original's error value is returned for no object at all.
      */
     @Override
-    public int animBusy(Object a0) {
-        if (a0 == null) {
+    public int animBusy(Object object) {
+        if (object == null) {
             return 0;
         }
         return 0;
@@ -939,7 +939,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * harness, where there is no game.
      */
     @Override
-    public int objCanSeeObj(Object a0, Object a1) {
+    public int objCanSeeObj(Object watcher, Object target) {
         return 0;
     }
 
@@ -951,21 +951,21 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * answers nothing, and the original answers nothing then as well.
      */
     @Override
-    public Object invenCmds(Object a0, int a1, int a2) {
-        if (a0 == null) {
+    public Object invenCmds(Object object, int cmd, int index) {
+        if (object == null) {
             return null;
         }
-        if (!(a0 instanceof ObjTypes.GameObject)) {
+        if (!(object instanceof ObjTypes.GameObject)) {
             return null;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        if (ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        if (ProtoId.ofGameObject(obj).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
             return null;
         }
-        if (a1 != 13) {
+        if (cmd != 13) {
             return null;
         }
-        return Inventory.inventoryItemByIndex(object, a2);
+        return Inventory.inventoryItemByIndex(obj, index);
     }
 
     /**
@@ -976,12 +976,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * makes it not block the way.
      */
     @Override
-    public void setObjVisibility(Object a0, int a1) {
-        if (a0 == null) {
+    public void setObjVisibility(Object object, int invisible) {
+        if (object == null) {
             return;
         }
-        ObjTypes.GameObject obj = (ObjTypes.GameObject) a0;
-        if (a1 != 0) {
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        if (invisible != 0) {
             if (obj.flags.and(ObjTypes.ObjectFlags.HIDDEN).equals(ObjTypes.ObjectFlags.NONE)) {
                 if (ProtoId.ofGameObject(obj).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
                     obj.flags = obj.flags.or(ObjTypes.ObjectFlags.NO_BLOCK);
@@ -1030,14 +1030,14 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * "nowhere" has nothing on it.
      */
     @Override
-    public int tileContainsObjPid(int a0, int a1, int a2) {
-        if (a2 == -1) {
+    public int tileContainsObjPid(int protoId, int elevation, int tile) {
+        if (tile == -1) {
             return 0;
         }
-        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofPid(a0);
-        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtLocation(a1, a2);
+        ProtoTypes.ProtoId target = ProtoTypes.ProtoId.ofPid(protoId);
+        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtLocation(elevation, tile);
         while (object != null) {
-            if (ProtoTypes.ProtoId.ofGameObject(object).equals(protoId)) {
+            if (ProtoTypes.ProtoId.ofGameObject(object).equals(target)) {
                 return 1;
             }
             object = ObjectSystem.objectFindNextAtLocation();
@@ -1053,12 +1053,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * answer is 0 and the events of a timer are not cleared.
      */
     @Override
-    public Program.ProgramValue metarule3(int a0, Program.ProgramValue a1,
-            Program.ProgramValue a2, Program.ProgramValue a3) {
-        if (a0 == 100) {
+    public Program.ProgramValue metarule3(int rule, Program.ProgramValue param1,
+            Program.ProgramValue param2, Program.ProgramValue param3) {
+        if (rule == 100) {
             // CLR_FIXED_TIMED_EVENTS: clear the timer events of an object.
-            if (a1.pointerValue instanceof ObjTypes.GameObject) {
-                EventQueue.queueRemoveEvents((ObjTypes.GameObject) a1.pointerValue);
+            if (param1.pointerValue instanceof ObjTypes.GameObject) {
+                EventQueue.queueRemoveEvents((ObjTypes.GameObject) param1.pointerValue);
             }
         }
         return new Program.ProgramValue(0);
@@ -1071,7 +1071,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * system yet, so nothing is shown.
      */
     @Override
-    public void startGdialog(int a0, Object a1, int a2, int a3, int a4) {
+    public void startGdialog(int unused, Object object, int reactionLevel,
+            int headFrmId, int backgroundFrmId) {
     }
 
     /**
@@ -1098,7 +1099,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The port has no dialog system, so the reply is not shown.
      */
     @Override
-    public void gsayReply(int a0, Program.ProgramValue a1) {
+    public void gsayReply(int messageListId, Program.ProgramValue msg) {
     }
 
     /**
@@ -1107,7 +1108,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The port has no dialog system, so the message is not shown.
      */
     @Override
-    public void gsayMessage(int a0, Program.ProgramValue a1, int a2) {
+    public void gsayMessage(int messageListId, Program.ProgramValue msg, int reaction) {
     }
 
     /**
@@ -1116,7 +1117,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The port has no dialog system, so the option is not shown.
      */
     @Override
-    public void giqOption(int a0, int a1, Program.ProgramValue a2,
+    public void giqOption(int iq, int messageListId, Program.ProgramValue msg,
             Program.ProgramValue a3, int a4) {
     }
 
@@ -1127,7 +1128,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation queue yet, so nothing is registered.
      */
     @Override
-    public void regAnimFunc(int a0, Program.ProgramValue a1) {
+    public void regAnimFunc(int cmd, Program.ProgramValue param) {
     }
 
     /**
@@ -1147,8 +1148,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * system yet, so there is no attack.
      */
     @Override
-    public void attack(Object a0, int a1, int a2, int a3, int a4, int a5,
-            int a6, int a7) {
+    public void attack(Object target, int attackerResults, int targetResults,
+            int maxDamage, int minDamage, int accuracyBonus, int unused1,
+            int unused2) {
     }
 
     /**
@@ -1158,7 +1160,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * system yet, so there is no attack.
      */
     @Override
-    public void attackSetup(Object a0, Object a1) {
+    public void attackSetup(Object attacker, Object defender) {
     }
 
     /**
@@ -1175,22 +1177,22 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * op_item_caps_total (0x8138): how many caps the object carries.
      */
     @Override
-    public int itemCapsTotal(Object a0) {
-        if (a0 == null) {
+    public int itemCapsTotal(Object object) {
+        if (object == null) {
             return 0;
         }
-        return Item.itemGetTotalCaps((ObjTypes.GameObject) a0);
+        return Item.itemGetTotalCaps((ObjTypes.GameObject) object);
     }
 
     /**
      * op_item_caps_adjust (0x8139): add or remove caps of an object.
      */
     @Override
-    public int itemCapsAdjust(Object a0, int a1) {
-        if (a0 == null) {
+    public int itemCapsAdjust(Object object, int amount) {
+        if (object == null) {
             return -1;
         }
-        return Item.itemCapsAdjust((ObjTypes.GameObject) a0, a1);
+        return Item.itemCapsAdjust((ObjTypes.GameObject) object, amount);
     }
 
     /**
@@ -1202,20 +1204,20 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * no critter or no object at all.
      */
     @Override
-    public void wieldObjCritter(Object a0, Object a1) {
-        if (a0 == null || a1 == null) {
+    public void wieldObjCritter(Object critter, Object item) {
+        if (critter == null || item == null) {
             return;
         }
-        ObjTypes.GameObject critter = (ObjTypes.GameObject) a0;
-        if (ProtoId.ofGameObject(critter).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+        ObjTypes.GameObject crit = (ObjTypes.GameObject) critter;
+        if (ProtoId.ofGameObject(crit).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
             return;
         }
         Inventory.Hand hand = Inventory.Hand.HAND_RIGHT;
-        if (critter == ObjectSystem.getDude()
+        if (crit == ObjectSystem.getDude()
                 && Interface.interfaceGetCurrentHand() == Inventory.Hand.HAND_LEFT) {
             hand = Inventory.Hand.HAND_LEFT;
         }
-        Inventory.inventoryEquipFunc(critter, (ObjTypes.GameObject) a1, hand, false);
+        Inventory.inventoryEquipFunc(crit, (ObjTypes.GameObject) item, hand, false);
     }
 
     /**
@@ -1225,16 +1227,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the other kinds of objects.
      */
     @Override
-    public void objLock(Object a0) {
-        if (a0 == null) {
+    public void objLock(Object object) {
+        if (object == null) {
             return;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(obj).objectType();
         if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
-            object.data.flags |= ObjTypes.CONTAINER_FLAG_LOCKED;
+            obj.data.flags |= ObjTypes.CONTAINER_FLAG_LOCKED;
         } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
-            object.data.scenery.door.openFlags |= ObjTypes.DOOR_FLAG_LOCKED;
+            obj.data.scenery.door.openFlags |= ObjTypes.DOOR_FLAG_LOCKED;
         }
     }
 
@@ -1245,16 +1247,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the other kinds of objects.
      */
     @Override
-    public void objUnlock(Object a0) {
-        if (a0 == null) {
+    public void objUnlock(Object object) {
+        if (object == null) {
             return;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(obj).objectType();
         if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
-            object.data.flags &= ~ObjTypes.CONTAINER_FLAG_LOCKED;
+            obj.data.flags &= ~ObjTypes.CONTAINER_FLAG_LOCKED;
         } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
-            object.data.scenery.door.openFlags &= ~ObjTypes.DOOR_FLAG_LOCKED;
+            obj.data.scenery.door.openFlags &= ~ObjTypes.DOOR_FLAG_LOCKED;
         }
     }
 
@@ -1264,11 +1266,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>A door is open when its frame is not the first one.
      */
     @Override
-    public int objIsOpen(Object a0) {
-        if (a0 == null) {
+    public int objIsOpen(Object object) {
+        if (object == null) {
             return 0;
         }
-        return ((ObjTypes.GameObject) a0).frame != 0 ? 1 : 0;
+        return ((ObjTypes.GameObject) object).frame != 0 ? 1 : 0;
     }
 
     /**
@@ -1278,14 +1280,14 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * "nowhere" has no tile to move to.
      */
     @Override
-    public int moveTo(Object a0, int a1, int a2) {
-        if (a0 == null) {
+    public int moveTo(Object object, int tile, int elevation) {
+        if (object == null) {
             return -1;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        int newTile = ObjectSystem.objectSetLocation(object, a1, a2);
-        if (newTile != -1 && object == ObjectSystem.getDude()) {
-            TileMath.tileSetCenter(object.tile,
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        int newTile = ObjectSystem.objectSetLocation(obj, tile, elevation);
+        if (newTile != -1 && obj == ObjectSystem.getDude()) {
+            TileMath.tileSetCenter(obj.tile,
                 TileMath.TILE_SET_CENTER_REFRESH_WINDOW);
         }
         return newTile;
@@ -1311,11 +1313,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * not there has no stat at all.
      */
     @Override
-    public int getCritterStat(Object a0, int a1) {
-        if (a0 == null) {
+    public int getCritterStat(Object critter, int stat) {
+        if (critter == null) {
             return -1;
         }
-        return Stat.critterGetStat((ObjTypes.GameObject) a0, a1);
+        return Stat.critterGetStat((ObjTypes.GameObject) critter, stat);
     }
 
     /**
@@ -1327,7 +1329,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * does not have, so there is nobody whose stats may be changed.
      */
     @Override
-    public int setCritterStat(Object a0, int a1, int a2) {
+    public int setCritterStat(Object critter, int stat, int amount) {
         return -1;
     }
 
