@@ -72,6 +72,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80B6, // op_move_to
+        0x80BE, // op_target_obj
         0x80AA, // op_has_skill
         0x8128, // op_is_in_combat
         0x812D, // op_obj_is_locked
@@ -103,6 +104,14 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8131, // op_obj_open
         0x8133, // op_game_ui_disable
         0x8134, // op_game_ui_enable
+        0x8119, // op_get_day
+        0x8124, // op_party_add
+        0x8122, // op_poison
+        0x8152, // op_critter_set_flee_state
+        0x80ED, // op_kill_critter
+        0x80CC, // op_animate_stand_obj
+        0x814D, // op_jam_lock
+        0x8150, // op_obj_on_screen
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1747,6 +1756,116 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void gameUiEnable() {
+    }
+
+    /**
+     * op_get_day (0x8119): the day of the game's clock.
+     */
+    @Override
+    public int day() {
+        int[] dayOut = new int[1];
+        GameTime.gameTimeGetDate(null, dayOut, null);
+        return dayOut[0];
+    }
+
+    /**
+     * op_party_add (0x8124): add an object to the party.
+     *
+     * <p>Nothing happens when there is no object at all.
+     */
+    @Override
+    public void partyAdd(Object a0) {
+        if (a0 == null) {
+            return;
+        }
+        PartyMembers.partyMemberAdd((ObjTypes.GameObject) a0);
+    }
+
+    /**
+     * op_poison (0x8122): poison a critter.
+     *
+     * <p>The poison of the critter is changed by the amount, and a critter
+     * that is not a critter is not poisoned.
+     */
+    @Override
+    public void poison(Object a0, int a1) {
+        if (a0 == null) {
+            return;
+        }
+        Critter.critterAdjustPoison((ObjTypes.GameObject) a0, a1);
+    }
+
+    /**
+     * op_critter_set_flee_state (0x8152): set or clear the fleeing of a
+     * critter.
+     *
+     * <p>A non-zero value makes the critter flee and a zero stops it.
+     */
+    @Override
+    public void critterSetFleeState(Object a0, int a1) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        if (a1 != 0) {
+            object.data.critter.combat.maneuver =
+                object.data.critter.combat.maneuver.or(ObjTypes.CritterManeuver.FLEEING);
+        } else {
+            object.data.critter.combat.maneuver =
+                object.data.critter.combat.maneuver.and(ObjTypes.CritterManeuver.FLEEING.not());
+        }
+    }
+
+    /**
+     * op_kill_critter (0x80ED): kill a critter.
+     *
+     * <p>The kill needs the death animation, and the kill branch of the
+     * port is not reachable without a game phase, so the critter is not
+     * killed.
+     */
+    @Override
+    public void killCritter(Object a0, int a1) {
+    }
+
+    /**
+     * op_animate_stand_obj (0x80CC): make an object stand.
+     *
+     * <p>The stand is played by the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void animateStandObj(Object a0) {
+    }
+
+    /**
+     * op_jam_lock (0x814D): jam a lock of a container or a door.
+     *
+     * <p>Only a container or a door has a lock, and nothing happens for the
+     * other kinds of objects.
+     */
+    @Override
+    public void jamLock(Object a0) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
+            object.data.flags |= ObjTypes.CONTAINER_FLAG_JAMMED;
+        } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
+            object.data.scenery.door.openFlags |= ObjTypes.DOOR_FLAG_JAMMED;
+        }
+    }
+
+    /**
+     * op_obj_on_screen (0x8150): whether an object is on the screen.
+     *
+     * <p>The screen belongs to the render engine, and the port has no render
+     * engine, so no object is on the screen.
+     */
+    @Override
+    public int objOnScreen(Object a0) {
+        return 0;
     }
 
     /**
