@@ -72,6 +72,10 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80B6, // op_move_to
+        0x80AA, // op_has_skill
+        0x8128, // op_is_in_combat
+        0x812D, // op_obj_is_locked
+        0x8151, // op_critter_is_fleeing
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1304,6 +1308,73 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public Object objBeingUsedWith() {
         return null;
+    }
+
+    /**
+     * op_has_skill (0x80AA): the value of a skill of a critter.
+     *
+     * <p>A critter that is not a critter has no skill, and the original
+     * answers 0 for it.
+     */
+    @Override
+    public int hasSkill(Object a0, int a1) {
+        if (a0 == null) {
+            return 0;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        if (ProtoTypes.ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return 0;
+        }
+        return Skill.skillGetValue(object, a1);
+    }
+
+    /**
+     * op_obj_is_locked (0x812D): whether a container or a door is locked.
+     *
+     * <p>Only a container or a door can be locked, and nothing else is
+     * locked.
+     */
+    @Override
+    public int objIsLocked(Object a0) {
+        if (a0 == null) {
+            return 0;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
+            return (object.data.flags & ObjTypes.CONTAINER_FLAG_LOCKED) != 0 ? 1 : 0;
+        } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
+            return (object.data.scenery.door.openFlags & ObjTypes.DOOR_FLAG_LOCKED) != 0 ? 1 : 0;
+        }
+        return 0;
+    }
+
+    /**
+     * op_critter_is_fleeing (0x8151): whether a critter is fleeing.
+     *
+     * <p>A critter that is not a critter is not fleeing, and the original
+     * answers 0 for it.
+     */
+    @Override
+    public int critterIsFleeing(Object a0) {
+        if (a0 == null) {
+            return 0;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        return object.data.critter.combat.maneuver
+                .and(ObjTypes.CritterManeuver.FLEEING)
+                .equals(ObjTypes.CritterManeuver.NONE) ? 0 : 1;
+    }
+
+    /**
+     * op_is_in_combat (0x8128): whether the game is in combat.
+     *
+     * <p>The combat state is not ported, and the port is never in combat:
+     * the original answers the same in its harness, where there is no game.
+     */
+    @Override
+    public int isInCombat() {
+        return 0;
     }
 
     /**
