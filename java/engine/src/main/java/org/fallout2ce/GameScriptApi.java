@@ -72,6 +72,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x80B9, // op_script_overrides
         0x810E, // op_reg_anim_func
         0x80DE, // op_start_gdialog
         0x80DF, // op_end_gdialog
@@ -1116,6 +1117,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void regAnimFunc(int a0, Program.ProgramValue a1) {
+    }
+
+    /**
+     * op_script_overrides (0x80B9): the script takes over the action.
+     *
+     * <p>The flag belongs to the script that runs, and the port has no
+     * registry of the scripts, so there is no script to set it on.
+     */
+    @Override
+    public void scriptOverrides() {
     }
 
     /**
