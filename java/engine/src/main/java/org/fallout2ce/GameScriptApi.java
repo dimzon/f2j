@@ -112,6 +112,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80CC, // op_animate_stand_obj
         0x814D, // op_jam_lock
         0x8150, // op_obj_on_screen
+        0x8149, // op_obj_art_fid
+        0x814A, // op_art_anim
+        0x80FD, // op_radiation_inc
+        0x80FE, // op_radiation_dec
+        0x8153, // op_terminate_combat
+        0x8115, // op_play_gmovie
+        0x812C, // op_inven_unwield
+        0x80DB, // op_use_obj
+        0x813D, // op_sfx_build_char_name
+        0x814E, // op_gdialog_set_barter_mod
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -1866,6 +1876,136 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public int objOnScreen(Object a0) {
         return 0;
+    }
+
+    /**
+     * op_obj_art_fid (0x8149): the fid of the art of an object.
+     *
+     * <p>The fid is the number the game gives it, and an object that is not
+     * there has fid 0.
+     */
+    @Override
+    public int objArtFid(Object a0) {
+        if (a0 == null) {
+            return 0;
+        }
+        return ((ObjTypes.GameObject) a0).fid;
+    }
+
+    /**
+     * op_art_anim (0x814A): the animation of a fid.
+     *
+     * <p>The animation is the part of the fid the game names it by.
+     */
+    @Override
+    public int artAnim(int a0) {
+        return (a0 & 0xFF0000) >> 16;
+    }
+
+    /**
+     * op_radiation_inc (0x80FD): increase the radiation of a critter.
+     *
+     * <p>Only the radiation of the player can be changed, and the
+     * radiation of the player is changed by the amount, after the
+     * radiation resistance of the player.
+     */
+    @Override
+    public void radiationInc(Object a0, int a1) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        if (object != ObjectSystem.getDude()) {
+            return;
+        }
+        int amount = a1;
+        if (amount > 0) {
+            amount -= Stat.critterGetStat(object,
+                StatDefs.Stat.STAT_RADIATION_RESISTANCE.id()) * amount / 100;
+        }
+        object.data.critter.radiation += amount;
+    }
+
+    /**
+     * op_radiation_dec (0x80FE): decrease the radiation of a critter.
+     *
+     * <p>Only the radiation of the player can be changed, and the
+     * radiation of the player is decreased by the amount, but not below
+     * zero.
+     */
+    @Override
+    public void radiationDec(Object a0, int a1) {
+        if (a0 == null) {
+            return;
+        }
+        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        if (object != ObjectSystem.getDude()) {
+            return;
+        }
+        int adjustment = object.data.critter.radiation >= 0 ? -a1 : 0;
+        object.data.critter.radiation += adjustment;
+    }
+
+    /**
+     * op_terminate_combat (0x8153): end the combat.
+     *
+     * <p>The combat state is not ported, and the port is never in combat,
+     * so there is no combat to end.
+     */
+    @Override
+    public void terminateCombat() {
+    }
+
+    /**
+     * op_play_gmovie (0x8115): play a movie.
+     *
+     * <p>The movie is played by the render engine, and the port has no
+     * render engine, so nothing is played.
+     */
+    @Override
+    public void playGmovie(int a0) {
+    }
+
+    /**
+     * op_inven_unwield (0x812C): take the item out of the hand of the
+     * script's critter.
+     *
+     * <p>The critter is the one the script runs for, and the port has no
+     * script registry, so there is no critter to unwield.
+     */
+    @Override
+    public void invenUnwield() {
+    }
+
+    /**
+     * op_use_obj (0x80DB): use an object.
+     *
+     * <p>The use needs the action system, and the port has no action
+     * system, so nothing is used.
+     */
+    @Override
+    public void useObj(Object a0) {
+    }
+
+    /**
+     * op_sfx_build_char_name (0x813D): the name of the sound of a critter.
+     *
+     * <p>The names of the sounds belong to the sound engine, and the port
+     * has no sound engine, so there is no name.
+     */
+    @Override
+    public String sfxBuildCharName(Object a0, int a1, int a2) {
+        return null;
+    }
+
+    /**
+     * op_gdialog_set_barter_mod (0x814E): set the barter modifier of a
+     * dialog.
+     *
+     * <p>The port has no dialog system, so the modifier is not set.
+     */
+    @Override
+    public void gdialogSetBarterMod(int a0) {
     }
 
     /**
