@@ -134,6 +134,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8155, // op_critter_stop_attacking
         0x80E4, // op_load_map
         0x80A9, // op_override_map_start
+        0x810B, // op_metarule
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2172,6 +2173,42 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 ObjectSystem.objectSetLocation(dude, previousTile, elevation);
             }
             TileMath.tileSetCenter(tile, TileMath.TILE_SET_CENTER_REFRESH_WINDOW);
+        }
+    }
+
+    /**
+     * op_metarule (0x810B): a metarule of the game.
+     *
+     * <p>The rule is the number the game gives it, and the parameter is the
+     * number or the object it asks about. The rules that need the party,
+     * the queue, the skills, the settings or the kill type of a critter
+     * are answered; the ones that need the worldmap, the car or the
+     * elevator are not ported and answer 0.
+     */
+    @Override
+    public int metarule(int rule, Program.ProgramValue param) {
+        switch (rule) {
+        case 16: // METARULE_PARTY_COUNT
+            return PartyMembers.partyMembersLength;
+        case 18: // METARULE_WHO_ON_DRUGS
+            if (param.pointerValue instanceof ObjTypes.GameObject) {
+                return EventQueue.queueHasEvent((ObjTypes.GameObject) param.pointerValue,
+                    EventQueue.EventType.DRUG) ? 1 : 0;
+            }
+            return 0;
+        case 40: // METARULE_SKILL_CHECK_TAG
+            return Skill.isTagged(param.integerValue) ? 1 : 0;
+        case 47: // METARULE_LANGUAGE_FILTER
+            return Settings.settings.preferences.language_filter ? 1 : 0;
+        case 48: // METARULE_VIOLENCE_FILTER
+            return Settings.settings.preferences.violence_level;
+        case 51: // METARULE_CRITTER_KILL_TYPE
+            if (param.pointerValue instanceof ObjTypes.GameObject) {
+                return Critter.critterGetKillType((ObjTypes.GameObject) param.pointerValue).id();
+            }
+            return -1;
+        default:
+            return 0;
         }
     }
 
