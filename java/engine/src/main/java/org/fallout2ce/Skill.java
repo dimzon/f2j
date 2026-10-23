@@ -359,6 +359,62 @@ public final class Skill {
     }
 
     /**
+     * Port of {@code skillAddForce} (src/skill.cc 0x4AA7EC): raise a skill
+     * of the player by one, straight into the proto. Not the player -5,
+     * invalid skill -5, the value already at {@code skillMaximum} -3,
+     * proto-miss -5, else the base in the proto goes up by one.
+     */
+    public static int skillAddForce(GameObject critter, int skill) {
+        if (!isDude(critter)) {
+            return -5;
+        }
+
+        if (!SkillDefs.skillIsValid(skill)) {
+            return -5;
+        }
+
+        if (skillGetValue(critter, skill) >= skillMaximum) {
+            return -3;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(critter), slot) == -1) {
+            return -5;
+        }
+        slot[0].critter.data.skills[skill] += 1;
+        return 0;
+    }
+
+    /**
+     * Port of {@code skillSubForce} (src/skill.cc 0x4AA9DC): lower a skill
+     * of the player by one, straight into the proto. Not the player -5,
+     * invalid skill -5, proto-miss -5, the base already at zero -2, else
+     * the base in the proto goes down by one.
+     */
+    public static int skillSubForce(GameObject critter, int skill) {
+        if (!isDude(critter)) {
+            return -5;
+        }
+
+        if (!SkillDefs.skillIsValid(skill)) {
+            return -5;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(critter), slot) == -1) {
+            return -5;
+        }
+
+        Proto proto = slot[0];
+        if (proto.critter.data.skills[skill] <= 0) {
+            return -2;
+        }
+
+        proto.critter.data.skills[skill] -= 1;
+        return 0;
+    }
+
+    /**
      * Port of {@code skillGetValue} (src/skill.cc 0x4AA558): invalid skill
      * -5, non-critter 0, proto-miss -5, else
      * {@code default + base * mult + sum(primaryStat x multiplier)}, the

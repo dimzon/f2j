@@ -137,6 +137,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x810B, // op_metarule
         0x80EE, // op_kill_critter_type
         0x80A6, // op_get_pc_stat
+        0x813C, // op_critter_mod_skill
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2254,6 +2255,48 @@ public class GameScriptApi extends UnsupportedScriptApi {
     @Override
     public int getPcStat(int pcStat) {
         return Stat.pcGetStat(pcStat);
+    }
+
+    /**
+     * op_critter_mod_skill (0x813C): change a skill of the player.
+     *
+     * <p>Only the player's own skill may be changed: the original refuses
+     * anybody else, and a critter that is not there or not a critter has
+     * nothing to change. The points are the number the script gives - up
+     * for more skill, down for less - and a tagged skill moves half as
+     * many, the way the original halves them. The change goes into the
+     * proto one point at a time, the way the original walks it, and stops
+     * at the bounds of the skill. The items of the interface are not
+     * updated afterwards: the interface is not ported.
+     */
+    @Override
+    public void critterModSkill(Object critter, int skill, int points) {
+        if (critter == null || points == 0) {
+            return;
+        }
+        if (ProtoTypes.ProtoId.ofPid(((ObjTypes.GameObject) critter).pid).objectType()
+                != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return;
+        }
+        ObjTypes.GameObject dude = ObjectSystem.getDude();
+        if (critter != dude) {
+            return;
+        }
+        int normalizedPoints = Math.abs(points);
+        if (Skill.isTagged(skill)) {
+            // A tagged skill moves half as many points; the force routines
+            // below already count a tagged point double.
+            normalizedPoints /= 2;
+        }
+        if (points > 0) {
+            for (int i = 0; i < normalizedPoints; i++) {
+                Skill.skillAddForce(dude, skill);
+            }
+        } else {
+            for (int i = 0; i < normalizedPoints; i++) {
+                Skill.skillSubForce(dude, skill);
+            }
+        }
     }
 
     /**
