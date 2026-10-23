@@ -108,7 +108,10 @@ class ProgramScriptRunTest {
         Db.resetForTests();
         Config.resetLastSectionKey();
         XFile.resetForTests();
-        Program.interpreterRegisterOpcodeHandlers();
+        // The game's builtins are the API's, and the test pins the core
+        // interpreter: it refuses every builtin, so the scripts stop at the
+        // first opcode that needs the game.
+        Program.setGameApi(new UnsupportedScriptApi());
 
         Path master = Paths.get(gameData(), "master.dat");
         assertTrue(Files.isRegularFile(master), master.toString());
