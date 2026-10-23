@@ -190,3 +190,20 @@ ull и найти прототип игрока по имени «Player» по�
   отдаётся только из руки, которую держит интерфейс (Interface.interfaceGetCurrentHand),
   вторая рука пуста — как в C (src/interpreter_extra.cc, opCritterGetInventoryObject).
   Проверка с предметом «в руке» у критера (не игрока) сделана: объект в инвентаре и его флаг IN_RIGHT_HAND — одно и то же, как в C.
+### Что ещё не перенесено из билд-инов
+
+Осталось 6 билд-инов, все упираются в не портированные подсистемы:
+
+- op_metarule (0x810B, 15675 вызовов) — система метаправил
+  (sfall_metarules.cc): разбор номера правила и параметров, вызовы
+  worldmap/combat/critter/party и т.д.
+- op_get_pc_stat (0x80A6, 212) — статы игрока как персонажа
+  (PcStat, pcGetStat); в порту нет класса PcStat.
+- op_mark_area_known (0x80B2, 126) и op_wm_area_set_pos
+  (0x80E5, 96) — состояния областей мировой карты
+  (wmAreaSetVisibleState, wmAreaMarkVisitedState,
+  wmAreaSetWorldPos); в портовых MapAreas этих функций нет.
+- op_kill_critter_type (0x80EE, 85) — убийство всех критеров типа с
+  анимациями смерти (бой/анимация).
+- op_critter_mod_skill (0x813C, 60) — изменение навыков игрока
+  (skillAddForce/skillSubForce); в порту нет сеттеров навыков.
