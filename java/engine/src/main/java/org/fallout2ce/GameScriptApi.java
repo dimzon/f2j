@@ -72,6 +72,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x80DA, // op_wield_obj_critter
         0x8118, // op_month
         0x8138, // op_item_caps_total
         0x8139, // op_item_caps_adjust
@@ -1185,6 +1186,31 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return -1;
         }
         return Item.itemCapsAdjust((ObjTypes.GameObject) a0, a1);
+    }
+
+    /**
+     * op_wield_obj_critter (0x80DA): put an object into a hand of a
+     * critter.
+     *
+     * <p>Only a critter can hold a thing in a hand, and the player holds it
+     * in the hand the interface has chosen. Nothing happens when there is
+     * no critter or no object at all.
+     */
+    @Override
+    public void wieldObjCritter(Object a0, Object a1) {
+        if (a0 == null || a1 == null) {
+            return;
+        }
+        ObjTypes.GameObject critter = (ObjTypes.GameObject) a0;
+        if (ProtoId.ofGameObject(critter).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return;
+        }
+        Inventory.Hand hand = Inventory.Hand.HAND_RIGHT;
+        if (critter == ObjectSystem.getDude()
+                && Interface.interfaceGetCurrentHand() == Inventory.Hand.HAND_LEFT) {
+            hand = Inventory.Hand.HAND_LEFT;
+        }
+        Inventory.inventoryEquipFunc(critter, (ObjTypes.GameObject) a1, hand, false);
     }
 
     /**
