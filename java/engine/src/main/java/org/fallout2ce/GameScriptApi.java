@@ -132,6 +132,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8145, // op_use_obj_on_obj
         0x8146, // op_endgame_slideshow
         0x8155, // op_critter_stop_attacking
+        0x80E4, // op_load_map
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2122,6 +2123,30 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void critterStopAttacking(Object a0) {
+    }
+
+    /**
+     * op_load_map (0x80E4): load a map.
+     *
+     * <p>The map is the number the game gives it, and the transition to the
+     * map is set, the way the original does. A map that is not a map of
+     * the game is not loaded.
+     */
+    @Override
+    public void loadMap(Program.ProgramValue a0, int a1) {
+        int mapIndex = -1;
+        if (a0.opcode == Program.VALUE_TYPE_INT
+                && MapRegistry.mapIsValid(a0.integerValue)) {
+            mapIndex = a0.integerValue;
+        }
+        if (mapIndex != -1) {
+            Map.MapTransition transition = new Map.MapTransition();
+            transition.map = WorldmapDefs.ofMap(mapIndex);
+            transition.elevation = -1;
+            transition.tile = -1;
+            transition.rotation = Rotation.INVALID;
+            Map.mapSetTransition(transition);
+        }
     }
 
     /**
