@@ -135,6 +135,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80E4, // op_load_map
         0x80A9, // op_override_map_start
         0x810B, // op_metarule
+        0x80EE, // op_kill_critter_type
         0x80C0, // op_obj_being_used_with
         0x80E3, // op_set_obj_visibility
         0x812E, // op_obj_lock
@@ -2209,6 +2210,34 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return -1;
         default:
             return 0;
+        }
+    }
+
+    /**
+     * op_kill_critter_type (0x80EE): kill the critters of a proto.
+     *
+     * <p>The critters of the proto that are not hidden and not dead are
+     * killed. The kill with a death animation needs the combat system, and
+     * the port has no combat system, so only the kill without an animation
+     * destroys the critters.
+     */
+    @Override
+    public void killCritterType(int a0, int a1) {
+        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofPid(a0);
+        ObjTypes.GameObject object = ObjectSystem.objectFindFirst();
+        while (object != null) {
+            if (object.flags.and(ObjTypes.ObjectFlags.HIDDEN)
+                    .equals(ObjTypes.ObjectFlags.NONE)
+                    && ProtoTypes.ProtoId.ofGameObject(object).equals(protoId)
+                    && !Critter.critterIsDead(object)) {
+                if (a1 == 0) {
+                    ObjectSystem.objectDestroy(object);
+                }
+                // The kill with an animation is a seam: the combat system is
+                // not ported, so the critter is not killed.
+                ObjectSystem.objectFindFirst();
+            }
+            object = ObjectSystem.objectFindNext();
         }
     }
 
