@@ -72,6 +72,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DC, // op_obj_can_see_obj
         0x80E7, // op_anim_busy
         0x80E3, // op_set_obj_visibility
+        0x80D0, // op_attack
+        0x8143, // op_attack_setup
         0x80B9, // op_script_overrides
         0x810E, // op_reg_anim_func
         0x80DE, // op_start_gdialog
@@ -1127,6 +1129,27 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void scriptOverrides() {
+    }
+
+    /**
+     * op_attack (0x80D0): attack a critter.
+     *
+     * <p>The attack needs the combat system, and the port has no combat
+     * system yet, so there is no attack.
+     */
+    @Override
+    public void attack(Object a0, int a1, int a2, int a3, int a4, int a5,
+            int a6, int a7) {
+    }
+
+    /**
+     * op_attack_setup (0x8143): set up an attack of a critter on another.
+     *
+     * <p>The attack needs the combat system, and the port has no combat
+     * system yet, so there is no attack.
+     */
+    @Override
+    public void attackSetup(Object a0, Object a1) {
     }
 
     /**
