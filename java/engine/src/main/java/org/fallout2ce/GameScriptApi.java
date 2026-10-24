@@ -50,6 +50,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80BF, // opGetDude
         0x8101, // op_cur_map_index
         0x8102, // op_critter_add_trait
+        0x8103, // op_critter_rm_trait
         0x814B, // op_party_member_obj
         0x80C5, // op_get_global_var
         0x80C6, // op_set_global_var
