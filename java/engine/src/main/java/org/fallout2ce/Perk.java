@@ -53,4 +53,40 @@ public final class Perk {
     public static PerkProperty ofPerkProperty(int id) {
         return PROPERTY_BY_ID.get(id);
     }
+
+    /** Port of {@code PERK_COUNT} / {@code PERK_FIRST} (src/perk_defs.h). */
+    public static final int PERK_COUNT = 124;
+    public static final int PERK_FIRST = 0;
+    public static final int PERK_INVALID = -1;
+
+    public static boolean perkIsValid(int perk) {
+        return perk >= PERK_FIRST && perk < PERK_COUNT;
+    }
+
+    // 0x496AB0 perkGetRank: the critter's party slot (dude is index 0), or
+    // the fallback slot when the critter is not a party member.
+    public static int perkGetRank(ObjTypes.GameObject critter, int perk) {
+        if (!perkIsValid(perk)) {
+            return 0;
+        }
+
+        int[][] ranks = PartyMembers.perkEnsureRanks();
+
+        if (critter == ObjectSystem.getDude()) {
+            return ranks[0][perk];
+        }
+
+        for (int index = 1; index < PartyMembers.descriptionsLength; index++) {
+            if (ProtoTypes.ProtoId.ofGameObject(critter).equals(PartyMembers.partyMemberProtoIds.get(index))) {
+                return ranks[index][perk];
+            }
+        }
+
+        return ranks[0][perk];
+    }
+
+    /** Port of {@code perkHasRank} (src/perk.h). */
+    public static boolean perkHasRank(ObjTypes.GameObject critter, int perk) {
+        return perkGetRank(critter, perk) != 0;
+    }
 }

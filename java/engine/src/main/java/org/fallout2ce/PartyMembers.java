@@ -176,6 +176,29 @@ public final class PartyMembers {
     /** Port of {@code gPartyMemberCount} (0x519DAC). */
     static int partyMembersLength;
 
+    // gPartyMemberPerkRanks (src/perk.cc): rank table of the party, index 0
+    // being the dude. Grows lazily to the description count.
+    private static int[][] perkRanks;
+
+    static int[][] perkEnsureRanks() {
+        int needed = descriptionsLength + 1;
+        if (perkRanks == null || perkRanks.length < needed) {
+            int rows = Math.max(needed, perkRanks == null ? 1 : perkRanks.length);
+            int[][] next = new int[rows][Perk.PERK_COUNT];
+            if (perkRanks != null) {
+                for (int i = 0; i < perkRanks.length; i++) {
+                    System.arraycopy(perkRanks[i], 0, next[i], 0, Perk.PERK_COUNT);
+                }
+            }
+            perkRanks = next;
+        }
+        return perkRanks;
+    }
+
+    static void perkRanksReset() {
+        perkRanks = null;
+    }
+
     // object_is_party_member (src/party_member.cc): the object is one of
     // the party members.
     public static boolean objectIsPartyMember(GameObject object) {
@@ -655,5 +678,6 @@ public final class PartyMembers {
         partyMembersLength = 0;
         partyStatePrepped = 0;
         npcEngineLevelUp = true;
+        perkRanksReset();
     }
 }

@@ -7148,6 +7148,54 @@ void sectionCombatRequest()
     std::printf("rc=%d locked-rc=%d again-rc=%d\n", rc, lockedRc, againRc);
 }
 
+void sectionPerkRank()
+{
+    std::puts("[perkrank]");
+
+    // [partyobjects] ran first, so the party descriptions exist and the
+    // dude is there. perksInit allocates the rank table and zeroes it;
+    // perkGetRank reads the critter's slot (dude is index 0) or falls
+    // back to it.
+    // The message-list repository the perk names register into is owned by
+    // the game phase (game.cc messageListRepositoryInit), so bring it up
+    // like the game does before the perk engine touches it.
+    if (!fallout::messageListRepositoryInit()) {
+        std::printf("msglistrepo failed\n");
+        return;
+    }
+
+    int initRc = fallout::perksInit();
+    if (initRc == -1) {
+        std::printf("perksinit failed\n");
+        return;
+    }
+
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::printf("dude=null\n");
+        return;
+    }
+
+    std::printf("descs=%d\n", fallout::gPartyMemberDescriptionsLength);
+    int r0 = fallout::perkGetRank(dude, (fallout::Perk)0); // awareness
+    int r1 = fallout::perkGetRank(dude, (fallout::Perk)1); // bonus hth attacks
+    int r3 = fallout::perkGetRank(dude, (fallout::Perk)3); // bonus move
+    int rBad = fallout::perkGetRank(dude, (fallout::Perk)-1);
+    int h0 = fallout::perkHasRank(dude, (fallout::Perk)0) ? 1 : 0;
+
+    fallout::Object* dog = nullptr;
+    if (fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558)) == -1 || dog == nullptr) {
+        std::printf("dog create-failed\n");
+        fallout::perksExit();
+        return;
+    }
+    int rDog = fallout::perkGetRank(dog, (fallout::Perk)3);
+
+    std::printf("r=%d,%d,%d,%d h=%d dog=%d\n", r0, r1, r3, rBad, h0, rDog);
+
+    fallout::perksExit();
+}
+
 void sectionIsoRest()
 {
     std::puts("[isorest]");
@@ -10731,6 +10779,7 @@ int main()
     RUN_SECTION(PartyObjects);
     RUN_SECTION(CombatDamage);
     RUN_SECTION(CombatRequest);
+    RUN_SECTION(PerkRank);
     RUN_SECTION(IsoRest);
     RUN_SECTION(MapTransition);
     RUN_SECTION(ObjPlaceOnTile);
