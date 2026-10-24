@@ -1618,6 +1618,57 @@ public final class Item {
         return ATTACK_ANIM[index];
     }
 
+    // 0x4785D4 critterGetAnimationForHitMode.
+    public static int critterGetAnimationForHitMode(GameObject critter, int hitMode) {
+        return weaponGetAnimationForHitMode(critterGetWeaponForHitMode(critter, hitMode), hitMode);
+    }
+
+    // 0x478D30 weaponGetCriticalFailureType.
+    public static int weaponGetCriticalFailureType(GameObject weapon) {
+        if (weapon == null) {
+            return -1;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot) == -1) {
+            return -1;
+        }
+
+        return slot[0].item.data.weapon.criticalFailureType;
+    }
+
+    // 0x478E18 weaponComputeAmmoCost: the Super Cattle Prod and the Mega
+    // Power Fist cost two ammo per shot.
+    public static int weaponComputeAmmoCost(GameObject weapon, int[] ammoQty) {
+        if (ammoQty == null) {
+            return -1;
+        }
+
+        if (weapon == null) {
+            return 0;
+        }
+
+        ProtoId protoId = ProtoId.ofGameObject(weapon);
+        if (protoId.equals(ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.SuperCattleProd))
+                || protoId.equals(ProtoId.ofItemType(ProtoTypes.ItemProtoTypeId.MegaPowerFist))) {
+            ammoQty[0] *= 2;
+        }
+
+        return 0;
+    }
+
+    // gUnarmedHitDescriptions bonus-critical-chance column (src/combat.cc):
+    // BSS mirror, like the action-point-cost column. unarmedInit fills the
+    // table from combatInit, which never runs headless, so the vectors
+    // observe the zeroed table.
+    private static final int[] UNARMED_BONUS_CRITICAL_CHANCE =
+            new int[CombatDefs.HIT_MODE_COUNT];
+
+    // unarmed_get_bonus_critical_chance (src/combat.cc): raw table read.
+    public static int unarmedGetBonusCriticalChance(int hitMode) {
+        return UNARMED_BONUS_CRITICAL_CHANCE[hitMode];
+    }
+
     // 0x478DA8 weapon_get_animation_code. Returns the WeaponAnimation id
     // (ArtDefs ids match WeaponAnimation values); null weapon -> None.
     public static int weaponGetAnimationCode(GameObject weapon) {

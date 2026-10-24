@@ -7196,6 +7196,48 @@ void sectionPerkRank()
     fallout::perksExit();
 }
 
+void sectionWeaponData()
+{
+    std::puts("[weapondata]");
+
+    // The weapon-read helpers the attack computation leans on
+    // (src/item.cc / src/combat.cc): the animation per hit mode (the
+    // extended-flags nibble into _attack_anim, neutral punches/throws for
+    // bare hands), the critical-failure table index, the ammo-cost fixup
+    // (Super Cattle Prod / Mega Power Fist double their cost) and the
+    // unarmed bonus-critical-chance table.
+    fallout::Object* gun = nullptr;
+    if (fallout::objectCreateWithProtoId(&gun, fallout::ProtoId(390)) == -1 || gun == nullptr) {
+        std::printf("gun create-failed\n");
+        return;
+    }
+    fallout::Object* dog = nullptr;
+    if (fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558)) == -1 || dog == nullptr) {
+        std::printf("dog create-failed\n");
+        return;
+    }
+
+    int animPrimary = (int)fallout::weaponGetAnimationForHitMode(gun, (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY);
+    int animSecondary = (int)fallout::weaponGetAnimationForHitMode(gun, (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY);
+    int animPunch = (int)fallout::weaponGetAnimationForHitMode(nullptr, (fallout::HitMode)fallout::HIT_MODE_PUNCH);
+    int animKick = (int)fallout::weaponGetAnimationForHitMode(nullptr, (fallout::HitMode)fallout::HIT_MODE_KICK);
+    int animDog = (int)fallout::critterGetAnimationForHitMode(dog, (fallout::HitMode)fallout::HIT_MODE_PUNCH);
+    std::printf("anim=%d,%d,%d,%d,%d\n", animPrimary, animSecondary, animPunch, animKick, animDog);
+
+    int critNull = fallout::weaponGetCriticalFailureType(nullptr);
+    int critGun = fallout::weaponGetCriticalFailureType(gun);
+    std::printf("critfail=%d,%d\n", critNull, critGun);
+
+    int qty = 2;
+    int ammoRc = fallout::weaponComputeAmmoCost(gun, &qty);
+    std::printf("ammocost rc=%d qty=%d\n", ammoRc, qty);
+
+    int critHammer = fallout::unarmedGetBonusCriticalChance((fallout::HitMode)fallout::HIT_MODE_HAMMER_PUNCH);
+    int critKick = fallout::unarmedGetBonusCriticalChance((fallout::HitMode)fallout::HIT_MODE_PIERCING_KICK);
+    int critPunch = fallout::unarmedGetBonusCriticalChance((fallout::HitMode)fallout::HIT_MODE_PUNCH);
+    std::printf("bonuscrit=%d,%d,%d\n", critHammer, critKick, critPunch);
+}
+
 void sectionIsoRest()
 {
     std::puts("[isorest]");
@@ -10780,6 +10822,7 @@ int main()
     RUN_SECTION(CombatDamage);
     RUN_SECTION(CombatRequest);
     RUN_SECTION(PerkRank);
+    RUN_SECTION(WeaponData);
     RUN_SECTION(IsoRest);
     RUN_SECTION(MapTransition);
     RUN_SECTION(ObjPlaceOnTile);
