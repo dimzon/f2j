@@ -7457,6 +7457,45 @@ void sectionWorldmapTiles()
     }
     std::printf("tile0-subtile-keys=%d\n", subtileKeys);
 
+    // The terrain table of the world: the raw list, the first entries
+    // parsed the way wmParseTerrainTypes parses them (name:difficulty,
+    // comma separated), and the first random-map names the terrain's
+    // config section maps.
+    char* terrainTypes = nullptr;
+    if (!fallout::configGetString(&config, "data", "terrain_types", &terrainTypes)) {
+        std::puts("terrain-raw=<missing>");
+    } else {
+        std::printf("terrain-raw=%s\n", terrainTypes);
+        char* pch = terrainTypes;
+        for (int index = 0; index < 3; index++) {
+            pch += std::strspn(pch, " ");
+            size_t endPos = std::strcspn(pch, ",");
+            size_t delimeterPos = std::strcspn(pch, ":");
+            std::printf("terrain %d=%s/%d\n", index,
+                std::string(pch, delimeterPos).c_str(), std::atoi(pch + delimeterPos + 1));
+            if (pch[endPos] != ',') {
+                break;
+            }
+            pch += endPos + 1;
+        }
+    }
+    char* firstTerrain = nullptr;
+    if (fallout::configGetString(&config, "data", "terrain_types", &firstTerrain)) {
+        // The first name (before ':' or ',').
+        char* colon = std::strchr(firstTerrain, ':');
+        size_t nameLen = colon != nullptr ? (size_t)(colon - firstTerrain) : std::strlen(firstTerrain);
+        char section[40];
+        snprintf(section, sizeof(section), "Random Maps: %.*s", (int)nameLen, firstTerrain);
+        for (int m = 0; m < 2; m++) {
+            char key[40];
+            snprintf(key, sizeof(key), "map_%02d", m);
+            char* mapName = nullptr;
+            if (fallout::configGetString(&config, section, key, &mapName)) {
+                std::printf("terrain-map %d=%s\n", m, mapName);
+            }
+        }
+    }
+
     // With the engine's own tiles loaded, its subtile grid answers through
     // the exported lookups - the machinery mark_area_known rides on.
     if (initRc == 0 && tiles > 0) {
