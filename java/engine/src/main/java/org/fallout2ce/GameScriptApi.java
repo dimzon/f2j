@@ -20,6 +20,15 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  */
 public class GameScriptApi extends UnsupportedScriptApi {
 
+    /** Port of {@code _game_user_wants_to_quit} ({@code src/game.h}). */
+    static int gameUserWantsToQuit;
+
+    /** Port of {@code GAME_QUIT_REQUEST_NONE} ({@code src/game.h}). */
+    static final int GAME_QUIT_REQUEST_NONE = 0;
+
+    /** Port of {@code GAME_QUIT_REQUEST_MAIN_MENU} ({@code src/game.h}). */
+    static final int GAME_QUIT_REQUEST_MAIN_MENU = 2;
+
     /**
      * The opcodes this API provides. The slots are {@code opcode & 0x3FF}, so
      * they are derived rather than written out - the two are easy to mix up,
@@ -2185,13 +2194,18 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The rule is the number the game gives it, and the parameter is the
      * number or the object it asks about. The rules that need the party,
      * the queue, the skills, the settings, the kill type of a critter,
-     * the inventory (drop everything, unwield a hand) or the worldmap are
-     * answered; the ones that need the car or the elevator are not ported
-     * and answer 0.
+     * the inventory (drop everything, unwield a hand), the game flags
+     * (first run, loading, signal end) or the worldmap are answered; the
+     * ones that need the car or the elevator are not ported and answer 0.
      */
     @Override
     public int metarule(int rule, Program.ProgramValue param) {
         switch (rule) {
+        case 13: // METARULE_SIGNAL_END_GAME
+            gameUserWantsToQuit = GAME_QUIT_REQUEST_MAIN_MENU;
+            return 0;
+        case 14: // METARULE_FIRST_RUN
+            return (Map.gMapHeader.flags & 0x01) == 0 ? 1 : 0;
         case 16: // METARULE_PARTY_COUNT
             return PartyMembers.partyMembersLength;
         case 17: // METARULE_AREA_KNOWN
@@ -2204,6 +2218,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return 0;
         case 19: // METARULE_MAP_KNOWN
             return MapAreas.wmMapIsKnown(param.integerValue) ? 1 : 0;
+        case 22: // METARULE_IS_LOADGAME
+            // The game phase is not ported, so the game is never loading.
+            return 0;
         case 40: // METARULE_SKILL_CHECK_TAG
             return Skill.isTagged(param.integerValue) ? 1 : 0;
         case 42: // METARULE_DROP_ALL_INVEN
