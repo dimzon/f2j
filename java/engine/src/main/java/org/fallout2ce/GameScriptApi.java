@@ -2194,9 +2194,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The rule is the number the game gives it, and the parameter is the
      * number or the object it asks about. The rules that need the party,
      * the queue, the skills, the settings, the kill type of a critter,
-     * the inventory (drop everything, unwield a hand), the game flags
-     * (first run, loading, signal end) or the worldmap are answered; the
-     * ones that need the car or the elevator are not ported and answer 0.
+     * the inventory, the game flags, the car or the worldmap are
+     * answered; the ones that need the elevator are not ported and
+     * answer 0.
      */
     @Override
     public int metarule(int rule, Program.ProgramValue param) {
@@ -2221,6 +2221,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
         case 22: // METARULE_IS_LOADGAME
             // The game phase is not ported, so the game is never loading.
             return 0;
+        case 30: // METARULE_CAR_CURRENT_TOWN
+            return WorldmapGenData.wmCarCurrentArea().id();
+        case 31: // METARULE_GIVE_CAR_TO_PARTY
+            return WorldmapGenData.wmCarGiveToParty();
+        case 32: // METARULE_GIVE_CAR_GAS
+            return WorldmapGenData.wmCarFillGas(param.integerValue);
         case 40: // METARULE_SKILL_CHECK_TAG
             return Skill.isTagged(param.integerValue) ? 1 : 0;
         case 42: // METARULE_DROP_ALL_INVEN
@@ -2277,6 +2283,25 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 return Critter.critterGetKillType((ObjTypes.GameObject) param.pointerValue).id();
             }
             return -1;
+        case 52: // METARULE_SET_CAR_CARRY_AMOUNT
+            {
+                ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+                if (ProtoDb.protoGetProto(ProtoTypes.ProtoId.ofPid(
+                        ProtoTypes.ItemProtoTypeId.CarTrunk.id()), slot) != -1) {
+                    slot[0].item.data.container.maxSize = param.integerValue;
+                    return 1;
+                }
+            }
+            return 0;
+        case 53: // METARULE_GET_CAR_CARRY_AMOUNT
+            {
+                ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+                if (ProtoDb.protoGetProto(ProtoTypes.ProtoId.ofPid(
+                        ProtoTypes.ItemProtoTypeId.CarTrunk.id()), slot) != -1) {
+                    return slot[0].item.data.container.maxSize;
+                }
+            }
+            return 0;
         default:
             return 0;
         }

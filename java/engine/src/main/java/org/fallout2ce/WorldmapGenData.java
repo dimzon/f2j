@@ -36,9 +36,24 @@ public final class WorldmapGenData {
     /** The area the party is in, invalid until the party moves. */
     private static MapAreas.City currentAreaId = MapAreas.City.CITY_INVALID;
 
+    /** Port of {@code CAR_FUEL_MAX} ({@code src/worldmap.h}). */
+    public static final int CAR_FUEL_MAX = 80000;
+
+    /** The car's fuel, full until the party drives. */
+    private static int carFuel = CAR_FUEL_MAX;
+
+    /** The area the car is in, invalid until the party finds it. */
+    private static MapAreas.City currentCarAreaId = MapAreas.City.CITY_INVALID;
+
+    /** Whether the party rides the car. */
+    private static boolean isInCar;
+
     /** Port of {@code wmGenDataInit} (0x4BC984), the slice the reads use. */
     public static void wmGenDataInit() {
         currentAreaId = MapAreas.City.CITY_INVALID;
+        carFuel = CAR_FUEL_MAX;
+        currentCarAreaId = MapAreas.City.CITY_INVALID;
+        isInCar = false;
         wmGenDataSetStartWorldPos();
         wmGenDataClampWorldPosToBounds();
     }
@@ -107,10 +122,71 @@ public final class WorldmapGenData {
         return currentAreaId;
     }
 
+    /**
+     * Port of {@code wmCarFillGas} (0x4C4E34): fill the car's tank.
+     *
+     * @return 0 when all of the amount fit, or the amount that did not
+     * fit when the tank ran over
+     */
+    public static int wmCarFillGas(int amount) {
+        if (amount + carFuel <= CAR_FUEL_MAX) {
+            carFuel += amount;
+            return 0;
+        }
+
+        int remaining = CAR_FUEL_MAX - carFuel;
+        carFuel = CAR_FUEL_MAX;
+        return remaining;
+    }
+
+    /** Port of {@code wmCarGasAmount} (0x4C4E74). */
+    public static int wmCarGasAmount() {
+        return carFuel;
+    }
+
+    /** Port of {@code wmCarIsOutOfGas} (0x4C4E7C). */
+    public static boolean wmCarIsOutOfGas() {
+        return carFuel <= 0;
+    }
+
+    /** Port of {@code wmCarCurrentArea} (0x4C4E8C). */
+    public static MapAreas.City wmCarCurrentArea() {
+        return currentCarAreaId;
+    }
+
+    /**
+     * Port of {@code wmCarGiveToParty} (0x4C4E94): hand the car to the
+     * party and start its transition.
+     *
+     * <p>An out-of-gas car is refused; the message the original shows is
+     * the monitor's, which is not ported. With fuel, the party rides, the
+     * game is told to transition, and the out-of-gas city hiding on the
+     * worldmap (the one that marks where the car was) is done by the
+     * areas.
+     */
+    public static int wmCarGiveToParty() {
+        if (carFuel <= 0) {
+            return -1;
+        }
+
+        isInCar = true;
+
+        Map.MapTransition transition = new Map.MapTransition();
+        transition.map = WorldmapDefs.Map.MAP_TRANSITION;
+        Map.mapSetTransition(transition);
+
+        MapAreas.wmHideCarOutOfGasCity();
+
+        return 0;
+    }
+
     /** Test seam: fresh-process mirror. */
     static void resetForTests() {
         worldPosX = 0;
         worldPosY = 0;
         currentAreaId = MapAreas.City.CITY_INVALID;
+        carFuel = CAR_FUEL_MAX;
+        currentCarAreaId = MapAreas.City.CITY_INVALID;
+        isInCar = false;
     }
 }

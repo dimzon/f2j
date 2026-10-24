@@ -219,11 +219,12 @@ powershell -File docker/refharness/check-refharness.ps1  # эталон цел
   подсистем: партия, очередь (DRUG), навык-тег, фильтры, тип убийства,
   инвентарь (`DROP_ALL_INVEN` 42, `INVEN_UNWIELD_WHO` 43, `WEAPON_DAMAGE_TYPE`
   49, `CRITTER_BARTERS` 50), флаги игры (`SIGNAL_END_GAME` 13,
-  `FIRST_RUN` 14, `IS_LOADGAME` 22) и мир — `AREA_KNOWN` (17),
-  `MAP_KNOWN` (19), `GET_WORLDMAP_XPOS/YPOS` (44/45) и `CURRENT_TOWN`
-  (46); чтения мира на `[worldmaptiles]` golden/v141 (стартовая позиция
-  173,122, область не задана до движения партии). Правила машины и
-  лифта — 0.
+  `FIRST_RUN` 14, `IS_LOADGAME` 22), машина (`CAR_CURRENT_TOWN` 30,
+  `GIVE_CAR_TO_PARTY` 31, `GIVE_CAR_GAS` 32, багажник 52/53) и мир —
+  `AREA_KNOWN` (17), `MAP_KNOWN` (19), `GET_WORLDMAP_XPOS/YPOS` (44/45)
+  и `CURRENT_TOWN` (46); чтения мира на `[worldmaptiles]` golden/v141
+  (стартовая позиция 173,122, область не задана до движения партии).
+  Лифт (15) — 0.
 - op_get_pc_stat (0x80A6) отдаёт статы игрока как персонажа из
   перенесённого стат-движка (`Stat.pcGetStat`; домен PcStat уже был
   в `Stat.java` с векторами `[pcstat]`).

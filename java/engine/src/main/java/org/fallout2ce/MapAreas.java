@@ -782,6 +782,20 @@ public final class MapAreas {
         return 0;
     }
 
+    /**
+     * Port of the car-give tail of {@code wmCarGiveToParty}: hide the
+     * out-of-gas city on the worldmap, the marker of where the car was.
+     */
+    static void wmHideCarOutOfGasCity() {
+        if (!cityIsValid(City.CITY_CAR_OUT_OF_GAS.id())) {
+            return;
+        }
+
+        CityInfo city = areaInfoList.get(City.CITY_CAR_OUT_OF_GAS.id());
+        city.state = CityState.CITY_STATE_UNKNOWN;
+        city.visitedState = VisitedState.UNKNOWN;
+    }
+
     /** Test seam: fresh-process mirror (empty table). */
     static void resetForTests() {
         areaInfoList.clear();
