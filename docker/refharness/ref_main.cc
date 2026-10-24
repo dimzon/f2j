@@ -7539,6 +7539,14 @@ void sectionWorldmapTiles()
                 entries++;
             }
             std::printf("encounter %d entries=%d\n", index, entries);
+            for (int e = 0; e < entries && e < 2; e++) {
+                char key[40];
+                snprintf(key, sizeof(key), "enc_%02d", e);
+                char* entryStr = nullptr;
+                if (fallout::configGetString(&config, section, key, &entryStr)) {
+                    std::printf("encounter %d entry %d=%s\n", index, e, entryStr);
+                }
+            }
         }
     }
     std::printf("encounter-tables=%d\n", encounterTables);

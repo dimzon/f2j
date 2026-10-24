@@ -65,5 +65,19 @@ class WorldmapEncountersTest {
         assertEquals("DstS", dstS.lookupName);
         assertEquals(3, dstS.mapsLength);
         assertEquals(8, dstS.entriesLength);
+
+        // The scalar fields of the first entries, pinned by the raw lines
+        // of the vector (Chance:50%,Scenery:Normal,If...).
+        WorldmapEncounters.EncounterTableEntry dstN0 = dstN.entries[0];
+        assertEquals(50, dstN0.chance);
+        assertEquals(0, dstN0.counter);
+        assertEquals(false, dstN0.special);
+        assertEquals(2, dstN0.scenery);
+        assertEquals(25, dstN.entries[1].chance);
+        assertEquals(0, dstN.entries[1].scenery);
+
+        WorldmapEncounters.EncounterTableEntry dstS0 = dstS.entries[0];
+        assertEquals(20, dstS0.chance);
+        assertEquals(0, dstS0.scenery);
     }
 }

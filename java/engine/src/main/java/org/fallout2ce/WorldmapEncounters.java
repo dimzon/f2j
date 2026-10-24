@@ -32,6 +32,42 @@ public final class WorldmapEncounters {
     /** The most entries a table can hold. */
     static final int ENCOUNTER_TABLE_ENTRY_MAX_COUNT = 40;
 
+    /** Port of {@code EncounterTableSubEntry}, the header slice. */
+    public static final class EncounterTableSubEntry {
+        /** The least of the encounter, without a range 0. */
+        public int minimumCount;
+        /** The most of the encounter, without a range 0. */
+        public int maximumCount;
+        /** The encounter index this sub-entry names. */
+        public int encounterIndex;
+        /** The situation of the encounter. */
+        public int situation;
+    }
+
+    /** Port of {@code EncounterTableEntry}, the scalar slice. */
+    public static final class EncounterTableEntry {
+        /** The raw config line, the way the file has it. */
+        public String raw = "";
+
+        /** The chance of the entry, read from {@code Chance:}. */
+        public int chance;
+
+        /** The counter of the entry, read from {@code Counter:}. */
+        public int counter;
+
+        /** Whether the entry is special ({@code special}). */
+        public boolean special;
+
+        /** The map the entry is tied to, read from {@code map:}. */
+        public WorldmapDefs.Map map = WorldmapDefs.Map.MAP_INVALID;
+
+        /** The scenery of the entry, read from {@code Scenery:}. */
+        public int scenery;
+
+        /** How many sub-entries the entry holds (parsed next). */
+        public int subEntriesLength;
+    }
+
     /** Port of {@code EncounterTable}, the header slice. */
     public static final class EncounterTable {
         /** The lookup name. */
@@ -49,6 +85,10 @@ public final class WorldmapEncounters {
 
         /** How many entries the table holds (parsed in the next block). */
         public int entriesLength;
+
+        /** The entries, by the order the config names them. */
+        public final EncounterTableEntry[] entries =
+            new EncounterTableEntry[ENCOUNTER_TABLE_ENTRY_MAX_COUNT];
     }
 
     // 0x51DDE4-adjacent wmEncounterTableList.
@@ -115,11 +155,86 @@ public final class WorldmapEncounters {
                 if (!Config.configGetString(cfg, section, key, valuePtr)) {
                     break;
                 }
+                EncounterTableEntry entry = parseEntry(valuePtr[0]);
+                table.entries[table.entriesLength] = entry;
                 table.entriesLength++;
             }
         }
 
         return 0;
+    }
+
+    /**
+     * Port of the scalar walk of {@code wmParseEncounterTableIndex}:
+     * the chance, the counter, the special flag, the map and the
+     * scenery of an entry line.
+     *
+     * <p>The sub-entries and the condition of the line stay for the
+     * next block; the raw line is kept so nothing is lost before it.
+     */
+    static EncounterTableEntry parseEntry(String raw) {
+        EncounterTableEntry entry = new EncounterTableEntry();
+        entry.raw = raw;
+
+        entry.chance = intAfter(raw, "Chance:");
+        entry.counter = intAfter(raw, "Counter:");
+        entry.special = raw.contains("special");
+
+        String map = segmentAfter(raw, "map:");
+        if (!map.isEmpty()) {
+            int mapIdx = lookupMapByName(map.trim().toLowerCase());
+            if (mapIdx != WorldmapDefs.Map.MAP_INVALID.id()) {
+                entry.map = WorldmapDefs.ofMap(mapIdx);
+            }
+        }
+
+        String scenery = segmentAfter(raw, "Scenery:");
+        if (!scenery.isEmpty()) {
+            entry.scenery = sceneryId(scenery.trim().toLowerCase());
+        }
+
+        return entry;
+    }
+
+    /** The integer after a key, or 0 when absent. */
+    private static int intAfter(String raw, String key) {
+        int at = raw.indexOf(key);
+        if (at < 0) {
+            return 0;
+        }
+        int from = at + key.length();
+        int to = from;
+        while (to < raw.length() && Character.isDigit(raw.charAt(to))) {
+            to++;
+        }
+        return to > from ? Integer.parseInt(raw.substring(from, to)) : 0;
+    }
+
+    /** The text after a key, up to the next comma or the end. */
+    private static String segmentAfter(String raw, String key) {
+        int at = raw.indexOf(key);
+        if (at < 0) {
+            return "";
+        }
+        int from = at + key.length();
+        int to = raw.indexOf(',', from);
+        return to < 0 ? raw.substring(from) : raw.substring(from, to);
+    }
+
+    /** Port of the scenery name list ({@code wmSceneryStrs}). */
+    private static int sceneryId(String name) {
+        switch (name) {
+        case "none":
+            return 0;
+        case "light":
+            return 1;
+        case "normal":
+            return 2;
+        case "heavy":
+            return 3;
+        default:
+            return 0;
+        }
     }
 
     /** The map table index of a map's lookup name, or MAP_INVALID. */
