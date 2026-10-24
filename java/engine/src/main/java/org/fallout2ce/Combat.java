@@ -372,10 +372,236 @@ public final class Combat {
 
     public static final int COMBAT_STATE_OUT_COMBAT = 0x00;
     public static final int COMBAT_STATE_IN_COMBAT = 0x01;
+    public static final int COMBAT_STATE_EXIT_REQUESTED = 0x02;
+    public static final int COMBAT_STATE_PLAYER_TURN = 0x04;
 
     /** Port of {@code isInCombat} (src/combat.h). */
     public static boolean isInCombat() {
         return (combatState & COMBAT_STATE_IN_COMBAT) != 0;
+    }
+
+    // ===== combat structure (src/combat.cc) =====
+
+    static GameObject[] combatList;
+    static int listTotal;
+    static int listCom;
+    static int listNoncom;
+    static int combatNumTurns;
+    static ScriptsState.CombatStartData gcsd;
+
+    /**
+     * Port of {@code _combat_begin} (0x421B8C). The animation, AI info and
+     * UI tails are game-phase seams; what stays is the list build, the
+     * combat-data reset and the in-combat state.
+     */
+    static void combatBegin(GameObject attacker) {
+        if (isInCombat()) {
+            return;
+        }
+
+        combatNumTurns = 0;
+        combatExps = 0;
+        combatList = ObjectSystem.objectListCreateForCombat(Map.gElevation);
+        listTotal = combatList.length;
+        listNoncom = listTotal;
+        listCom = 0;
+        gcsd = null;
+
+        for (int index = 0; index < listTotal; index++) {
+            GameObject critter = combatList[index];
+            ObjTypes.CritterCombatData combatData = critter.data.critter.combat;
+            combatData.maneuver = combatData.maneuver.and(ObjTypes.CritterManeuver.ENGAGING);
+            combatData.damageLastTurn = 0;
+            combatData.whoHitMe = null;
+            combatData.ap = 0;
+            critter.cid = index;
+
+            ObjectSystem.scriptSetObjects(critter.sid, null, null);
+            ObjectSystem.scriptSetFixedParam(critter.sid, 0);
+        }
+
+        combatState |= COMBAT_STATE_IN_COMBAT;
+
+        // _combat_begin_extra(attacker): attackInit on the main attack and
+        // the AI begin are game-phase seams.
+    }
+
+    /**
+     * Port of {@code _combat_sequence_init} (0x42243C): attacker first,
+     * defender second, dude third.
+     */
+    static void combatSequenceInit(GameObject attacker, GameObject defender) {
+        int next = 0;
+        if (attacker != null) {
+            for (int index = 0; index < listTotal; index++) {
+                if (combatList[index] == attacker) {
+                    GameObject temp = combatList[next];
+                    combatList[index] = temp;
+                    combatList[next] = attacker;
+                    next += 1;
+                    break;
+                }
+            }
+        }
+
+        if (defender != null) {
+            for (int index = 0; index < listTotal; index++) {
+                if (combatList[index] == defender) {
+                    GameObject temp = combatList[next];
+                    combatList[index] = temp;
+                    combatList[next] = defender;
+                    next += 1;
+                    break;
+                }
+            }
+        }
+
+        GameObject dude = ObjectSystem.getDude();
+        if (attacker != dude && defender != dude) {
+            for (int index = 0; index < listTotal; index++) {
+                if (combatList[index] == dude) {
+                    GameObject temp = combatList[next];
+                    combatList[index] = temp;
+                    combatList[next] = dude;
+                    next += 1;
+                    break;
+                }
+            }
+        }
+
+        listCom = next;
+        listNoncom -= next;
+
+        if (attacker != null) {
+            Critter.critterSetWhoHitMe(attacker, defender);
+        }
+        if (defender != null) {
+            Critter.critterSetWhoHitMe(defender, attacker);
+        }
+    }
+
+    // 0x4223C8 _compare_faster: higher sequence first, luck the tiebreak.
+    static int compareFaster(GameObject critter1, GameObject critter2) {
+        int sequence1 = Stat.critterGetStat(critter1, StatDefs.Stat.STAT_SEQUENCE.id());
+        int sequence2 = Stat.critterGetStat(critter2, StatDefs.Stat.STAT_SEQUENCE.id());
+        if (sequence1 > sequence2) {
+            return -1;
+        } else if (sequence1 < sequence2) {
+            return 1;
+        }
+
+        int luck1 = Stat.critterGetStat(critter1, StatDefs.Stat.STAT_LUCK.id());
+        int luck2 = Stat.critterGetStat(critter2, StatDefs.Stat.STAT_LUCK.id());
+        if (luck1 > luck2) {
+            return -1;
+        } else if (luck1 < luck2) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Port of {@code _combat_sequence} (0x422580). The non-combatant join
+     * stage (_combat_add_noncoms) needs the AI and the turn, so it reads
+     * false headless.
+     */
+    static void combatSequence() {
+        int count = listCom;
+
+        for (int index = 0; index < count; index++) {
+            GameObject critter = combatList[index];
+            if ((critter.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) != 0) {
+                combatList[index] = combatList[count - 1];
+                combatList[count - 1] = critter;
+
+                combatList[count - 1] = combatList[listNoncom + count - 1];
+                combatList[listNoncom + count - 1] = critter;
+
+                index -= 1;
+                count -= 1;
+            }
+        }
+
+        GameObject dude = ObjectSystem.getDude();
+        for (int index = 0; index < count; index++) {
+            GameObject critter = combatList[index];
+            if (critter != dude) {
+                if ((critter.data.critter.combat.results.bits() & ObjTypes.Dam.KNOCKED_OUT.bits()) != 0
+                        || critter.data.critter.combat.maneuver.equals(ObjTypes.CritterManeuver.DISENGAGING)) {
+                    critter.data.critter.combat.maneuver = critter.data.critter.combat.maneuver
+                            .and(ObjTypes.CritterManeuver.ENGAGING.not());
+                    listNoncom += 1;
+
+                    combatList[index] = combatList[count - 1];
+                    combatList[count - 1] = critter;
+
+                    count -= 1;
+                    index -= 1;
+                }
+            }
+        }
+
+        if (count != 0) {
+            listCom = count;
+            java.util.Arrays.sort(combatList, 0, count, (a, b) -> compareFaster(a, b));
+            count = listCom;
+        }
+
+        listCom = count;
+
+        GameTime.gameTimeAddSeconds(5);
+    }
+
+    /**
+     * Port of {@code _combat_should_end} (0x422C4C).
+     */
+    static boolean combatShouldEnd() {
+        if (listCom <= 1) {
+            return true;
+        }
+
+        int index;
+        GameObject dude = ObjectSystem.getDude();
+        for (index = 0; index < listCom; index++) {
+            if (combatList[index] == dude) {
+                break;
+            }
+        }
+
+        if (index == listCom) {
+            return true;
+        }
+
+        int team = dude.data.critter.combat.team;
+
+        for (index = 0; index < listCom; index++) {
+            GameObject critter = combatList[index];
+            GameObject critterWhoHitMe = critter.data.critter.combat.whoHitMe;
+            if (critterWhoHitMe == null) {
+                continue;
+            }
+
+            if ((critterWhoHitMe.data.critter.combat.results.bits() & ObjTypes.Dam.KNOCKED_OUT.bits()) != 0) {
+                continue;
+            }
+
+            boolean targetAlive = (critterWhoHitMe.data.critter.combat.results.bits()
+                    & ObjTypes.Dam.DEAD.bits()) == ObjTypes.Dam.NONE.bits();
+            if (critter.data.critter.combat.team == team) {
+                if ((critterWhoHitMe.data.critter.combat.maneuver.bits()
+                        & ObjTypes.CritterManeuver.DISENGAGING.bits()) == 0
+                        && targetAlive) {
+                    break;
+                }
+            } else {
+                if (critterWhoHitMe.data.critter.combat.team == team || targetAlive) {
+                    break;
+                }
+            }
+        }
+
+        return index == listCom;
     }
 
     private static boolean killTypeIsValid(int killType) {

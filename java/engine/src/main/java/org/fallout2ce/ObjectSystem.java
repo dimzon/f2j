@@ -671,6 +671,25 @@ public final class ObjectSystem {
     private static byte[] energyBlendTable;
     private static byte[] redBlendTable;
 
+    // 0x48BD2C objectListCreate, tile -1: every critter on the elevation that
+    // is neither hidden nor floating, in tile order. Used by combat.
+    static GameObject[] objectListCreateForCombat(int elevation) {
+        java.util.ArrayList<GameObject> out = new java.util.ArrayList<>();
+        for (GameObjectListNode head : tileHeads) {
+            GameObjectListNode node = head;
+            while (node != null) {
+                GameObject obj = node.obj;
+                if ((obj.flags.bits() & ObjectFlags.HIDDEN.bits()) == 0
+                        && obj.elevation == elevation
+                        && FrmId.ofFid(obj.fid).objectType() == ObjectType.CRITTER) {
+                    out.add(obj);
+                }
+                node = node.next;
+            }
+        }
+        return out.toArray(new GameObject[0]);
+    }
+
     // 0x489C9C obj_pid_new.
     public static int objectCreateWithProtoId(GameObject[] objectPtr, ProtoId protoId) {
         objectPtr[0] = null;
