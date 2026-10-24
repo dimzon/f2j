@@ -3031,6 +3031,269 @@ public final class ObjectSystem {
         return 0;
     }
 
+    static final int SCRIPT_FLAG_LOADED = 0x01;
+    static final int SCRIPT_FLAG_NO_SPATIAL = 0x02;
+    static final int SCRIPT_FLAG_EXECUTED = 0x04;
+    static final int SCRIPT_FLAG_NO_REMOVE = 0x10;
+
+    static final int SCRIPT_PROC_NO_PROC = 0;
+    static final int SCRIPT_PROC_FIRST = SCRIPT_PROC_NO_PROC;
+    static final int SCRIPT_PROC_START = 1;
+    static final int SCRIPT_PROC_SPATIAL = 2;
+    static final int SCRIPT_PROC_DESCRIPTION = 3;
+    static final int SCRIPT_PROC_PICKUP = 4;
+    static final int SCRIPT_PROC_DROP = 5;
+    static final int SCRIPT_PROC_USE = 6;
+    static final int SCRIPT_PROC_USE_OBJ_ON = 7;
+    static final int SCRIPT_PROC_USE_SKILL_ON = 8;
+    static final int SCRIPT_PROC_TALK = 11;
+    static final int SCRIPT_PROC_CRITTER = 12;
+    static final int SCRIPT_PROC_COMBAT = 13;
+    static final int SCRIPT_PROC_DAMAGE = 14;
+    static final int SCRIPT_PROC_MAP_ENTER = 15;
+    static final int SCRIPT_PROC_MAP_EXIT = 16;
+    static final int SCRIPT_PROC_CREATE = 17;
+    static final int SCRIPT_PROC_DESTROY = 18;
+    static final int SCRIPT_PROC_LOOK_AT = 21;
+    static final int SCRIPT_PROC_TIMED = 22;
+    static final int SCRIPT_PROC_MAP_UPDATE = 23;
+    static final int SCRIPT_PROC_PUSH = 24;
+    static final int SCRIPT_PROC_IS_DROPPING = 25;
+    static final int SCRIPT_PROC_COMBAT_IS_STARTING = 26;
+    static final int SCRIPT_PROC_COMBAT_IS_OVER = 27;
+
+    static final String[] SCRIPT_PROC_NAMES = {
+        "no_p_proc",
+        "start",
+        "spatial_p_proc",
+        "description_p_proc",
+        "pickup_p_proc",
+        "drop_p_proc",
+        "use_p_proc",
+        "use_obj_on_p_proc",
+        "use_skill_on_p_proc",
+        "none_x_bad",
+        "none_x_bad",
+        "talk_p_proc",
+        "critter_p_proc",
+        "combat_p_proc",
+        "damage_p_proc",
+        "map_enter_p_proc",
+        "map_exit_p_proc",
+        "create_p_proc",
+        "destroy_p_proc",
+        "none_x_bad",
+        "none_x_bad",
+        "look_at_p_proc",
+        "timed_event_p_proc",
+        "map_update_p_proc",
+        "push_p_proc",
+        "is_dropping_p_proc",
+        "combat_is_starting_p_proc",
+        "combat_is_over_p_proc",
+    };
+
+    /** One entry of scripts.lst (src/scripts.cc ScriptsListEntry). */
+    static final class ScriptsListEntry {
+        String name = "";
+        int localVarsNum;
+    }
+
+    private static final java.util.ArrayList<ScriptsListEntry> scriptsListEntries = new java.util.ArrayList<>();
+
+    static int scriptsListEntriesLength() {
+        return scriptsListEntries.size();
+    }
+
+    static boolean scriptsIsValidScriptIndex(int scriptIndex) {
+        return scriptIndex >= 0 && scriptIndex < scriptsListEntries.size();
+    }
+
+    // 0x4A4D50 scriptsLoadScriptsList: read scripts/scripts.lst, one entry
+    // per line (name up to ".int", local_vars=N after '#'). The script
+    // path is the game's "scripts\\" base.
+    static int scriptsLoadScriptsList() {
+        scriptsListEntries.clear();
+        String path = "scripts\\scripts.lst";
+        int[] size = { -1 };
+        if (Db.dbGetFileSize(path, size) != 0 || size[0] <= 0) {
+            return -1;
+        }
+        byte[] data = new byte[size[0]];
+        if (Db.dbGetFileContents(path, data, 0) != 0) {
+            return -1;
+        }
+        String text = new String(data, java.nio.charset.StandardCharsets.ISO_8859_1);
+        for (String line : text.split("\r?\n")) {
+            ScriptsListEntry entry = new ScriptsListEntry();
+            int dot = line.indexOf(".int");
+            if (dot >= 0) {
+                int length = dot;
+                if (length > 13) {
+                    return -1;
+                }
+                entry.name = line.substring(0, length);
+            }
+            int hash = line.indexOf('#');
+            if (hash >= 0) {
+                int eq = line.indexOf("local_vars=", hash);
+                if (eq >= 0) {
+                    int end = line.indexOf(' ', eq);
+                    if (end == -1) {
+                        end = line.length();
+                    }
+                    try {
+                        entry.localVarsNum = Integer.parseInt(line.substring(eq + 11, end).trim());
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+            scriptsListEntries.add(entry);
+        }
+        return 0;
+    }
+
+    // 0x4A4F68 scriptsGetFileName: "name.int" for a valid index.
+    static int scriptsGetFileName(int scriptIndex, String[] out) {
+        out[0] = null;
+        if (!scriptsIsValidScriptIndex(scriptIndex) || scriptsListEntries.get(scriptIndex).name.isEmpty()) {
+            return -1;
+        }
+        out[0] = scriptsListEntries.get(scriptIndex).name + ".int";
+        return 0;
+    }
+
+    // 0x4A4618 _scr_find_str_run_info: localVarsCount from scripts.lst.
+    static int scrFindStrRunInfo(int scriptIndex, int sid) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(sid, slot) == -1) {
+            return -1;
+        }
+        if (scriptsIsValidScriptIndex(scriptIndex)) {
+            slot[0].localVarsCount = scriptsListEntries.get(scriptIndex).localVarsNum;
+        }
+        return 0;
+    }
+
+    // 0x4A49D0 scriptLocateProcs.
+    static int scriptLocateProcs(Script script) {
+        for (int proc = SCRIPT_PROC_FIRST; proc < SCRIPT_PROC_COUNT; proc++) {
+            int index = Program.programFindProcedure(script.program, SCRIPT_PROC_NAMES[proc]);
+            if (index == -1) {
+                index = SCRIPT_PROC_NO_PROC;
+            }
+            script.procs[proc] = index;
+        }
+        return 0;
+    }
+
+    // 0x4A47F8 scriptExecProc: load the script's program when needed, run
+    // its start procedure, then the requested procedure. The script hooks
+    // are identity headless; the detached/child-call guards stay as in C.
+    static int scriptExecProc(int sid, int proc) {
+        if (proc < SCRIPT_PROC_FIRST || proc >= SCRIPT_PROC_COUNT) {
+            return -1;
+        }
+        Script[] slot = new Script[1];
+        if (scriptGetScript(sid, slot) == -1) {
+            return -1;
+        }
+        Script script = slot[0];
+        script.scriptOverrides = 0;
+
+        boolean programLoaded = false;
+        if ((script.flags & SCRIPT_FLAG_LOADED) == 0) {
+            String[] nameSlot = new String[1];
+            if (scriptsGetFileName(script.index & 0xFFFFFF, nameSlot) == -1) {
+                return -1;
+            }
+            script.program = Program.programCreateByPath("scripts\\" + nameSlot[0]);
+            if (script.program == null) {
+                return -1;
+            }
+            programLoaded = true;
+            script.flags |= SCRIPT_FLAG_LOADED;
+        }
+
+        Program program = script.program;
+        if (program == null) {
+            return -1;
+        }
+
+        if ((program.flags & (Program.PROGRAM_FLAG_FATAL_ERROR | Program.PROGRAM_FLAG_CHILD_CALL
+                | Program.PROGRAM_FLAG_CHILD_SPAWN)) != 0) {
+            return 0;
+        }
+
+        if (script.target == null) {
+            script.target = script.owner;
+        }
+
+        script.flags |= SCRIPT_FLAG_EXECUTED;
+
+        if (programLoaded) {
+            scriptLocateProcs(script);
+            script.action = 0;
+            Program.runProgram(program);
+            Program.programInterpret(program, -1);
+            if ((program.flags & (Program.PROGRAM_FLAG_FATAL_ERROR | Program.PROGRAM_FLAG_CHILD_CALL
+                    | Program.PROGRAM_FLAG_CHILD_SPAWN)) != 0) {
+                return 0;
+            }
+        }
+
+        int procedureIndex = script.procs[proc];
+        if (procedureIndex == 0) {
+            procedureIndex = script.procs[SCRIPT_PROC_START];
+            if (procedureIndex == 0) {
+                procedureIndex = -1;
+            }
+        }
+
+        if (procedureIndex == -1) {
+            script.source = null;
+            return -1;
+        }
+
+        script.action = proc;
+
+        Program.programExecuteProcedure(program, procedureIndex);
+
+        if (scriptGetScript(sid, slot) == -1) {
+            return 0;
+        }
+        script = slot[0];
+        script.source = null;
+        script.action = 0;
+
+        return 0;
+    }
+
+    // 0x4A5F28 scriptRemove: drop the script from its type list and clean
+    // its runtime state (the extent bookkeeping collapses, like scriptAdd).
+    static int scriptRemove(int sid) {
+        if (sid == -1) {
+            return -1;
+        }
+        int type = scriptTypeFromSid(sid);
+        if (type < 0 || type >= SCRIPT_TYPE_COUNT) {
+            return -1;
+        }
+        java.util.List<Script> list = scriptTypeScripts.get(type);
+        for (int index = 0; index < list.size(); index++) {
+            if (list.get(index).sid == sid) {
+                Script script = list.remove(index);
+                script.program = null;
+                script.owner = null;
+                script.source = null;
+                script.target = null;
+                script.overriddenSelf = null;
+                return 0;
+            }
+        }
+        return -1;
+    }
+
     // 0x4A39AC scriptGetSelf: the script's owner, or for a spatial script a
     // hidden marker object. The spatial marker is created and attached; its
     // home-tile search needs the spatial enumeration and is left where the

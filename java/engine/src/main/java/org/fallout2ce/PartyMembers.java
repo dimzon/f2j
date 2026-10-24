@@ -176,6 +176,20 @@ public final class PartyMembers {
     /** Port of {@code gPartyMemberCount} (0x519DAC). */
     static int partyMembersLength;
 
+    // object_is_party_member (src/party_member.cc): the object is one of
+    // the party members.
+    public static boolean objectIsPartyMember(GameObject object) {
+        if (object == null) {
+            return false;
+        }
+        for (int index = 0; index < partyMembersLength; index++) {
+            if (partyMembers.get(index).object == object) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Port of {@code _partyStatePrepped} (0x519DB4). */
     static int partyStatePrepped;
 

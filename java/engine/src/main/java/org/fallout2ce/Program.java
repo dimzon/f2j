@@ -1387,7 +1387,7 @@ public class Program implements Export.StringHeap {
     }
 
     // runProgram (0x4682B4).
-    private static void runProgram(Program program) {
+    static void runProgram(Program program) {
         program.flags |= PROGRAM_FLAG_RUNNING;
         programListNodeCreate(program);
     }

@@ -318,6 +318,9 @@ public final class CombatDefs {
         public int defenderKnockback;
         public ObjTypes.GameObject intendedTarget;
         public int extrasLength;
+        public ObjTypes.GameObject[] extras;
+        public int[] extrasDamage;
+        public ObjTypes.Dam[] extrasFlags;
     }
 
     /**

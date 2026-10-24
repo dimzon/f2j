@@ -149,6 +149,58 @@ public final class Critter {
         return slot[0].critter.data.killType;
     }
 
+    // critter_get_exp (src/critter.cc 0x42DCB8): the proto's experience.
+    public static int critterGetExp(GameObject critter) {
+        ProtoId protoId = ProtoId.ofGameObject(critter);
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(protoId, slot) == -1) {
+            return 0;
+        }
+        return slot[0].critter.data.experience;
+    }
+
+    // critter_flag_check (src/critter.cc 0x42E688): proto flags of a
+    // critter proto.
+    public static boolean critterFlagCheck(GameObject critter, ObjTypes.CritterFlags flag) {
+        ProtoId protoId = ProtoId.ofGameObject(critter);
+        if (!protoId.valid() || protoId.objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(protoId, slot) == -1) {
+            return false;
+        }
+        return (slot[0].critter.data.flags.bits() & flag.bits()) != 0;
+    }
+
+    // critter_set_who_hit_me (src/critter.cc 0x42E5B4). The reaction tail
+    // for a dude attacker is a game-phase seam; the intelligence roll is
+    // taken the way the original does.
+    public static int critterSetWhoHitMe(GameObject critter, GameObject hitMe) {
+        if (critter == null) {
+            return -1;
+        }
+        if (hitMe != null && FrmId.ofFid(hitMe.fid).objectType() != ObjectType.CRITTER) {
+            return -1;
+        }
+        if (ProtoId.ofGameObject(critter).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            boolean sameTeam = hitMe != null
+                    && critter.data.critter.combat.team == hitMe.data.critter.combat.team;
+            int[] howMuch = new int[1];
+            boolean rollFailed = Stat.statRoll(critter,
+                    StatDefs.Stat.STAT_INTELLIGENCE.id(), -1, howMuch).ordinal() < 2;
+            boolean bothPartyMembers = PartyMembers.objectIsPartyMember(critter)
+                    && (hitMe == null || PartyMembers.objectIsPartyMember(hitMe));
+            if (!sameTeam || rollFailed || !bothPartyMembers) {
+                critter.data.critter.combat.whoHitMe = hitMe;
+                if (hitMe == ObjectSystem.getDude()) {
+                    // reactionSetValue(critter, -3): game-phase seam.
+                }
+            }
+        }
+        return 0;
+    }
+
     // KNOCKDOWN_AND_DEATH / SF_DEATH anim ranges (src/animation_defs.h).
     /** FIRST_KNOCKDOWN_AND_DEATH_ANIM = ANIM_FALL_BACK. */
     public static final int FIRST_KNOCKDOWN_AND_DEATH_ANIM = 20;
@@ -309,7 +361,7 @@ public final class Critter {
             if (newHp <= 0
                     && (critter.data.critter.combat.results.bits()
                             & Dam.DEAD.bits()) == Dam.NONE.bits()) {
-                critterKill(critter);
+                critterKill(critter, -1, true);
             }
         } else {
             critter.data.critter.hp = maximumHp;
@@ -426,12 +478,36 @@ public final class Critter {
         return actionPoints;
     }
 
-    // Seam for critterKill(critter, ANIM_INVALID, true) (src/critter.cc,
-    // game phase: death animation/flags/rect refresh). The kill branch
-    // needs maximumHp >= newHp AND newHp <= 0, which is unreachable
-    // headless (maximumHp is 0, so any lethal adjust overshoots into the
-    // clamp branch); kept as a seam so the branch stays transcribed.
-    private static void critterKill(GameObject critter) {
+    // critter_kill (src/critter.cc 0x42DA64). The animation/fid, the light
+    // and the rect refresh are render (game phase); the dude death-ending
+    // tail needs the game. What stays is the observable state: hp zero, the
+    // dead bit, party removal, death script removal, hidden-item destruction
+    // and the drug-event clear.
+    public static void critterKill(GameObject critter, int anim, boolean refreshRect) {
+        if (ProtoId.ofGameObject(critter).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return;
+        }
+
+        critter.data.critter.hp = 0;
+        critter.data.critter.combat.results = critter.data.critter.combat.results.or(Dam.DEAD);
+
+        PartyMembers.partyMemberRemove(critter);
+
+        // scriptHooks_OnDeath(critter): identity headless.
+        // Death animation/fid selection, flat/no-block toggles and the
+        // light-off are render (game phase, deferred).
+        // queueClearByEventType(EVENT_TYPE_DRUG, _critterClearObjDrugs):
+        // drug events are game phase yet the queue is here, so the events
+        // are cleared the same way (the C callback matches the cleared
+        // object).
+        EventQueue.queueClearByEventType(EventQueue.EventType.DRUG, null);
+
+        Item.itemDestroyAllHidden(critter);
+
+        if (critter.sid != -1) {
+            ObjectSystem.scriptRemove(critter.sid);
+            critter.sid = -1;
+        }
     }
 
     // Port of gDude (src/object.cc, unported): null headless, so every

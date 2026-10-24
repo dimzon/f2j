@@ -7034,6 +7034,67 @@ void sectionPartyObjects()
     std::printf("dup-add=%d\n", dupRc);
 }
 
+void sectionCombatDamage()
+{
+    std::puts("[combatdamage]");
+
+    // [partyobjects] ran first, so the dude exists; a fresh dog (no
+    // script sid) is the target. The section pins the death flags without
+    // applying them, the non-lethal application through _apply_damage,
+    // and the lethal arm of actionDamage (whose internal formula is a
+    // static helper, so it is observed through the outcome).
+    fallout::Object* dog = nullptr;
+    if (fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558)) == -1 || dog == nullptr) {
+        std::printf("dog create-failed\n");
+        return;
+    }
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::printf("dude=null\n");
+        return;
+    }
+
+    int dt = fallout::critterGetStat(dog,
+        (fallout::Stat)((int)fallout::STAT_DAMAGE_THRESHOLD + (int)fallout::DAMAGE_TYPE_NORMAL));
+    int dr = fallout::critterGetStat(dog,
+        (fallout::Stat)((int)fallout::STAT_DAMAGE_RESISTANCE + (int)fallout::DAMAGE_TYPE_NORMAL));
+    int exp = fallout::critterGetExp(dog);
+    std::printf("dt=%d dr=%d exp=%d\n", dt, dr, exp);
+
+    dog->data.critter.hp = 20;
+    dog->data.critter.combat.results = fallout::DAM_NONE;
+    fallout::Attack attack;
+    fallout::attackInit(&attack, dude, dog,
+        (fallout::HitMode)fallout::HIT_MODE_PUNCH,
+        (fallout::HitLocation)fallout::HIT_LOCATION_TORSO);
+    attack.attackerFlags = fallout::DAM_HIT;
+    attack.intendedTarget = dog;
+    attack.defenderDamage = 15;
+    fallout::attackComputeDeathFlags(&attack);
+    std::printf("nonlethal-dead=%d\n",
+        (attack.defenderFlags & fallout::DAM_DEAD) != fallout::DAM_NONE ? 1 : 0);
+
+    fallout::_apply_damage(&attack, false);
+    std::printf("hp=%d dead=%d last=%d\n",
+        dog->data.critter.hp,
+        (dog->data.critter.combat.results & fallout::DAM_DEAD) != fallout::DAM_NONE ? 1 : 0,
+        dog->data.critter.combat.damageLastTurn);
+
+    dog->data.critter.hp = 5;
+    dog->data.critter.combat.results = fallout::DAM_NONE;
+    attack.defenderDamage = 10;
+    attack.defenderFlags = fallout::DAM_NONE;
+    attack.attackerFlags = fallout::DAM_HIT;
+    fallout::attackComputeDeathFlags(&attack);
+    std::printf("lethal-dead=%d\n",
+        (attack.defenderFlags & fallout::DAM_DEAD) != fallout::DAM_NONE ? 1 : 0);
+    fallout::_apply_damage(&attack, false);
+    std::printf("kill hp=%d dead=%d kills=%d\n",
+        dog->data.critter.hp,
+        (dog->data.critter.combat.results & fallout::DAM_DEAD) != fallout::DAM_NONE ? 1 : 0,
+        fallout::killsGetByType(fallout::KILL_TYPE_DOG));
+}
+
 void sectionIsoRest()
 {
     std::puts("[isorest]");
@@ -10615,6 +10676,7 @@ int main()
     RUN_SECTION(StatsSave);
     RUN_SECTION(FrmIds);
     RUN_SECTION(PartyObjects);
+    RUN_SECTION(CombatDamage);
     RUN_SECTION(IsoRest);
     RUN_SECTION(MapTransition);
     RUN_SECTION(ObjPlaceOnTile);

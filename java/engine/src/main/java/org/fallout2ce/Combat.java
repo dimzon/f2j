@@ -362,9 +362,334 @@ public final class Combat {
                 && hitMode <= CombatDefs.LAST_ADVANCED_UNARMED_HIT_MODE);
     }
 
+    // ===== kills and combat experience (gKillsByType, _combat_exps) =====
+
+    private static final int[] killsByType = new int[ProtoTypes.KillType.values().length];
+    private static int combatExps;
+
+    private static boolean killTypeIsValid(int killType) {
+        return killType >= 0 && killType < killsByType.length;
+    }
+
+    /** Port of {@code killsIncByType} (src/critter.cc 0x42D878). */
+    public static int killsIncByType(int killType) {
+        if (killTypeIsValid(killType)) {
+            killsByType[killType]++;
+            return 0;
+        }
+        return -1;
+    }
+
+    /** Port of {@code killsGetByType}. */
+    public static int killsGetByType(int killType) {
+        if (killTypeIsValid(killType)) {
+            return killsByType[killType];
+        }
+        return 0;
+    }
+
+    /** The combat experience bank ({@code _combat_exps}). */
+    public static int combatExps() {
+        return combatExps;
+    }
+
+    // ===== damage application (src/combat.cc) =====
+
+    /**
+     * Port of {@code _compute_dmg_damage} (0x413660): threshold, then
+     * resistance, clamped at zero, with the multihex/electrical knockback
+     * gate.
+     */
+    public static int computeDmgDamage(int min, int max, ObjTypes.GameObject obj,
+            int[] knockbackDistancePtr, ProtoTypes.DamageType damageType) {
+        if (Critter.critterFlagCheck(obj, ObjTypes.CritterFlags.NO_KNOCKBACK)) {
+            knockbackDistancePtr = null;
+        }
+
+        int damage = GameRandom.randomBetween(min, max)
+            - Stat.critterGetStat(obj, StatDefs.Stat.STAT_DAMAGE_THRESHOLD.id() + damageType.id());
+        if (damage > 0) {
+            damage -= Stat.critterGetStat(obj,
+                StatDefs.Stat.STAT_DAMAGE_RESISTANCE.id() + damageType.id()) * damage / 100;
+        }
+
+        if (damage < 0) {
+            damage = 0;
+        }
+
+        if (knockbackDistancePtr != null) {
+            if ((obj.flags.bits() & ObjTypes.ObjectFlags.MULTIHEX.bits()) == 0
+                    && damageType != ProtoTypes.DamageType.DAMAGE_TYPE_ELECTRICAL) {
+                knockbackDistancePtr[0] = damage / 10;
+            }
+        }
+
+        return damage;
+    }
+
+    // 0x424EE8 _check_for_death.
+    private static void checkForDeath(ObjTypes.GameObject object, int damage, ObjTypes.Dam[] flags) {
+        if (object == null || !Critter.critterFlagCheck(object, ObjTypes.CritterFlags.INVULNERABLE)) {
+            if (object == null || ProtoTypes.ProtoId.ofGameObject(object).objectType()
+                    == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+                if (damage > 0) {
+                    if (Critter.critterGetHitPoints(object) - damage <= 0) {
+                        flags[0] = flags[0].or(ObjTypes.Dam.DEAD);
+                    }
+                }
+            }
+        }
+    }
+
+    /** Port of {@code attackComputeDeathFlags} (0x424BB0). */
+    public static void attackComputeDeathFlags(CombatDefs.Attack attack) {
+        ObjTypes.Dam[] attackerFlags = { attack.attackerFlags };
+        ObjTypes.Dam[] defenderFlags = { attack.defenderFlags };
+        checkForDeath(attack.attacker, attack.attackerDamage, attackerFlags);
+        checkForDeath(attack.defender, attack.defenderDamage, defenderFlags);
+        attack.attackerFlags = attackerFlags[0];
+        attack.defenderFlags = defenderFlags[0];
+
+        for (int index = 0; index < attack.extrasLength; index++) {
+            ObjTypes.Dam[] extraFlags = { attack.extrasFlags[index] };
+            checkForDeath(attack.extras[index], attack.extrasDamage[index], extraFlags);
+            attack.extrasFlags[index] = extraFlags[0];
+        }
+    }
+
+    // 0x424F2C _set_new_results.
+    private static void setNewResults(ObjTypes.GameObject critter, ObjTypes.Dam flags) {
+        if (critter == null) {
+            return;
+        }
+        if (FrmId.ofFid(critter.fid).objectType() != ObjectType.CRITTER) {
+            return;
+        }
+        if (Critter.critterFlagCheck(critter, ObjTypes.CritterFlags.INVULNERABLE)) {
+            return;
+        }
+
+        if ((flags.bits() & ObjTypes.Dam.DEAD.bits()) != 0) {
+            EventQueue.queueRemoveEvents(critter);
+        } else if ((flags.bits() & ObjTypes.Dam.KNOCKED_OUT.bits()) != 0) {
+            EventQueue.queueRemoveEventsByType(critter, EventQueue.EventType.KNOCKOUT);
+            int endurance = Stat.critterGetStat(critter, StatDefs.Stat.STAT_ENDURANCE.id());
+            EventQueue.queueAddEvent(10 * (35 - 3 * endurance), critter, null,
+                EventQueue.EventType.KNOCKOUT);
+        }
+
+        // The dude arm-cripple interface update is a game-phase seam.
+        critter.data.critter.combat.results = critter.data.critter.combat.results.or(flags.and(
+            ObjTypes.Dam.KNOCKED_OUT.or(ObjTypes.Dam.KNOCKED_DOWN).or(ObjTypes.Dam.CRIP)
+                .or(ObjTypes.Dam.DEAD).or(ObjTypes.Dam.LOSE_TURN)));
+    }
+
+    // 0x425020 _damage_object.
+    private static void damageObject(ObjTypes.GameObject target, int damage, boolean animated,
+            boolean hitUnintendedTarget, ObjTypes.GameObject damageSource) {
+        if (target == null) {
+            return;
+        }
+        if (FrmId.ofFid(target.fid).objectType() != ObjectType.CRITTER) {
+            return;
+        }
+        if (Critter.critterFlagCheck(target, ObjTypes.CritterFlags.INVULNERABLE)) {
+            return;
+        }
+        if (damage <= 0) {
+            return;
+        }
+
+        Critter.critterAdjustHitPoints(target, -damage);
+
+        // dude interfaceRenderHitPoints(animated): game-phase seam.
+        target.data.critter.combat.damageLastTurn += damage;
+
+        if (!hitUnintendedTarget) {
+            if (!PartyMembers.objectIsPartyMember(target) || !PartyMembers.objectIsPartyMember(damageSource)) {
+                ObjectSystem.scriptSetFixedParam(target.sid, damage);
+                ObjectSystem.scriptExecProc(target.sid, ObjectSystem.SCRIPT_PROC_DAMAGE);
+            }
+        }
+
+        if ((target.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) != 0) {
+            ObjectSystem.scriptSetObjects(target.sid, target.data.critter.combat.whoHitMe, null);
+            ObjectSystem.scriptExecProc(target.sid, ObjectSystem.SCRIPT_PROC_DESTROY);
+            Item.itemDestroyAllHidden(target);
+
+            if (target != ObjectSystem.getDude()) {
+                ObjTypes.GameObject whoHitMe = target.data.critter.combat.whoHitMe;
+                ObjTypes.GameObject dude = ObjectSystem.getDude();
+                if (whoHitMe == dude || (whoHitMe != null && dude != null
+                        && whoHitMe.data.critter.combat.team == dude.data.critter.combat.team)) {
+                    boolean scriptOverrides = false;
+                    ObjectSystem.Script[] slot = new ObjectSystem.Script[1];
+                    if (ObjectSystem.scriptGetScript(target.sid, slot) != -1) {
+                        scriptOverrides = slot[0].scriptOverrides != 0;
+                    }
+                    if (!scriptOverrides) {
+                        combatExps += Critter.critterGetExp(target);
+                        killsIncByType(Critter.critterGetKillType(target).id());
+                    }
+                }
+            }
+
+            if (target.sid != -1) {
+                ObjectSystem.scriptRemove(target.sid);
+                target.sid = -1;
+            }
+
+            PartyMembers.partyMemberRemove(target);
+            // scriptHooks_OnDeath(target): identity headless.
+        }
+    }
+
+    // 0x424C04 _apply_damage. The AI bystander/retaliation notifications
+    // are game-phase seams; the script procs run through the registry.
+    public static void applyDamage(CombatDefs.Attack attack, boolean animated) {
+        ObjTypes.GameObject attacker = attack.attacker;
+        boolean attackerIsCritter = attacker != null
+                && FrmId.ofFid(attacker.fid).objectType() == ObjectType.CRITTER;
+        boolean hitUnintendedTarget = attack.defender != attack.intendedTarget;
+
+        if (attackerIsCritter && (attacker.data.critter.combat.results.bits()
+                & ObjTypes.Dam.DEAD.bits()) == ObjTypes.Dam.NONE.bits()) {
+            setNewResults(attacker, attack.attackerFlags);
+            damageObject(attacker, attack.attackerDamage, animated, hitUnintendedTarget, attacker);
+        }
+
+        // bystanders might flee: _combatai_notify_onlookers (game phase).
+        ObjTypes.GameObject defender = attack.defender;
+        boolean defenderIsCritter = defender != null
+                && FrmId.ofFid(defender.fid).objectType() == ObjectType.CRITTER;
+
+        if (!defenderIsCritter && !hitUnintendedTarget) {
+            boolean shouldRunDamageProc = !PartyMembers.objectIsPartyMember(attack.defender)
+                    || !PartyMembers.objectIsPartyMember(attack.attacker);
+            if (shouldRunDamageProc) {
+                if (defender != null && defender.sid != -1) {
+                    ObjectSystem.scriptSetFixedParam(defender.sid, attack.attackerDamage);
+                    ObjectSystem.scriptSetObjects(defender.sid, attack.attacker, attack.weapon);
+                    ObjectSystem.scriptExecProc(defender.sid, ObjectSystem.SCRIPT_PROC_DAMAGE);
+                }
+            }
+        }
+
+        if (defenderIsCritter && (defender.data.critter.combat.results.bits()
+                & ObjTypes.Dam.DEAD.bits()) == ObjTypes.Dam.NONE.bits()) {
+            setNewResults(defender, attack.defenderFlags);
+
+            if ((defender.data.critter.combat.results.bits()
+                    & (ObjTypes.Dam.DEAD.bits() | ObjTypes.Dam.KNOCKED_OUT.bits())) != 0) {
+                if (!hitUnintendedTarget || defender != ObjectSystem.getDude()) {
+                    Critter.critterSetWhoHitMe(defender, attack.attacker);
+                }
+            } else if (attackerIsCritter
+                    && (defender == attack.intendedTarget
+                        || defender.data.critter.combat.team != attacker.data.critter.combat.team)) {
+                // _combatai_check_retaliation(defender, attack.attacker): game phase.
+            }
+
+            ObjectSystem.scriptSetObjects(defender.sid, attack.attacker, attack.weapon);
+            damageObject(defender, attack.defenderDamage, animated, hitUnintendedTarget, attacker);
+
+            if (attack.defenderDamage >= 0 && (attack.attackerFlags.bits()
+                    & ObjTypes.Dam.HIT.bits()) != ObjTypes.Dam.NONE.bits()) {
+                ObjectSystem.scriptSetObjects(attack.attacker.sid, null, attack.defender);
+                ObjectSystem.scriptSetFixedParam(attack.attacker.sid, 2);
+                ObjectSystem.scriptExecProc(attack.attacker.sid, ObjectSystem.SCRIPT_PROC_COMBAT);
+            }
+        }
+
+        for (int index = 0; index < attack.extrasLength; index++) {
+            ObjTypes.GameObject obj = attack.extras[index];
+            if (FrmId.ofFid(obj.fid).objectType() == ObjectType.CRITTER
+                    && (obj.data.critter.combat.results.bits()
+                        & ObjTypes.Dam.DEAD.bits()) == ObjTypes.Dam.NONE.bits()) {
+                setNewResults(obj, attack.extrasFlags[index]);
+
+                if (defenderIsCritter) {
+                    if ((obj.data.critter.combat.results.bits()
+                            & (ObjTypes.Dam.DEAD.bits() | ObjTypes.Dam.KNOCKED_OUT.bits())) != 0) {
+                        Critter.critterSetWhoHitMe(obj, attack.attacker);
+                    } else if (attackerIsCritter
+                            && obj.data.critter.combat.team != attacker.data.critter.combat.team) {
+                        // _combatai_check_retaliation(obj, attack.attacker): game phase.
+                    }
+                }
+
+                ObjectSystem.scriptSetObjects(obj.sid, attack.attacker, attack.weapon);
+                damageObject(obj, attack.extrasDamage[index], animated, hitUnintendedTarget, attack.attacker);
+
+                if (attack.extrasDamage[index] >= 0 && (attack.attackerFlags.bits()
+                        & ObjTypes.Dam.HIT.bits()) != ObjTypes.Dam.NONE.bits()) {
+                    ObjectSystem.scriptSetObjects(attack.attacker.sid, null, obj);
+                    ObjectSystem.scriptSetFixedParam(attack.attacker.sid, 2);
+                    ObjectSystem.scriptExecProc(attack.attacker.sid, ObjectSystem.SCRIPT_PROC_COMBAT);
+                }
+            }
+        }
+    }
+
+    /**
+     * Port of {@code actionDamage} (0x4122E0), the un-animated arm: the
+     * force-field attacker is hidden and placed, the target is the blocking
+     * object, the damage bypasses armor or runs through the threshold and
+     * resistance, a lethal hit kills before the report applies the damage
+     * the same way.
+     */
+    public static void actionDamage(int tile, int elevation, int minDamage, int maxDamage,
+            ProtoTypes.DamageType damageType, boolean animated, boolean bypassArmor) {
+        ObjTypes.GameObject[] attackerSlot = new ObjTypes.GameObject[1];
+        if (ObjectSystem.objectCreateWithFrmIdProtoId(attackerSlot,
+                FrmId.ofType(ObjectType.SCENERY, ArtDefs.SceneryFrameId.ForceField3.id()),
+                ProtoTypes.ProtoId.empty()) == -1) {
+            return;
+        }
+        ObjTypes.GameObject attacker = attackerSlot[0];
+        ObjectSystem.objectHide(attacker);
+        attacker.flags = attacker.flags.or(ObjTypes.ObjectFlags.NO_SAVE);
+        ObjectSystem.objectSetLocation(attacker, tile, elevation);
+
+        ObjTypes.GameObject defender = ObjectSystem.objBlockingAt(null, tile, elevation);
+        CombatDefs.Attack attack = new CombatDefs.Attack();
+        attackInit(attack, attacker, defender, CombatDefs.HitMode.HIT_MODE_PUNCH.id(),
+            CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
+        attack.tile = tile;
+        attack.attackerFlags = ObjTypes.Dam.HIT;
+
+        if (defender != null) {
+            int damage;
+            if (bypassArmor) {
+                damage = maxDamage;
+            } else {
+                int[] knockback = { 0 };
+                damage = computeDmgDamage(minDamage, maxDamage, defender, knockback, damageType);
+                attack.defenderKnockback = knockback[0];
+            }
+            attack.defenderDamage = damage;
+        }
+
+        attackComputeDeathFlags(attack);
+
+        if (animated) {
+            // The animation queue of the animated arm is game phase.
+        } else {
+            if (defender != null) {
+                if ((attack.defenderFlags.bits() & ObjTypes.Dam.DEAD.bits()) != ObjTypes.Dam.NONE.bits()) {
+                    Critter.critterKill(defender, -1, true);
+                }
+            }
+            applyDamage(attack, false);
+            ObjectSystem.objectDestroy(attacker);
+        }
+    }
+
     /** Test seam: fresh-process mirror (BSS zeroes: penalties + highlight). */
     static void resetForTests() {
         java.util.Arrays.fill(hitLocationPenalty, 0);
         combatHighlight = 0;
+        java.util.Arrays.fill(killsByType, 0);
+        combatExps = 0;
     }
 }

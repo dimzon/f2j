@@ -1705,11 +1705,18 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /**
      * op_critter_damage (0x80EF): damage a critter.
      *
-     * <p>The damage is given by the combat system, and the port has no
-     * combat system, so there is no damage.
+     * <p>The damage goes through {@code actionDamage}: the target is the
+     * object blocking the critter's tile, armor is bypassed on the 0x100
+     * flag and the 0x200 flag switches the animated arm (a seam) off.
+     * The damage type is the low bits. A lethal hit kills.
      */
     @Override
     public void critterDamage(Object critter, int amount, int damageTypeWithFlags) {
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) critter;
+        boolean animate = (damageTypeWithFlags & 0x200) == 0;
+        boolean bypassArmor = (damageTypeWithFlags & 0x100) != 0;
+        ProtoTypes.DamageType damageType = ProtoTypes.ofDamageType(damageTypeWithFlags & ~(0x100 | 0x200));
+        Combat.actionDamage(obj.tile, obj.elevation, amount, amount, damageType, animate, bypassArmor);
     }
 
     /**
@@ -2043,12 +2050,13 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /**
      * op_kill_critter (0x80ED): kill a critter.
      *
-     * <p>The kill needs the death animation, and the kill branch of the
-     * port is not reachable without a game phase, so the critter is not
-     * killed.
+     * <p>The kill runs {@code critterKill}: hit points zero, the dead bit,
+     * party and death-script removal, hidden items destroyed. The death
+     * animation is a render seam.
      */
     @Override
     public void killCritter(Object critter, int deathFrame) {
+        Critter.critterKill((ObjTypes.GameObject) critter, deathFrame, false);
     }
 
     /**
