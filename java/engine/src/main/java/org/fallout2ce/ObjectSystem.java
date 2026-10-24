@@ -2846,8 +2846,11 @@ public final class ObjectSystem {
 
     static final int SCRIPT_TYPE_COUNT = 5;
     static final int SCRIPT_TYPE_FIRST = 0;
+    static final int SCRIPT_TYPE_SYSTEM = 0;
     static final int SCRIPT_TYPE_SPATIAL = 1;
     static final int SCRIPT_TYPE_TIMED = 2;
+    static final int SCRIPT_TYPE_ITEM = 3;
+    static final int SCRIPT_TYPE_CRITTER = 4;
     static final int SCRIPT_PROC_COUNT = 28;
     static final int SCRIPT_LIST_EXTENT_SIZE = 16;
     static final int MAP_HEADER_SAVED = 0x01;

@@ -7095,6 +7095,59 @@ void sectionCombatDamage()
         fallout::killsGetByType(fallout::KILL_TYPE_DOG));
 }
 
+void sectionCombatRequest()
+{
+    std::puts("[combatrequest]");
+
+    // The script combat request (src/scripts.cc): scriptsRequestCombat
+    // raises the flag and copies the CombatStartData; a locked request is
+    // refused, and _scripts_clear_combat_requests clears the lock when the
+    // requesting script's owner is the attacker. The actual _combat run is
+    // game phase, so the section pins the request/refuse/clear cycle only.
+    fallout::Object* dog = nullptr;
+    if (fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558)) == -1 || dog == nullptr) {
+        std::printf("dog create-failed\n");
+        return;
+    }
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::printf("dude=null\n");
+        return;
+    }
+
+    int sid;
+    if (fallout::scriptAdd(&sid, fallout::SCRIPT_TYPE_CRITTER) == -1) {
+        std::printf("scriptadd failed\n");
+        return;
+    }
+    fallout::Script* scr = nullptr;
+    if (fallout::scriptGetScript(sid, &scr) == -1) {
+        std::printf("scriptget failed\n");
+        return;
+    }
+    scr->owner = dude;
+
+    fallout::CombatStartData csd;
+    csd.attacker = dude;
+    csd.defender = dog;
+    csd.actionPointsBonus = 0;
+    csd.accuracyBonus = 15;
+    csd.damageBonus = 0;
+    csd.minDamage = 3;
+    csd.maxDamage = 12;
+    csd.overrideAttackResults = 1;
+    csd.attackerResults = fallout::DAM_HIT;
+    csd.targetResults = fallout::DAM_DEAD;
+
+    int rc = fallout::scriptsRequestCombat(&csd);
+    fallout::_scripts_request_combat_locked(&csd);
+    int lockedRc = fallout::scriptsRequestCombat(&csd);
+    fallout::_scripts_clear_combat_requests(scr);
+    int againRc = fallout::scriptsRequestCombat(&csd);
+
+    std::printf("rc=%d locked-rc=%d again-rc=%d\n", rc, lockedRc, againRc);
+}
+
 void sectionIsoRest()
 {
     std::puts("[isorest]");
@@ -10677,6 +10730,7 @@ int main()
     RUN_SECTION(FrmIds);
     RUN_SECTION(PartyObjects);
     RUN_SECTION(CombatDamage);
+    RUN_SECTION(CombatRequest);
     RUN_SECTION(IsoRest);
     RUN_SECTION(MapTransition);
     RUN_SECTION(ObjPlaceOnTile);

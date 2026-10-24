@@ -12,8 +12,17 @@ public final class ScriptsState {
     /** Port of {@code SCRIPT_REQUEST_NONE} ({@code src/scripts.h}). */
     public static final int SCRIPT_REQUEST_NONE = 0x00;
 
+    /** Port of {@code SCRIPT_REQUEST_COMBAT} ({@code src/scripts.h}). */
+    public static final int SCRIPT_REQUEST_COMBAT = 0x01;
+
     /** Port of {@code SCRIPT_REQUEST_ELEVATOR} ({@code src/scripts.h}). */
     public static final int SCRIPT_REQUEST_ELEVATOR = 0x08;
+
+    /** Port of {@code SCRIPT_REQUEST_COMBAT_NO_DATA} ({@code src/scripts.h}). */
+    public static final int SCRIPT_REQUEST_COMBAT_NO_DATA = 0x40;
+
+    /** Port of {@code SCRIPT_REQUEST_COMBAT_LOCKED} ({@code src/scripts.h}). */
+    public static final int SCRIPT_REQUEST_COMBAT_LOCKED = 0x400;
 
     /** Port of {@code gScriptsRequests} ({@code src/scripts.h}). */
     public static int scriptsRequests;
@@ -23,6 +32,107 @@ public final class ScriptsState {
 
     /** Port of {@code gScriptsRequestedElevatorLevel}. */
     public static int requestedElevatorLevel;
+
+    /**
+     * Port of {@code CombatStartData} ({@code src/combat_defs.h}).
+     */
+    public static final class CombatStartData {
+        public ObjTypes.GameObject attacker;
+        public ObjTypes.GameObject defender;
+        public int actionPointsBonus;
+        public int accuracyBonus;
+        public int damageBonus;
+        public int minDamage;
+        public int maxDamage;
+        public int overrideAttackResults;
+        public ObjTypes.Dam attackerResults = ObjTypes.Dam.NONE;
+        public ObjTypes.Dam targetResults = ObjTypes.Dam.NONE;
+    }
+
+    /** Port of {@code gScriptsRequestedCSD}. */
+    static final CombatStartData requestedCSD = new CombatStartData();
+
+    /** Port of {@code gScriptsCSD}. */
+    static final CombatStartData csd = new CombatStartData();
+
+    private static void copyCombatStartData(CombatStartData dst, CombatStartData src) {
+        dst.attacker = src.attacker;
+        dst.defender = src.defender;
+        dst.actionPointsBonus = src.actionPointsBonus;
+        dst.accuracyBonus = src.accuracyBonus;
+        dst.damageBonus = src.damageBonus;
+        dst.minDamage = src.minDamage;
+        dst.maxDamage = src.maxDamage;
+        dst.overrideAttackResults = src.overrideAttackResults;
+        dst.attackerResults = src.attackerResults;
+        dst.targetResults = src.targetResults;
+    }
+
+    // 0x4A457C scriptsRequestCombat.
+    public static int scriptsRequestCombat(CombatStartData combat) {
+        if ((scriptsRequests & SCRIPT_REQUEST_COMBAT_LOCKED) != SCRIPT_REQUEST_NONE) {
+            return -1;
+        }
+
+        if (combat != null) {
+            copyCombatStartData(requestedCSD, combat);
+        } else {
+            scriptsRequests |= SCRIPT_REQUEST_COMBAT_NO_DATA;
+        }
+
+        scriptsRequests |= SCRIPT_REQUEST_COMBAT;
+
+        return 0;
+    }
+
+    // 0x4A45D4 _scripts_request_combat_locked.
+    public static void scriptsRequestCombatLocked(CombatStartData combat) {
+        if (combat != null) {
+            copyCombatStartData(requestedCSD, combat);
+        } else {
+            scriptsRequests |= SCRIPT_REQUEST_COMBAT_NO_DATA;
+        }
+
+        scriptsRequests |= SCRIPT_REQUEST_COMBAT_LOCKED | SCRIPT_REQUEST_COMBAT;
+    }
+
+    // 0x4A3F90 _scripts_clear_combat_requests.
+    public static void scriptsClearCombatRequests(ObjectSystem.Script script) {
+        if ((scriptsRequests & SCRIPT_REQUEST_COMBAT) != SCRIPT_REQUEST_NONE
+                && requestedCSD.attacker == script.owner) {
+            scriptsRequests &= ~(SCRIPT_REQUEST_COMBAT_LOCKED | SCRIPT_REQUEST_COMBAT);
+        }
+    }
+
+    // 0x4A4468 scriptsHandleRequests. The non-combat requests (town map,
+    // world map, elevator, explosion, dialog, looting, stealing, endgame)
+    // all run game-phase handlers, so they are seams: the combat request is
+    // the only one the port can service, and only up to the _combat seam.
+    public static int scriptsHandleRequests() {
+        if (scriptsRequests == SCRIPT_REQUEST_NONE) {
+            return 0;
+        }
+
+        if ((scriptsRequests & SCRIPT_REQUEST_COMBAT) != SCRIPT_REQUEST_NONE) {
+            // _action_explode_running(): render seam, false.
+            scriptsRequests &= ~(SCRIPT_REQUEST_COMBAT_LOCKED | SCRIPT_REQUEST_COMBAT);
+            copyCombatStartData(csd, requestedCSD);
+
+            if ((scriptsRequests & SCRIPT_REQUEST_COMBAT_NO_DATA) != SCRIPT_REQUEST_NONE) {
+                scriptsRequests &= ~SCRIPT_REQUEST_COMBAT_NO_DATA;
+                combat(null);
+            } else {
+                combat(csd);
+                // memset(&gScriptsCSD, 0): the Java fresh instance is zeroed.
+            }
+        }
+
+        return 0;
+    }
+
+    /** Seam for {@code _combat} (src/combat.cc, game phase). */
+    private static void combat(CombatStartData data) {
+    }
 
     /**
      * Port of {@code scriptsRequestElevator} (0x4A46D8): ask for the
@@ -93,5 +203,15 @@ public final class ScriptsState {
         scriptsRequests = SCRIPT_REQUEST_NONE;
         requestedElevatorType = 0;
         requestedElevatorLevel = 0;
+        requestedCSD.attacker = null;
+        requestedCSD.defender = null;
+        requestedCSD.actionPointsBonus = 0;
+        requestedCSD.accuracyBonus = 0;
+        requestedCSD.damageBonus = 0;
+        requestedCSD.minDamage = 0;
+        requestedCSD.maxDamage = 0;
+        requestedCSD.overrideAttackResults = 0;
+        requestedCSD.attackerResults = ObjTypes.Dam.NONE;
+        requestedCSD.targetResults = ObjTypes.Dam.NONE;
     }
 }

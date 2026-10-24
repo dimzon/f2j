@@ -367,6 +367,17 @@ public final class Combat {
     private static final int[] killsByType = new int[ProtoTypes.KillType.values().length];
     private static int combatExps;
 
+    /** Port of {@code gCombatState} (src/combat.cc): COMBAT_STATE_IN_COMBAT. */
+    public static int combatState;
+
+    public static final int COMBAT_STATE_OUT_COMBAT = 0x00;
+    public static final int COMBAT_STATE_IN_COMBAT = 0x01;
+
+    /** Port of {@code isInCombat} (src/combat.h). */
+    public static boolean isInCombat() {
+        return (combatState & COMBAT_STATE_IN_COMBAT) != 0;
+    }
+
     private static boolean killTypeIsValid(int killType) {
         return killType >= 0 && killType < killsByType.length;
     }
@@ -691,5 +702,6 @@ public final class Combat {
         combatHighlight = 0;
         java.util.Arrays.fill(killsByType, 0);
         combatExps = 0;
+        combatState = COMBAT_STATE_OUT_COMBAT;
     }
 }

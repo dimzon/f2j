@@ -2067,6 +2067,11 @@ public class Program implements Export.StringHeap {
         return interpreterCurrentProgram;
     }
 
+    /** Test seam: preset the current program without running it. */
+    static void setInterpreterCurrentProgramForTests(Program program) {
+        interpreterCurrentProgram = program;
+    }
+
     /** {@code interpreterEnabled} (src/interpreter.cc). */
     private static boolean interpreterEnabled = true;
 

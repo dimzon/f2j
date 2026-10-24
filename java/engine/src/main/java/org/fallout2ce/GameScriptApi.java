@@ -1364,22 +1364,115 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /**
      * op_attack (0x80D0): attack a critter.
      *
-     * <p>The attack needs the combat system, and the port has no combat
-     * system yet, so there is no attack.
+     * <p>Outside combat the original raises the script combat request with
+     * the attacker being the script's self, the defender the target and
+     * the damage/accuracy bonuses from the arguments; inside combat it only
+     * marks the attacker engaging. The combat request is carried by
+     * {@link ScriptsState} and serviced by the game phase; the dialog and
+     * combat-request loops are the seams.
      */
     @Override
     public void attack(Object target, int attackType, int numAttacks, int hitBonus,
             int minDamage, int maxDamage, int attackerResults, int targetResults) {
+        ObjTypes.GameObject defender = (ObjTypes.GameObject) target;
+        ObjTypes.GameObject self = ObjectSystem.scriptGetSelf(Program.interpreterCurrentProgram());
+        if (self == null) {
+            return;
+        }
+
+        if (!Critter.critterIsActive(self)
+                || (self.flags.bits() & ObjTypes.ObjectFlags.HIDDEN.bits()) != 0) {
+            return;
+        }
+
+        if (defender == null || !Critter.critterIsActive(defender)
+                || (defender.flags.bits() & ObjTypes.ObjectFlags.HIDDEN.bits()) != 0) {
+            return;
+        }
+
+        if ((defender.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.FLEEING.bits()) != 0) {
+            return;
+        }
+
+        // _gdialogActive(): dialog phase, a seam - never active headless.
+        if (Combat.isInCombat()) {
+            if ((self.data.critter.combat.maneuver.bits()
+                    & ObjTypes.CritterManeuver.ENGAGING.bits()) == 0) {
+                self.data.critter.combat.maneuver = self.data.critter.combat.maneuver
+                        .or(ObjTypes.CritterManeuver.ENGAGING);
+                self.data.critter.combat.whoHitMe = defender;
+            }
+        } else {
+            ScriptsState.CombatStartData combat = new ScriptsState.CombatStartData();
+            combat.attacker = self;
+            combat.defender = defender;
+            combat.actionPointsBonus = 0;
+            combat.accuracyBonus = hitBonus;
+            combat.damageBonus = 0;
+            combat.minDamage = minDamage;
+            combat.maxDamage = maxDamage;
+
+            if (attackerResults == targetResults) {
+                combat.overrideAttackResults = 1;
+                combat.targetResults = new ObjTypes.Dam(targetResults);
+                combat.attackerResults = new ObjTypes.Dam(attackerResults);
+            } else {
+                combat.overrideAttackResults = 0;
+            }
+
+            ScriptsState.scriptsRequestCombat(combat);
+        }
     }
 
     /**
      * op_attack_setup (0x8143): set up an attack of a critter on another.
      *
-     * <p>The attack needs the combat system, and the port has no combat
-     * system yet, so there is no attack.
+     * <p>The same as the attack opcode with no damage/accuracy bonuses.
      */
     @Override
     public void attackSetup(Object attacker, Object defender) {
+        ObjTypes.GameObject self = (ObjTypes.GameObject) attacker;
+        ObjTypes.GameObject target = (ObjTypes.GameObject) defender;
+        if (self == null) {
+            return;
+        }
+
+        if (!Critter.critterIsActive(self)
+                || (self.flags.bits() & ObjTypes.ObjectFlags.HIDDEN.bits()) != 0) {
+            return;
+        }
+
+        if (!Critter.critterIsActive(target)
+                || (target.flags.bits() & ObjTypes.ObjectFlags.HIDDEN.bits()) != 0) {
+            return;
+        }
+
+        if ((target.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.FLEEING.bits()) != 0) {
+            return;
+        }
+
+        if (Combat.isInCombat()) {
+            if ((self.data.critter.combat.maneuver.bits()
+                    & ObjTypes.CritterManeuver.ENGAGING.bits()) == 0) {
+                self.data.critter.combat.maneuver = self.data.critter.combat.maneuver
+                        .or(ObjTypes.CritterManeuver.ENGAGING);
+                self.data.critter.combat.whoHitMe = target;
+            }
+        } else {
+            ScriptsState.CombatStartData combat = new ScriptsState.CombatStartData();
+            combat.attacker = self;
+            combat.defender = target;
+            combat.actionPointsBonus = 0;
+            combat.accuracyBonus = 0;
+            combat.damageBonus = 0;
+            combat.minDamage = 0;
+            combat.maxDamage = Integer.MAX_VALUE;
+            combat.overrideAttackResults = 0;
+
+            ScriptsState.scriptsRequestCombat(combat);
+        }
     }
 
     /**
