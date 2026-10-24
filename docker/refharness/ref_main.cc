@@ -6991,6 +6991,7 @@ void sectionStats();
 void sectionCritterState();
 void sectionCritterStateOp();
 void sectionAnimMoveTile();
+void sectionCritterPlace();
 void sectionPartyPrefs();
 void sectionItemsInit();
 void sectionAutomap();
@@ -7200,6 +7201,7 @@ void sectionMapChild()
     sectionCritterState();
     sectionCritterStateOp();
     sectionAnimMoveTile();
+    sectionCritterPlace();
     sectionPartyPrefs();
     sectionItemsInit();
     sectionAutomap();
@@ -8145,6 +8147,65 @@ void sectionAnimMoveTile()
     for (int tile : { -1, -2 }) {
         std::printf("tile=%d move=%d\n", tile, wouldMove(dude, tile));
     }
+
+    dude->data.critter.hp = savedHp;
+    dude->data.critter.combat.results = savedResults;
+    std::printf("restored=%d,%d\n", dude->tile, dude->elevation);
+}
+
+void sectionCritterPlace()
+{
+    std::puts("[critterplace]");
+
+    // opCritterAttemptPlacement (src/interpreter_extra.cc) settles a
+    // critter near a tile through objectAttemptPlacement
+    // (src/proto_instance.cc). The combat-delete tail needs the combat
+    // engine (game phase), so the section runs the rest of the op body.
+    fallout::critterInit();
+
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    int savedTile = dude->tile;
+    int savedElevation = dude->elevation;
+    int savedHp = dude->data.critter.hp;
+    fallout::Dam savedResults = dude->data.critter.combat.results;
+
+    auto attempt = [](fallout::Object* critter, int tile, int elevation) {
+        fallout::objectSetLocation(critter, 0, elevation, nullptr);
+        return fallout::objectAttemptPlacement(critter, tile, elevation, 1);
+    };
+
+    dude->data.critter.hp = 10;
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+
+    // Free tile: settles on it.
+    int rc = attempt(dude, 3015, savedElevation);
+    std::printf("free rc=%d tile=%d\n", rc, dude->tile);
+    fallout::objectSetLocation(dude, savedTile, savedElevation, nullptr);
+
+    // Blocked tile: a second dog stands on it.
+    fallout::Object* blocker = nullptr;
+    fallout::objectCreateWithProtoId(&blocker, fallout::ProtoId(16777558));
+    if (blocker == nullptr) {
+        std::puts("blocker=null");
+    } else {
+        fallout::objectSetLocation(blocker, 3015, savedElevation, nullptr);
+        rc = attempt(dude, 3015, savedElevation);
+        int predicted = fallout::tileGetTileInDirection(3015, (fallout::Rotation)5, 6);
+        std::printf("blocked rc=%d tile=%d predicted=%d\n", rc, dude->tile, predicted);
+        fallout::objectSetLocation(dude, savedTile, savedElevation, nullptr);
+        fallout::objectDestroy(blocker, nullptr);
+    }
+
+    // Nowhere to settle: parks at tile 0 like the op body does, then the
+    // placement itself refuses.
+    rc = attempt(dude, -1, savedElevation);
+    std::printf("nontile rc=%d tile=%d\n", rc, dude->tile);
+    fallout::objectSetLocation(dude, savedTile, savedElevation, nullptr);
 
     dude->data.critter.hp = savedHp;
     dude->data.critter.combat.results = savedResults;

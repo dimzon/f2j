@@ -557,6 +557,110 @@ public final class ObjectSystem {
         return true;
     }
 
+    // _obj_blocking_at (src/object.cc:2454): the first critter, scenery or
+    // wall on the tile that is neither hidden nor passable - or a multihex
+    // one on a neighbour tile - blocks it.
+    static GameObject objBlockingAt(GameObject exclude, int tile, int elevation) {
+        if (!MapDefs.hexGridTileIsValid(tile)) {
+            return null;
+        }
+
+        GameObjectListNode node = tileHeads[tile];
+        while (node != null) {
+            GameObject obj = node.obj;
+            if (obj.elevation == elevation && isBlocking(obj, exclude)) {
+                return obj;
+            }
+            node = node.next;
+        }
+
+        for (int rotation = org.fallout2ce.Rotation.FIRST;
+                rotation < org.fallout2ce.Rotation.COUNT;
+                rotation++) {
+            int neighbour = TileMath.tileGetTileInDirection(tile,
+                    org.fallout2ce.Rotation.fromInt(rotation), 1);
+            if (!MapDefs.hexGridTileIsValid(neighbour)) {
+                continue;
+            }
+
+            node = tileHeads[neighbour];
+            while (node != null) {
+                GameObject obj = node.obj;
+                if ((obj.flags.bits() & ObjectFlags.MULTIHEX.bits()) != 0
+                        && obj.elevation == elevation
+                        && isBlocking(obj, exclude)) {
+                    return obj;
+                }
+                node = node.next;
+            }
+        }
+
+        return null;
+    }
+
+    private static boolean isBlocking(GameObject obj, GameObject exclude) {
+        if ((obj.flags.bits() & (ObjectFlags.HIDDEN.bits() | ObjectFlags.NO_BLOCK.bits())) != 0
+                || obj == exclude) {
+            return false;
+        }
+
+        ObjectType type = FrmId.ofFid(obj.fid).objectType();
+        return type == ObjectType.CRITTER || type == ObjectType.SCENERY || type == ObjectType.WALL;
+    }
+
+    // objectAttemptPlacement (src/proto_instance.cc:2259): nowhere guard,
+    // the outward search for a free tile, then show + place. The search as
+    // written never stops at a hit (the break only leaves the rotation
+    // loop while the distance loop runs on), so a blocked target always
+    // lands on the last candidate; reachability never decides anything.
+    // Pinned by [critterplace].
+    static int objectAttemptPlacement(GameObject obj, int tile, int elevation, int radius) {
+        if (tile == -1) {
+            return -1;
+        }
+
+        int newTile = tile;
+        if (objBlockingAt(null, tile, elevation) != null) {
+            int dist = radius >= 1 ? radius : 1;
+            int attempts = 0;
+            while (dist < 7) {
+                attempts++;
+                if (attempts >= 100) {
+                    break;
+                }
+
+                for (int rotation = org.fallout2ce.Rotation.FIRST;
+                        rotation < org.fallout2ce.Rotation.COUNT;
+                        rotation++) {
+                    newTile = TileMath.tileGetTileInDirection(tile,
+                            org.fallout2ce.Rotation.fromInt(rotation), dist);
+                    if (objBlockingAt(null, newTile, elevation) == null
+                            && dist > 1
+                            && isTileReachableFromDude(newTile)) {
+                        break;
+                    }
+                }
+
+                dist++;
+            }
+        }
+
+        objectShow(obj);
+        // The rect union and the window refresh are render (game phase).
+        objectSetLocation(obj, newTile, elevation);
+
+        return 0;
+    }
+
+    /**
+     * Seam for the {@code _make_path} reachability check (pathfinder, game
+     * phase, unported). The search above outlives any hit either way (see
+     * the note there), so the seam reads unreachable.
+     */
+    private static boolean isTileReachableFromDude(int tile) {
+        return false;
+    }
+
     /** Port of {@code _centerToUpperLeft} (0x51962C). */
     private static int centerToUpperLeft;
 

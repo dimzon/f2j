@@ -129,6 +129,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80CC, // op_animate_stand_obj
         0x80CD, // animate_stand_reverse_obj
         0x80CE, // animate_move_obj_to_tile
+        0x80FF, // critter_attempt_placement
         0x814D, // op_jam_lock
         0x8150, // op_obj_on_screen
         0x8149, // op_obj_art_fid
@@ -1534,6 +1535,25 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return;
         }
         ObjectSystem.objectSetLocation(obj, tile, obj.elevation);
+    }
+
+    /**
+     * critter_attempt_placement (0x80FF): settle a critter near a tile.
+     *
+     * <p>The critter is parked at tile 0 first and then placed near the
+     * tile, on the elevation it is given; a tile of nowhere parks it but
+     * settles nothing. Deleting the critter from combat when the elevation
+     * changes needs the combat engine, and the port has no combat engine
+     * yet, so nothing is deleted.
+     */
+    @Override
+    public int critterAttemptPlacement(Object critter, int tile, int elevation) {
+        if (critter == null) {
+            return -1;
+        }
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) critter;
+        ObjectSystem.objectSetLocation(obj, 0, elevation);
+        return ObjectSystem.objectAttemptPlacement(obj, tile, elevation, 1);
     }
 
     /**
