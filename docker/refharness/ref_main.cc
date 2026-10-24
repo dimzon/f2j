@@ -6737,6 +6737,73 @@ void sectionScriptRun()
     scriptRunOne("scripts\\ABEL.int", 200);
 }
 
+void sectionScriptAttach()
+{
+    std::puts("[scriptattach]");
+
+    // objectCreateWithProtoId runs objectSetScriptFromProto (src/object.cc,
+    // the 0x489CCC create path): the object receives the proto's sid and a
+    // Script record is added whose owner is the object. The section pins
+    // the create-time attachment and the reads the context builtins amount
+    // to (scriptGetSid -> scriptGetScript -> the script's fields).
+    fallout::Object* dog = nullptr;
+    int rc = fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    if (dog == nullptr || rc != 0) {
+        std::printf("dog create-failed\n");
+        return;
+    }
+    std::printf("dog sid=%d\n", dog->sid);
+
+    fallout::Script* script = nullptr;
+    if (dog->sid != -1 && fallout::scriptGetScript(dog->sid, &script) == 0 && script != nullptr) {
+        std::printf("owner-match=%d index=%d critter-idx=%d\n",
+            script->owner == dog ? 1 : 0, script->index, dog->scriptIndex);
+    } else {
+        std::printf("no-script\n");
+    }
+
+    // A program bound to a script consults the script's fields the way the
+    // context builtins read them: self via scriptGetSelf (owner), target,
+    // source, fixedParam and actionBeingUsed straight off the record.
+    fallout::Program* prog = fallout::programCreateByPath((char*)"scripts\\acdog.int");
+    if (prog == nullptr) {
+        std::printf("prog load-failed\n");
+        return;
+    }
+
+    int sid;
+    if (fallout::scriptAdd(&sid, fallout::SCRIPT_TYPE_CRITTER) == -1) {
+        std::printf("scriptadd failed\n");
+        fallout::programFree(prog);
+        return;
+    }
+
+    fallout::Script* scr = nullptr;
+    if (fallout::scriptGetScript(sid, &scr) == -1) {
+        std::printf("scriptget failed\n");
+        fallout::programFree(prog);
+        return;
+    }
+
+    scr->program = prog;
+    scr->owner = dog;
+    scr->source = nullptr;
+    scr->target = dog;
+    scr->actionBeingUsed = 7;
+    fallout::scriptSetFixedParam(sid, 42);
+
+    int sidFromProg = fallout::scriptGetSid(prog);
+    std::printf("sid-match=%d self=%d target=%d source=%d fixed=%d action=%d\n",
+        sidFromProg == sid ? 1 : 0,
+        fallout::scriptGetSelf(prog) == dog ? 1 : 0,
+        scr->target == dog ? 1 : 0,
+        scr->source == nullptr ? 1 : 0,
+        scr->fixedParam,
+        scr->actionBeingUsed);
+
+    fallout::programFree(prog);
+}
+
 void sectionScriptRunGame()
 {
     std::puts("[scriptrungame]");
@@ -10552,6 +10619,7 @@ int main()
     RUN_SECTION(MapTransition);
     RUN_SECTION(ObjPlaceOnTile);
     RUN_SECTION(MapStart);
+    RUN_SECTION(ScriptAttach);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

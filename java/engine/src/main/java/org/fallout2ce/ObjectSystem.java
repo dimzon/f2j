@@ -1782,9 +1782,9 @@ public final class ObjectSystem {
         return objectSetRotation(obj, rotation);
     }
 
-    // 0x49A9B4 objectSetScriptFromProto (src/proto_instance.cc): pure
-    // prefix only; the scriptAdd tail needs the script engine (see class
-    // notes). Operates on obj.sid directly (C takes &obj->sid).
+    // 0x49A9B4 objectSetScriptFromProto (src/proto_instance.cc): reset the
+    // sid, read the proto's sid (tile sid for tiles, none for misc), then
+    // add a script to the registry and attach it as the object's owner.
     static int objectSetScriptFromProto(GameObject object) {
         object.sid = -1;
 
@@ -1811,9 +1811,38 @@ public final class ObjectSystem {
             return -1;
         }
 
-        // Script engine (scriptAdd/scriptGetScript/spatial setup) unported;
-        // the object sid stays -1 (see class notes).
-        return -1;
+        int scriptType = scriptTypeFromSid(sid);
+        int[] sidSlot = new int[1];
+        if (scriptAdd(sidSlot, scriptType) == -1) {
+            return -1;
+        }
+        int newSid = sidSlot[0];
+        object.sid = newSid;
+
+        Script[] scriptSlot = new Script[1];
+        if (scriptGetScript(newSid, scriptSlot) == -1) {
+            return -1;
+        }
+        Script script = scriptSlot[0];
+        script.index = sid & 0xFFFFFF;
+
+        if (protoId.objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            object.scriptIndex = script.index;
+        }
+
+        if (scriptType == SCRIPT_TYPE_SPATIAL) {
+            script.builtTile = ObjTypes.builtTileCreate(object.tile, object.elevation);
+            script.radius = 3;
+        }
+
+        if (object.id == -1) {
+            object.id = scriptsNewObjectId();
+        }
+
+        script.ownerId = object.id;
+        script.owner = object;
+
+        return 0;
     }
 
     // 0x49F8A0 proto_update_init (src/proto.cc): gate mirror only; the
@@ -2828,6 +2857,8 @@ public final class ObjectSystem {
     private static final List<List<Script>> scriptTypeScripts = new java.util.ArrayList<>();
     /** Valid script count per extent (mirrors ScriptListExtent.length). */
     private static final List<List<Integer>> scriptTypeExtentLengths = new java.util.ArrayList<>();
+    /** Next sid per type (scriptGetNewId). */
+    private static final int[] scriptTypeNextScriptId = new int[SCRIPT_TYPE_COUNT];
     static {
         for (int index = 0; index < SCRIPT_TYPE_COUNT; index++) {
             scriptTypeScripts.add(new java.util.ArrayList<>());
@@ -2856,6 +2887,11 @@ public final class ObjectSystem {
         int howMuch;
         int field50;
         final int[] procs = new int[SCRIPT_PROC_COUNT];
+        Program program;
+        GameObject owner;
+        GameObject source;
+        GameObject target;
+        GameObject overriddenSelf;
     }
 
     static int scriptTypeFromSid(int sid) {
@@ -2935,6 +2971,160 @@ public final class ObjectSystem {
             }
         }
         return -1;
+    }
+
+    // 0x4A390C src_find_sid_from_program: linear scan over every type list.
+    static int scriptGetSid(Program program) {
+        for (int type = SCRIPT_TYPE_FIRST; type < SCRIPT_TYPE_COUNT; type++) {
+            for (Script script : scriptTypeScripts.get(type)) {
+                if (script.program == program) {
+                    return script.sid;
+                }
+            }
+        }
+        return -1;
+    }
+
+    // 0x4A5ED8 scriptGetNewId.
+    static int scriptGetNewId(int type) {
+        int scriptId = scriptTypeNextScriptId[type]++;
+        int sidPrefix = type << 24;
+        while (scriptId < 32000) {
+            Script[] slot = new Script[1];
+            if (scriptGetScript(sidPrefix | scriptId, slot) == -1) {
+                break;
+            }
+            scriptId++;
+        }
+        return scriptId;
+    }
+
+    // 0x4A5F28 scriptAdd (the extent bookkeeping collapses: the Java lists
+    // hold the scripts flat, so sid uniqueness is the only observable part).
+    static int scriptAdd(int[] sidSlot, int type) {
+        if (type < SCRIPT_TYPE_FIRST || type >= SCRIPT_TYPE_COUNT) {
+            return -1;
+        }
+        int sid = scriptGetNewId(type) | (type << 24);
+        sidSlot[0] = sid;
+
+        Script scr = new Script();
+        scr.sid = sid;
+        scr.builtTile = -1;
+        scr.radius = -1;
+        scr.flags = 0;
+        scr.index = -1;
+        scr.program = null;
+        scr.localVarsOffset = -1;
+        scr.localVarsCount = 0;
+        scr.returnValue = 0;
+        scr.action = 0;
+        scr.fixedParam = 0;
+        scr.owner = null;
+        scr.source = null;
+        scr.target = null;
+        scr.actionBeingUsed = -1;
+        scr.scriptOverrides = 0;
+        scr.howMuch = 0;
+        scr.overriddenSelf = null;
+        scriptTypeScripts.get(type).add(scr);
+        return 0;
+    }
+
+    // 0x4A39AC scriptGetSelf: the script's owner, or for a spatial script a
+    // hidden marker object. The spatial marker is created and attached; its
+    // home-tile search needs the spatial enumeration and is left where the
+    // marker stands (src/scripts.cc walks spatial lists per elevation).
+    static GameObject scriptGetSelf(Program program) {
+        int sid = scriptGetSid(program);
+        Script[] slot = new Script[1];
+        if (scriptGetScript(sid, slot) == -1) {
+            return null;
+        }
+        Script script = slot[0];
+        if (script.owner != null) {
+            return script.owner;
+        }
+        if (scriptTypeFromSid(sid) != SCRIPT_TYPE_SPATIAL) {
+            return null;
+        }
+
+        GameObject[] objectSlot = new GameObject[1];
+        objectCreateWithFrmIdProtoId(objectSlot,
+                FrmId.ofType(ObjectType.INTERFACE, ArtDefs.InterfaceFrameId.ExitGridMarker.id()),
+                ProtoId.empty());
+        GameObject object = objectSlot[0];
+        objectHide(object);
+        toggleFlat(object);
+        object.sid = sid;
+        object.id = scriptsNewObjectId();
+        script.ownerId = object.id;
+        script.owner = object;
+        return object;
+    }
+
+    // The op readers: target/source/fixedParam/actionBeingUsed (the C++
+    // handlers resolve the script by the program and read the field).
+    static GameObject scriptGetTarget(Program program) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(scriptGetSid(program), slot) == -1) {
+            return null;
+        }
+        return slot[0].target;
+    }
+
+    static GameObject scriptGetSource(Program program) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(scriptGetSid(program), slot) == -1) {
+            return null;
+        }
+        return slot[0].source;
+    }
+
+    static int scriptGetFixedParam(Program program) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(scriptGetSid(program), slot) == -1) {
+            return 0;
+        }
+        return slot[0].fixedParam;
+    }
+
+    static int scriptGetActionBeingUsed(Program program) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(scriptGetSid(program), slot) == -1) {
+            return -1;
+        }
+        return slot[0].actionBeingUsed;
+    }
+
+    static void scriptSetFixedParam(int sid, int value) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(sid, slot) != -1) {
+            slot[0].fixedParam = value;
+        }
+    }
+
+    static void scriptSetObjects(int sid, GameObject source, GameObject target) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(sid, slot) != -1) {
+            slot[0].source = source;
+            slot[0].target = target;
+        }
+    }
+
+    static int scriptGetAction(Program program) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(scriptGetSid(program), slot) == -1) {
+            return 0;
+        }
+        return slot[0].action;
+    }
+
+    static void scriptSetOverrides(Program program) {
+        Script[] slot = new Script[1];
+        if (scriptGetScript(scriptGetSid(program), slot) != -1) {
+            slot[0].scriptOverrides = 1;
+        }
     }
 
     // 0x4A5BE8 scriptListExtentRead.
@@ -3251,6 +3441,7 @@ public final class ObjectSystem {
         for (int index = 0; index < SCRIPT_TYPE_COUNT; index++) {
             scriptTypeScripts.get(index).clear();
             scriptTypeExtentLengths.get(index).clear();
+            scriptTypeNextScriptId[index] = 0;
         }
         findCursor = null;
         findTile = 0;

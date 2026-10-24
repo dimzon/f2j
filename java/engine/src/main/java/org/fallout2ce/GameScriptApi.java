@@ -867,13 +867,13 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /**
      * op_source_obj (0x80BD): the object that started the script.
      *
-     * <p>The source is not the object the script runs for, but the one that
-     * started it. The scripts of the game are started by the game itself and
-     * have no source, so the original answers the same in its harness.
+     * <p>The source is the script's own state: the object that started it.
+     * The script behind the program decides the answer; with none, the
+     * original answers null.
      */
     @Override
     public Object sourceObj() {
-        return null;
+        return ObjectSystem.scriptGetSource(Program.interpreterCurrentProgram());
     }
 
     /** The rolls the game knows. */
@@ -1138,25 +1138,25 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /**
      * op_target_obj (0x80BE): the object the script is aimed at.
      *
-     * <p>The target is not the object the script runs for, but the one it is
-     * aimed at, and the scripts of the game are started by the game itself,
-     * so there is no target: the original answers the same in its harness.
+     * <p>The target is the script's own state: the object the script is
+     * aimed at. The script behind the program decides the answer; with
+     * none, the original answers null.
      */
     @Override
     public Object targetObj() {
-        return null;
+        return ObjectSystem.scriptGetTarget(Program.interpreterCurrentProgram());
     }
 
     /**
      * op_fixed_param (0x80F7): the parameter of the event the script runs
      * for.
      *
-     * <p>The parameter belongs to the event that started the script, and the
-     * port has no event that started the script, so the parameter is 0.
+     * <p>The parameter belongs to the script that runs; with none, the
+     * original answers 0.
      */
     @Override
     public int fixedParam() {
-        return 0;
+        return ObjectSystem.scriptGetFixedParam(Program.interpreterCurrentProgram());
     }
 
     /**
@@ -1352,11 +1352,13 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /**
      * op_script_overrides (0x80B9): the script takes over the action.
      *
-     * <p>The flag belongs to the script that runs, and the port has no
-     * registry of the scripts, so there is no script to set it on.
+     * <p>The flag belongs to the script that runs; with none, the write is
+     * dropped (the original logs a script error on top, which is a log side
+     * channel, not a vector).
      */
     @Override
     public void scriptOverrides() {
+        ObjectSystem.scriptSetOverrides(Program.interpreterCurrentProgram());
     }
 
     /**
@@ -1672,13 +1674,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * op_action_being_used (0x80FA): the action the script is being used
      * for.
      *
-     * <p>The action belongs to the script, and the port has no script
-     * registry, so there is no action, and the original answers -1 for a
-     * program with no script.
+     * <p>The action belongs to the script; with none, the original answers
+     * -1.
      */
     @Override
     public int actionBeingUsed() {
-        return -1;
+        return ObjectSystem.scriptGetActionBeingUsed(Program.interpreterCurrentProgram());
     }
 
     /**
@@ -2711,7 +2712,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public Object selfObj() {
-        return null;
+        return ObjectSystem.scriptGetSelf(Program.interpreterCurrentProgram());
     }
 
     /**
@@ -2743,7 +2744,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public int scriptAction() {
-        return 0;
+        return ObjectSystem.scriptGetAction(Program.interpreterCurrentProgram());
     }
 
     private static void ensureScriptsListLoaded() {

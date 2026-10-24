@@ -2062,6 +2062,11 @@ public class Program implements Export.StringHeap {
     /** {@code gInterpreterCurrentProgram} (src/interpreter.cc). */
     private static Program interpreterCurrentProgram;
 
+    /** The program currently interpreted, for the script context lookups. */
+    static Program interpreterCurrentProgram() {
+        return interpreterCurrentProgram;
+    }
+
     /** {@code interpreterEnabled} (src/interpreter.cc). */
     private static boolean interpreterEnabled = true;
 
