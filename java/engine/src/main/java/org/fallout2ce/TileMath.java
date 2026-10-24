@@ -844,6 +844,29 @@ public final class TileMath {
         return false;
     }
 
+    // src/interpreter_extra.cc, opTileInTileRect. The rectangle is read
+    // from the first and the fourth tile the way the original pops them:
+    // minX/maxY come from tile4, maxX/minY from tile1; tile2 and tile3
+    // are popped and dropped. The frame is the raw row-major index
+    // (x = tile % 200, y = tile / 200), not the mirrored screen frame of
+    // tileToScreenXY, and the width is the hardcoded 200, not the grid.
+    public static int tileInTileRect(int tile1, int tile2, int tile3, int tile4, int tile) {
+        int x = tile % 200;
+        int y = tile / 200;
+
+        int minX = tile4 % 200;
+        int maxX = tile1 % 200;
+
+        int minY = tile1 / 200;
+        int maxY = tile4 / 200;
+
+        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+            return 1;
+        }
+
+        return 0;
+    }
+
     public static void tileScrollBlockingEnable() {
         tileScrollBlockingEnabled = true;
     }

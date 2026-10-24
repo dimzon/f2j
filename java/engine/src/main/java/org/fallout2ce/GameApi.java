@@ -473,11 +473,14 @@ public interface GameApi {
      *
      * <p>The bounds of the rectangle are read from the first and the
      * fourth tile; the second and the third are taken and dropped.
+     * minX and maxY come from the fourth tile, maxX and minY from the
+     * first, so the corners the scripts pass are the top-right and the
+     * bottom-left of the rectangle.
      *
-     * @param tile1 the corner with the minimum x and y
+     * @param tile1 the corner with the maximum x and the minimum y
      * @param tile2 the second corner, taken and dropped
      * @param tile3 the third corner, taken and dropped
-     * @param tile4 the corner with the maximum x and y
+     * @param tile4 the corner with the minimum x and the maximum y
      * @param tile the tile to test
      * @return whether the tile is inside
      */

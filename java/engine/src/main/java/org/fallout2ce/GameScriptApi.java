@@ -66,6 +66,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80D2, // op_tile_distance
         0x80D3, // op_tile_distance_objs
         0x80D5, // op_tile_num_in_direction
+        0x80CF, // tile_in_tile_rect
         0x80A4, // op_obj_name
         0x80A7, // op_tile_contains_pid_obj
         0x80B7, // op_create_object
@@ -579,6 +580,19 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return tile;
         }
         return TileMath.tileGetTileInDirection(tile, Rotation.fromInt(rotation), distance);
+    }
+
+    /**
+     * tile_in_tile_rect (0x80CF): whether a tile is inside a rectangle of
+     * tiles.
+     *
+     * <p>The original pops the tile first and reads the bounds from the
+     * first and the fourth tile (minX/maxY from the fourth, maxX/minY from
+     * the first); the second and the third are popped and dropped.
+     */
+    @Override
+    public int tileInTileRect(int tile1, int tile2, int tile3, int tile4, int tile) {
+        return TileMath.tileInTileRect(tile1, tile2, tile3, tile4, tile);
     }
 
     /**

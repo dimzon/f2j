@@ -5064,6 +5064,57 @@ void sectionSquareMath()
     fallout::tileExit();
 }
 
+void sectionTileInRect()
+{
+    std::puts("[tileinrect]");
+
+    // opTileInTileRect (src/interpreter_extra.cc) pops five tiles: the
+    // tested tile first (top of stack, the last script arg), then the
+    // fourth, third, second and first script args. The second and third
+    // are dropped; minX/maxY come from the fourth arg, maxX/minY from
+    // the first. tile = y * 200 + x.
+    struct TileInRectCase {
+        int tile1;
+        int tile2;
+        int tile3;
+        int tile4;
+        int tile;
+    };
+    static const TileInRectCase cases[] = {
+        { 2020, 0, 0, 4010, 3015 }, // (15,15) inside [10..20]x[10..20]
+        { 2020, 0, 0, 4010, 2010 }, // (10,10) lower corner, inclusive
+        { 2020, 0, 0, 4010, 4020 }, // (20,20) upper corner, inclusive
+        { 2020, 0, 0, 4010, 3021 }, // (21,15) x outside
+        { 2020, 0, 0, 4010, 4215 }, // (15,21) y outside
+        { 2020, 0, 0, 4010, 1809 }, // (9,9) both outside
+        { 2020, 0, 0, 4010, -1 }, // no tile
+        { 2020, 0, 0, 4010, 40000 }, // (0,200) far outside
+        { 2020, 1999, 3999, 4010, 3015 }, // dropped corners differ, same rect
+        { 4010, 0, 0, 2020, 3015 }, // swapped corners: empty range
+    };
+
+    for (const TileInRectCase& c : cases) {
+        // Pop order of the original: tile, tile4, tile3, tile2, tile1.
+        int points[5] = { c.tile, c.tile4, c.tile3, c.tile2, c.tile1 };
+
+        int x = points[0] % 200;
+        int y = points[0] / 200;
+
+        int minX = points[1] % 200;
+        int maxX = points[4] % 200;
+
+        int minY = points[4] / 200;
+        int maxY = points[1] / 200;
+
+        int result = 0;
+        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+            result = 1;
+        }
+
+        std::printf("t1=%d t4=%d tile=%d in=%d\n", c.tile1, c.tile4, c.tile, result);
+    }
+}
+
 static int testQueueClearCalls = 0;
 
 static int testQueueClearFn(fallout::Object* owner, void* data)
@@ -10214,6 +10265,7 @@ int main()
     RUN_SECTION(ProtoDb);
     RUN_SECTION(TileMath);
     RUN_SECTION(SquareMath);
+    RUN_SECTION(TileInRect);
     RUN_SECTION(EventQueue);
     RUN_SECTION(LightReact);
     RUN_SECTION(GameMouseUtil);
