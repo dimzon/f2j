@@ -1284,6 +1284,24 @@ public final class Item {
     // RANGED 4).
     private static final int[] ATTACK_SUBTYPE = { 0, 1, 1, 2, 2, 3, 4, 4, 4 };
 
+    /** The weapon of a critter for a hit mode (item1/item2). */
+    public static GameObject getWeaponForHitMode(GameObject critter, int hitMode) {
+        return critterGetWeaponForHitMode(critter, hitMode);
+    }
+
+    /**
+     * Port of {@code weaponGetSkillValue} (0x519160): the skill an
+     * attack with a weapon uses, from the weapon's attack type.
+     */
+    public static int weaponGetSkillValue(GameObject critter, int hitMode) {
+        GameObject weapon = critterGetWeaponForHitMode(critter, hitMode);
+        int attackType = weaponGetAttackTypeForHitMode(weapon, hitMode);
+        if (weapon == null || attackType >= ATTACK_SKILL.length) {
+            return SkillDefs.Skill.SKILL_UNARMED.id();
+        }
+        return ATTACK_SKILL[attackType];
+    }
+
     // 0x478598 weapon_is_two_handed.
     public static boolean weaponIsTwoHanded(GameObject weapon) {
         if (weapon == null) {
