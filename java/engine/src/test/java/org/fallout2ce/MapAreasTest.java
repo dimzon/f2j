@@ -194,6 +194,30 @@ class MapAreasTest {
             MapAreas.wmAreaVisitedState(arroyo).id());
     }
 
+    /**
+     * The reads the metarule rules answer, on the real tables:
+     * {@code [worldmaptiles]} in golden/v140. A map is known through an
+     * entrance that reads known (the random desert map 0 ships that way),
+     * and the entrance the game walks a saved map into goes known by
+     * {@code wmMapMarkMapEntranceState} - then the map reads known too.
+     */
+    @Test
+    void mapKnownGoesThroughTheEntrance() {
+        loadAreas();
+
+        // map-known-before 3=0 0=1 -1=0
+        assertFalse(MapAreas.wmMapIsKnown(3));
+        assertTrue(MapAreas.wmMapIsKnown(0));
+        assertFalse(MapAreas.wmMapIsKnown(-1));
+
+        // entrance rc=0, then map-known-after=1.
+        assertEquals(0, MapAreas.wmMapMarkMapEntranceState(3, -1, 1));
+        assertTrue(MapAreas.wmMapIsKnown(3));
+
+        // A map that is not saved keeps its entrances as they are.
+        assertEquals(-1, MapAreas.wmMapMarkMapEntranceState(0, -1, 1));
+    }
+
     /** The map marking of the mark_area_known builtin, on the real table. */
     @Test
     void mapMarkingFollowsTheSaveableGuard() {

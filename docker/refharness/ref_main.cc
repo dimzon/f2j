@@ -7476,9 +7476,34 @@ void sectionWorldmapTiles()
             }
         }
 
+        // The reads the metarule rules answer, before the marking below:
+        // how much the player knows of an area, and whether a map is
+        // known - an entrance reads known only after the game walks into
+        // the map through it. Map 3 is the Arroyo caves, map 0 a random
+        // desert map no area's entrance reaches with a known state.
+        std::printf("area-known-before 0=%d 1=%d invalid=%d\n",
+            (int)fallout::wmAreaVisitedState((fallout::City)0),
+            (int)fallout::wmAreaVisitedState((fallout::City)1),
+            (int)fallout::wmAreaVisitedState(fallout::CITY_INVALID));
+        std::printf("map-known-before 3=%d 0=%d -1=%d\n",
+            fallout::wmMapIsKnown((fallout::Map)3) ? 1 : 0,
+            fallout::wmMapIsKnown((fallout::Map)0) ? 1 : 0,
+            fallout::wmMapIsKnown((fallout::Map)-1) ? 1 : 0);
+
         // wmMapMarkVisited goes through the areas (loaded by the init's own
         // area parse); map 3 is the Arroyo caves.
         std::printf("map-visited rc=%d\n", fallout::wmMapMarkVisited((fallout::Map)3));
+
+        // After the marking the area reads known (a visit of an unknown
+        // area lands as known, the quirk of the original), and marking
+        // the map's entrance state is what makes the map itself read
+        // known.
+        std::printf("area-known-after 0=%d\n",
+            (int)fallout::wmAreaVisitedState((fallout::City)0));
+        std::printf("entrance rc=%d\n",
+            fallout::wmMapMarkMapEntranceState((fallout::Map)3, -1, 1));
+        std::printf("map-known-after=%d\n",
+            fallout::wmMapIsKnown((fallout::Map)3) ? 1 : 0);
     }
 
     fallout::configFree(&config);

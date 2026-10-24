@@ -666,6 +666,122 @@ public final class MapAreas {
         pos[1] = Math.max(city.y + markHalfHeight - WM_VIEW_Y, 0);
     }
 
+    /**
+     * Port of {@code wmMatchEntranceFromMap} (0x4BFB64): the entrance of
+     * an area a map is entered through.
+     */
+    static int wmMatchEntranceFromMap(City areaIdx, int mapIdx, int[] entranceIdxPtr) {
+        CityInfo city = areaInfoList.get(areaIdx.id());
+
+        for (int entranceIdx = 0; entranceIdx < city.entrancesLength; entranceIdx++) {
+            if (mapIdx == city.entrances[entranceIdx].map) {
+                entranceIdxPtr[0] = entranceIdx;
+                return 0;
+            }
+        }
+
+        entranceIdxPtr[0] = -1;
+        return -1;
+    }
+
+    /**
+     * Port of {@code wmMatchEntranceElevFromMap} (0x4BFBE8): the entrance
+     * of an area a map is entered through, on an elevation - the map's
+     * own -1 entrance takes any elevation, and so does the ask.
+     */
+    static int wmMatchEntranceElevFromMap(City areaIdx, int mapIdx, int elevation,
+            int[] entranceIdxPtr) {
+        CityInfo city = areaInfoList.get(areaIdx.id());
+
+        for (int entranceIdx = 0; entranceIdx < city.entrancesLength; entranceIdx++) {
+            EntranceInfo entrance = city.entrances[entranceIdx];
+            if (entrance.map == mapIdx) {
+                if (elevation == -1 || entrance.elevation == -1
+                        || elevation == entrance.elevation) {
+                    entranceIdxPtr[0] = entranceIdx;
+                    return 0;
+                }
+            }
+        }
+
+        entranceIdxPtr[0] = -1;
+        return -1;
+    }
+
+    /**
+     * Port of {@code wmMatchAreaFromMap} (0x4BFC7C): the area a map is
+     * entered through, by the entrances that name the map.
+     */
+    static int wmMatchAreaFromMap(int mapIdx, City[] areaIdxPtr) {
+        for (int areaIdx = City.CITY_ARROYO.id(); areaIdx < maxAreaNum; areaIdx++) {
+            CityInfo cityInfo = areaInfoList.get(areaIdx);
+            for (int entranceIdx = 0; entranceIdx < cityInfo.entrancesLength; entranceIdx++) {
+                if (mapIdx == cityInfo.entrances[entranceIdx].map) {
+                    areaIdxPtr[0] = cityOf(areaIdx);
+                    return 0;
+                }
+            }
+        }
+
+        areaIdxPtr[0] = City.CITY_INVALID;
+        return -1;
+    }
+
+    /**
+     * Port of {@code wmMapIsKnown} (0x4C45BC): whether a map is known.
+     *
+     * <p>A map is known when an area's entrance reaches it and that
+     * entrance reads known - the state the game writes when the player
+     * walks into the map through it. A map no entrance reaches is not
+     * known, whatever its data says.
+     */
+    public static boolean wmMapIsKnown(int mapIdx) {
+        City[] areaIdxPtr = new City[1];
+        if (wmMatchAreaFromMap(mapIdx, areaIdxPtr) != 0) {
+            return false;
+        }
+
+        int[] entranceIdxPtr = new int[1];
+        if (wmMatchEntranceFromMap(areaIdxPtr[0], mapIdx, entranceIdxPtr) != 0) {
+            return false;
+        }
+
+        return areaInfoList.get(areaIdxPtr[0].id())
+            .entrances[entranceIdxPtr[0]].state == 1;
+    }
+
+    /**
+     * Port of {@code wmMapMarkMapEntranceState} (0x4BFD50): write the
+     * state of the entrance a map is walked into.
+     *
+     * <p>A map that is not saved keeps its entrances as they are, and
+     * the elevation is matched against the entrance's own, with -1 on
+     * either side taking anything.
+     */
+    public static int wmMapMarkMapEntranceState(int mapIdx, int elevation, int state) {
+        if (!MapRegistry.mapIsValid(mapIdx)) {
+            return -1;
+        }
+
+        if (!MapRegistry.wmMapIdxIsSaveable(mapIdx)) {
+            return -1;
+        }
+
+        City[] areaIdxPtr = new City[1];
+        if (wmMatchAreaContainingMapIdx(mapIdx, areaIdxPtr) == -1) {
+            return -1;
+        }
+
+        int[] entranceIdxPtr = new int[1];
+        if (wmMatchEntranceElevFromMap(areaIdxPtr[0], mapIdx, elevation, entranceIdxPtr) == -1) {
+            return -1;
+        }
+
+        areaInfoList.get(areaIdxPtr[0].id()).entrances[entranceIdxPtr[0]].state = state;
+
+        return 0;
+    }
+
     /** Test seam: fresh-process mirror (empty table). */
     static void resetForTests() {
         areaInfoList.clear();
