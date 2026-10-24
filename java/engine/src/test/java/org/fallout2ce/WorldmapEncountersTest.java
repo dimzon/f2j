@@ -98,5 +98,17 @@ class WorldmapEncountersTest {
         assertEquals(2, subS1.minimumCount);
         assertEquals(5, subS1.maximumCount);
         assertEquals("Manti", subS1.name);
+
+        // The conditions of the same lines: If(Player(Level) > 4).
+        WorldmapEncounters.EncounterConditionEntry c0 = dstN0.condition.entries[0];
+        assertEquals(1, dstN0.condition.entriesLength);
+        assertEquals(WorldmapEncounters.ENCOUNTER_CONDITION_TYPE_PLAYER, c0.type);
+        assertEquals(WorldmapEncounters.ENCOUNTER_CONDITIONAL_OPERATOR_GREATER_THAN,
+            c0.conditionalOperator);
+        assertEquals(4, c0.value);
+
+        WorldmapEncounters.EncounterConditionEntry cS0 = dstS0.condition.entries[0];
+        assertEquals(WorldmapEncounters.ENCOUNTER_CONDITION_TYPE_PLAYER, cS0.type);
+        assertEquals(4, cS0.value);
     }
 }

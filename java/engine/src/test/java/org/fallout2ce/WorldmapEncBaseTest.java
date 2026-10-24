@@ -83,5 +83,9 @@ class WorldmapEncBaseTest {
         assertEquals(WorldmapEncBase.ENCOUNTER_FORMATION_TYPE_SURROUNDING, encounter.position);
         assertEquals(5, encounter.spacing);
         assertEquals("Player(Perception)", encounter.distance);
+
+        // The Raiders type lines carry no condition in the vector's first
+        // type; the condition field is still parsed when present.
+        assertEquals(0, e0.condition.entriesLength);
     }
 }

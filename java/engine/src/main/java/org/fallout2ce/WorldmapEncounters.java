@@ -32,6 +32,54 @@ public final class WorldmapEncounters {
     /** The most entries a table can hold. */
     static final int ENCOUNTER_TABLE_ENTRY_MAX_COUNT = 40;
 
+    /** Port of {@code EncounterConditionType} (src/worldmap.cc). */
+    public static final int ENCOUNTER_CONDITION_TYPE_NONE = 0;
+    public static final int ENCOUNTER_CONDITION_TYPE_GLOBAL = 1;
+    public static final int ENCOUNTER_CONDITION_TYPE_NUMBER_OF_CRITTERS = 2;
+    public static final int ENCOUNTER_CONDITION_TYPE_RANDOM = 3;
+    public static final int ENCOUNTER_CONDITION_TYPE_PLAYER = 4;
+    public static final int ENCOUNTER_CONDITION_TYPE_DAYS_PLAYED = 5;
+    public static final int ENCOUNTER_CONDITION_TYPE_TIME_OF_DAY = 6;
+
+    /** Port of {@code EncounterConditionalOperator} (src/worldmap.cc). */
+    public static final int ENCOUNTER_CONDITIONAL_OPERATOR_NONE = 0;
+    public static final int ENCOUNTER_CONDITIONAL_OPERATOR_EQUAL = 1;
+    public static final int ENCOUNTER_CONDITIONAL_OPERATOR_NOT_EQUAL = 2;
+    public static final int ENCOUNTER_CONDITIONAL_OPERATOR_LESS_THAN = 3;
+    public static final int ENCOUNTER_CONDITIONAL_OPERATOR_GREATER_THAN = 4;
+
+    /** Port of {@code EncounterLogicalOperator}. */
+    public static final int ENCOUNTER_LOGICAL_OPERATOR_NONE = 0;
+    public static final int ENCOUNTER_LOGICAL_OPERATOR_AND = 1;
+    public static final int ENCOUNTER_LOGICAL_OPERATOR_OR = 2;
+
+    /** Port of {@code EncounterConditionEntry}. */
+    public static final class EncounterConditionEntry {
+        /** The kind of the condition. */
+        public int type;
+
+        /** The comparison of the condition. */
+        public int conditionalOperator;
+
+        /** The parameter of the condition (a gvar index, a chance...). */
+        public int param;
+
+        /** The value the condition is compared against. */
+        public int value;
+    }
+
+    /** Port of {@code EncounterCondition}. */
+    public static final class EncounterCondition {
+        /** How many entries the condition holds. */
+        public int entriesLength;
+
+        /** The entries, up to three. */
+        public final EncounterConditionEntry[] entries = new EncounterConditionEntry[3];
+
+        /** The logical operators joining the entries. */
+        public final int[] logicalOperators = new int[2];
+    }
+
     /** Port of {@code EncounterTableSubEntry}, the scalar slice. */
     public static final class EncounterTableSubEntry {
         /** The least of the encounter, without a range 0. */
@@ -76,6 +124,9 @@ public final class WorldmapEncounters {
         /** The sub-entries, by the order the line names them. */
         public final EncounterTableSubEntry[] subEntries =
             new EncounterTableSubEntry[6];
+
+        /** The condition of the entry. */
+        public EncounterCondition condition = new EncounterCondition();
     }
 
     /** Port of {@code EncounterTable}, the header slice. */
@@ -205,7 +256,147 @@ public final class WorldmapEncounters {
 
         parseSubEntries(entry, raw);
 
+        entry.condition = parseCondition(raw);
+
         return entry;
+    }
+
+    /**
+     * Port of {@code wmParseConditional} (0x4BE988): the {@code if(...)}
+     * tail of an entry line.
+     *
+     * <p>The kinds the sub-condition starts with are the random, the
+     * global, the player level, the days played, the time of day and the
+     * critter count; each is followed by a comparison and a value, and
+     * the entries are joined with {@code and}/{@code or}. The kinds
+     * without an evaluation (rand) keep the none operator.
+     */
+    static EncounterCondition parseCondition(String raw) {
+        EncounterCondition condition = new EncounterCondition();
+        if (raw == null) {
+            return condition;
+        }
+        String s = raw.toLowerCase();
+        int ifAt = s.indexOf("if(");
+        if (ifAt < 0) {
+            return condition;
+        }
+        s = s.substring(ifAt + 3);
+
+        while (condition.entriesLength < 3 && !s.isEmpty()) {
+            EncounterConditionEntry entry = new EncounterConditionEntry();
+            s = s.trim();
+
+            if (s.startsWith("rand(")) {
+                entry.type = ENCOUNTER_CONDITION_TYPE_RANDOM;
+                entry.conditionalOperator = ENCOUNTER_CONDITIONAL_OPERATOR_NONE;
+                int close = s.indexOf(')', 5);
+                entry.param = Integer.parseInt(s.substring(5, close));
+                s = s.substring(close + 1);
+            } else {
+                int type;
+                int prefix;
+                if (s.startsWith("global(")) {
+                    type = ENCOUNTER_CONDITION_TYPE_GLOBAL;
+                    prefix = 7;
+                } else if (s.startsWith("player(level)")) {
+                    type = ENCOUNTER_CONDITION_TYPE_PLAYER;
+                    prefix = 13;
+                } else if (s.startsWith("days_played")) {
+                    type = ENCOUNTER_CONDITION_TYPE_DAYS_PLAYED;
+                    prefix = 11;
+                } else if (s.startsWith("time_of_day")) {
+                    type = ENCOUNTER_CONDITION_TYPE_TIME_OF_DAY;
+                    prefix = 11;
+                } else if (s.startsWith("enctr(num_critters)")) {
+                    type = ENCOUNTER_CONDITION_TYPE_NUMBER_OF_CRITTERS;
+                    prefix = 19;
+                } else {
+                    break;
+                }
+                entry.type = type;
+                s = s.substring(prefix).trim();
+
+                if (type == ENCOUNTER_CONDITION_TYPE_GLOBAL) {
+                    int close = s.indexOf(')');
+                    entry.param = Integer.parseInt(s.substring(0, close));
+                    s = s.substring(close + 1).trim();
+                }
+
+                entry.conditionalOperator = comparisonOperator(s);
+                s = s.substring(comparisonLength(s)).trim();
+                entry.value = leadingInt(s);
+                s = skipValue(s, entry.value);
+            }
+
+            condition.entries[condition.entriesLength] = entry;
+            condition.entriesLength++;
+
+            if (s.startsWith("and")) {
+                condition.logicalOperators[condition.entriesLength - 1] =
+                    ENCOUNTER_LOGICAL_OPERATOR_AND;
+                s = s.substring(3);
+            } else if (s.startsWith("or")) {
+                condition.logicalOperators[condition.entriesLength - 1] =
+                    ENCOUNTER_LOGICAL_OPERATOR_OR;
+                s = s.substring(2);
+            } else {
+                break;
+            }
+        }
+
+        return condition;
+    }
+
+    /** The comparison operator of a tail, from the operator table. */
+    private static int comparisonOperator(String s) {
+        s = s.trim();
+        if (s.startsWith("==")) {
+            return ENCOUNTER_CONDITIONAL_OPERATOR_EQUAL;
+        }
+        if (s.startsWith("!=")) {
+            return ENCOUNTER_CONDITIONAL_OPERATOR_NOT_EQUAL;
+        }
+        if (s.startsWith("<")) {
+            return ENCOUNTER_CONDITIONAL_OPERATOR_LESS_THAN;
+        }
+        if (s.startsWith(">")) {
+            return ENCOUNTER_CONDITIONAL_OPERATOR_GREATER_THAN;
+        }
+        return ENCOUNTER_CONDITIONAL_OPERATOR_NONE;
+    }
+
+    /** How many characters the comparison operator takes. */
+    private static int comparisonLength(String s) {
+        s = s.trim();
+        if (s.startsWith("==") || s.startsWith("!=")) {
+            return 2;
+        }
+        return 1;
+    }
+
+    /** The leading integer of a tail, 0 when none. */
+    private static int leadingInt(String s) {
+        s = s.trim();
+        int digits = 0;
+        while (digits < s.length() && Character.isDigit(s.charAt(digits))) {
+            digits++;
+        }
+        return digits > 0 ? Integer.parseInt(s.substring(0, digits)) : 0;
+    }
+
+    /** Skip past the value and its closing punctuation. */
+    private static String skipValue(String s, int value) {
+        s = s.trim();
+        int digits = 0;
+        while (digits < s.length() && Character.isDigit(s.charAt(digits))) {
+            digits++;
+        }
+        s = s.substring(digits).trim();
+        while (!s.isEmpty() && (s.charAt(0) == ')' || s.charAt(0) == ',')) {
+            s = s.substring(1).trim();
+        }
+        return s;
     }
 
     /**

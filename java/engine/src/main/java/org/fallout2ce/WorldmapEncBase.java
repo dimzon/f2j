@@ -92,6 +92,10 @@ public final class WorldmapEncBase {
 
         /** The items, by the order the line names them. */
         public final EncounterItem[] items = new EncounterItem[ENCOUNTER_ITEM_MAX_COUNT];
+
+        /** The condition of the entry. */
+        public WorldmapEncounters.EncounterCondition condition =
+            new WorldmapEncounters.EncounterCondition();
     }
 
     /** Port of {@code Encounter}, the scalar slice. */
@@ -205,6 +209,7 @@ public final class WorldmapEncBase {
         entry.distance = intAfter(s, "distance:");
         entry.tile = intAfter(s, "tilenum:");
         entry.scriptIdx = intAfter(s, "script:");
+        entry.condition = WorldmapEncounters.parseCondition(s);
 
         int at = 0;
         for (int i = 0; i < ENCOUNTER_ITEM_MAX_COUNT; i++) {
