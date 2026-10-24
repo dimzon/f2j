@@ -1,5 +1,6 @@
 package org.fallout2ce;
 
+import org.fallout2ce.ObjTypes.Dam;
 import org.fallout2ce.ObjTypes.GameObject;
 
 /**
@@ -124,7 +125,7 @@ public final class Combat {
         if (weapon == null || isUnarmedHitMode(hitMode)) {
             toHit = Skill.skillGetValue(attacker, SkillDefs.Skill.SKILL_UNARMED.id());
         } else {
-            toHit = Item.weaponGetSkillValue(attacker, hitMode);
+            toHit = Skill.skillGetValue(attacker, Item.weaponGetSkillValue(attacker, hitMode));
 
             int attackType = Item.weaponGetAttackTypeForHitMode(weapon, hitMode);
             if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
@@ -808,6 +809,374 @@ public final class Combat {
             combatOver();
             // scriptsExecMapUpdateProc: map-script engine seam.
         }
+    }
+
+    // ===== attack computation (src/combat.cc) =====
+
+    private static final int WEAPON_CRITICAL_FAILURE_TYPE_COUNT = 7;
+    private static final int WEAPON_CRITICAL_FAILURE_EFFECT_COUNT = 5;
+
+    // _cf_table (src/combat.cc): critical-failure effects per weapon type
+    // and effect roll.
+    private static final int[][] CF_TABLE = {
+        { 0, Dam.LOSE_TURN.bits(), Dam.LOSE_TURN.bits(),
+            Dam.HURT_SELF.bits() | Dam.KNOCKED_DOWN.bits(), Dam.CRIP_RANDOM.bits() },
+        { 0, Dam.LOSE_TURN.bits(), Dam.DROP.bits(),
+            Dam.RANDOM_HIT.bits(), Dam.HIT_SELF.bits() },
+        { 0, Dam.LOSE_AMMO.bits(), Dam.DROP.bits(),
+            Dam.RANDOM_HIT.bits(), Dam.DESTROY.bits() },
+        { Dam.LOSE_TURN.bits(), Dam.LOSE_TURN.bits() | Dam.LOSE_AMMO.bits(),
+            Dam.DROP.bits() | Dam.LOSE_TURN.bits(), Dam.RANDOM_HIT.bits(),
+            Dam.EXPLODE.bits() | Dam.LOSE_TURN.bits() },
+        { Dam.DUD.bits(), Dam.DROP.bits(),
+            Dam.DROP.bits() | Dam.HURT_SELF.bits(), Dam.RANDOM_HIT.bits(),
+            Dam.EXPLODE.bits() },
+        { Dam.LOSE_TURN.bits(), Dam.DUD.bits(), Dam.DESTROY.bits(),
+            Dam.RANDOM_HIT.bits(),
+            Dam.EXPLODE.bits() | Dam.LOSE_TURN.bits() | Dam.KNOCKED_DOWN.bits() },
+        { 0, Dam.LOSE_TURN.bits(), Dam.RANDOM_HIT.bits(),
+            Dam.DESTROY.bits(),
+            Dam.EXPLODE.bits() | Dam.LOSE_TURN.bits() | Dam.ON_FIRE.bits() },
+    };
+
+    /** Port of {@code explosionGetDamageType} (src/item.cc): BSS default. */
+    public static int explosionGetDamageType() {
+        return ProtoTypes.DamageType.DAMAGE_TYPE_EXPLOSION.id();
+    }
+
+    /** Port of {@code _is_hit_from_front} (src/actions.cc). */
+    static boolean isHitFromFront(GameObject attacker, GameObject defender) {
+        int diff = attacker.rotation.id() - defender.rotation.id();
+        if (diff < 0) {
+            diff = -diff;
+        }
+        return diff != 0 && diff != 1 && diff != 5;
+    }
+
+    // 0x424088 _attackFindInvalidFlags.
+    static ObjTypes.Dam attackFindInvalidFlags(GameObject critter, GameObject item) {
+        ObjTypes.Dam flags = ObjTypes.Dam.NONE;
+        if (ProtoTypes.ProtoId.ofGameObject(critter).objectType()
+                == ObjTypes.ObjectType.OBJ_TYPE_CRITTER
+                && Critter.critterFlagCheck(critter, ObjTypes.CritterFlags.NO_DROP)) {
+            flags = flags.or(ObjTypes.Dam.DROP);
+        }
+        if (item != null && (item.flags.bits() & ObjTypes.ObjectFlags.HIDDEN.bits()) != 0) {
+            flags = flags.or(ObjTypes.Dam.DROP);
+        }
+        return flags;
+    }
+
+    // 0x42432C _do_random_cripple.
+    static void doRandomCripple(ObjTypes.Dam[] flagsPtr) {
+        flagsPtr[0] = flagsPtr[0].and(ObjTypes.Dam.CRIP_RANDOM.not());
+        switch (GameRandom.randomBetween(0, 3)) {
+        case 0:
+            flagsPtr[0] = flagsPtr[0].or(ObjTypes.Dam.CRIP_LEG_LEFT);
+            break;
+        case 1:
+            flagsPtr[0] = flagsPtr[0].or(ObjTypes.Dam.CRIP_LEG_RIGHT);
+            break;
+        case 2:
+            flagsPtr[0] = flagsPtr[0].or(ObjTypes.Dam.CRIP_ARM_LEFT);
+            break;
+        case 3:
+            flagsPtr[0] = flagsPtr[0].or(ObjTypes.Dam.CRIP_ARM_RIGHT);
+            break;
+        }
+    }
+
+    // 0x4240DC attackComputeCriticalFailure.
+    static int attackComputeCriticalFailure(CombatDefs.Attack attack) {
+        attack.attackerFlags = attack.attackerFlags.and(ObjTypes.Dam.HIT.not());
+
+        if (attack.attacker != null
+                && Critter.critterFlagCheck(attack.attacker, ObjTypes.CritterFlags.INVULNERABLE)) {
+            return 0;
+        }
+
+        if (attack.attacker == ObjectSystem.getDude()) {
+            // gRemoveCriticalTimeLimits (sfall toggle) is off headless.
+            if (GameTime.gameTimeGetTime() / GameRandom.GAME_TIME_TICKS_PER_DAY < 6) {
+                return 0;
+            }
+        }
+
+        int attackType = Item.weaponGetAttackTypeForHitMode(attack.weapon, attack.hitMode);
+        int criticalFailureTableIndex = Item.weaponGetCriticalFailureType(attack.weapon);
+        if (criticalFailureTableIndex == -1) {
+            criticalFailureTableIndex = 0;
+        }
+
+        int chance = GameRandom.randomBetween(1, 100)
+            - 5 * (Stat.critterGetStat(attack.attacker, StatDefs.Stat.STAT_LUCK.id()) - 5);
+
+        int effect;
+        if (chance <= 20) {
+            effect = 0;
+        } else if (chance <= 50) {
+            effect = 1;
+        } else if (chance <= 75) {
+            effect = 2;
+        } else if (chance <= 95) {
+            effect = 3;
+        } else {
+            effect = 4;
+        }
+
+        int flags = CF_TABLE[criticalFailureTableIndex][effect];
+        if (flags == ObjTypes.Dam.NONE.bits()) {
+            return 0;
+        }
+
+        attack.attackerFlags = attack.attackerFlags.or(ObjTypes.Dam.CRITICAL);
+        attack.attackerFlags = attack.attackerFlags.or(new ObjTypes.Dam(flags));
+
+        ObjTypes.Dam invalidFlags = attackFindInvalidFlags(attack.attacker, attack.weapon);
+        attack.attackerFlags = attack.attackerFlags.and(invalidFlags.not());
+
+        if ((attack.attackerFlags.bits() & ObjTypes.Dam.HIT_SELF.bits()) != 0) {
+            int rounds = attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
+                ? attack.ammoQuantity : 1;
+            attackComputeDamage(attack, rounds, 2);
+        } else if ((attack.attackerFlags.bits() & ObjTypes.Dam.EXPLODE.bits()) != 0) {
+            attackComputeDamage(attack, 1, 2);
+        }
+
+        if ((attack.attackerFlags.bits() & ObjTypes.Dam.HURT_SELF.bits()) != 0) {
+            attack.attackerDamage += GameRandom.randomBetween(1, 5);
+        }
+
+        if ((attack.attackerFlags.bits() & ObjTypes.Dam.LOSE_TURN.bits()) != 0) {
+            attack.attacker.data.critter.combat.ap = 0;
+        }
+
+        if ((attack.attackerFlags.bits() & ObjTypes.Dam.LOSE_AMMO.bits()) != 0) {
+            if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()) {
+                attack.ammoQuantity = Item.ammoGetQuantity(attack.weapon);
+            } else {
+                attack.attackerFlags = attack.attackerFlags.and(ObjTypes.Dam.LOSE_AMMO.not());
+            }
+        }
+
+        if ((attack.attackerFlags.bits() & ObjTypes.Dam.CRIP_RANDOM.bits()) != 0) {
+            ObjTypes.Dam[] flagsPtr = { attack.attackerFlags };
+            doRandomCripple(flagsPtr);
+            attack.attackerFlags = flagsPtr[0];
+        }
+
+        if ((attack.attackerFlags.bits() & ObjTypes.Dam.RANDOM_HIT.bits()) != 0) {
+            // _combat_ai_random_target: AI seam, no random target.
+            attack.defender = attack.intendedTarget;
+            if (attack.defender != null) {
+                attack.tile = attack.defender.tile;
+            }
+        }
+
+        return 0;
+    }
+
+    // 0x42402C attackComputeCriticalHit. The critical-hit tables
+    // (gPlayerCriticalHitTable/gCriticalHitTables) are thousands of data
+    // lines not ported yet; the structure runs, and a critical hit without
+    // the tables is a vanilla x2 damage with no effects.
+    static int attackComputeCriticalHit(CombatDefs.Attack attack) {
+        GameObject defender = attack.defender;
+        if (defender != null
+                && Critter.critterFlagCheck(defender, ObjTypes.CritterFlags.INVULNERABLE)) {
+            return 2;
+        }
+        if (defender != null && ProtoTypes.ProtoId.ofGameObject(defender).objectType()
+                != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return 2;
+        }
+
+        attack.attackerFlags = attack.attackerFlags.or(ObjTypes.Dam.CRITICAL);
+
+        int chance = GameRandom.randomBetween(1, 100)
+            + Stat.critterGetStat(attack.attacker, StatDefs.Stat.STAT_BETTER_CRITICALS.id());
+
+        // effect roll and the tables: deferred (data slice).
+        return 2;
+    }
+
+    // 0x42346C attackComputeEnhancedKnockout.
+    static int attackComputeEnhancedKnockout(CombatDefs.Attack attack) {
+        if (Item.weaponGetPerk(attack.weapon)
+                == PerkDefs.Perk.PERK_WEAPON_ENHANCED_KNOCKOUT) {
+            int difficulty = Stat.critterGetStat(attack.attacker,
+                StatDefs.Stat.STAT_STRENGTH.id()) - 8;
+            int chance = GameRandom.randomBetween(1, 100);
+            if (chance <= difficulty) {
+                GameObject weapon = null;
+                if (attack.defender != ObjectSystem.getDude()) {
+                    weapon = Item.getWeaponForHitMode(attack.defender,
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
+                }
+                if ((attackFindInvalidFlags(attack.defender, weapon).bits()
+                        & ObjTypes.Dam.KNOCKED_OUT.bits()) == ObjTypes.Dam.NONE.bits()) {
+                    attack.defenderFlags = attack.defenderFlags.or(ObjTypes.Dam.KNOCKED_OUT);
+                }
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Port of {@code attackCompute} (0x42378C). The burst spray, the ranged
+     * miss interception and the explosion extras are seams (single-shot
+     * roll, no interception, no extras); the critical-hit tables are
+     * deferred (see attackComputeCriticalHit).
+     */
+    static int attackCompute(CombatDefs.Attack attack) {
+        int range = Item.weaponGetRange(attack.attacker, attack.hitMode);
+        int distance = TileMath.tileDistanceBetween(attack.attacker.tile, attack.defender.tile);
+
+        if (range < distance) {
+            return -1;
+        }
+
+        int anim = Item.critterGetAnimationForHitMode(attack.attacker, attack.hitMode);
+        int accuracy = attackDetermineToHit(attack.attacker, attack.attacker.tile,
+            attack.defender, attack.defenderHitLocation, attack.hitMode, true);
+
+        boolean isGrenade = false;
+        ProtoTypes.DamageType damageType = Item.weaponGetDamageType(attack.attacker, attack.weapon);
+        if (anim == AnimationType.THROW_ANIM.value()
+                && (damageType.id() == explosionGetDamageType()
+                    || damageType == ProtoTypes.DamageType.DAMAGE_TYPE_PLASMA
+                    || damageType == ProtoTypes.DamageType.DAMAGE_TYPE_EMP)) {
+            isGrenade = true;
+        }
+
+        if (attack.defenderHitLocation == CombatDefs.HitLocation.HIT_LOCATION_UNCALLED.id()) {
+            attack.defenderHitLocation = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+        }
+
+        int attackType = Item.weaponGetAttackTypeForHitMode(attack.weapon, attack.hitMode);
+        int roundsHitMainTarget = 1;
+        int damageMultiplier = 2;
+        int roundsFired = 1;
+
+        int roll;
+        if (anim == AnimationType.FIRE_BURST.value()
+                || anim == AnimationType.FIRE_CONTINUOUS.value()) {
+            // _compute_spray: burst ballistics seam, single-shot roll.
+            int chance = Stat.critterGetStat(attack.attacker,
+                StatDefs.Stat.STAT_CRITICAL_CHANCE.id());
+            roll = GameRandom.randomRoll(accuracy,
+                chance - Combat.getHitLocationPenalty(attack.defenderHitLocation), null).ordinal();
+        } else {
+            int chance = Stat.critterGetStat(attack.attacker,
+                StatDefs.Stat.STAT_CRITICAL_CHANCE.id());
+            roll = GameRandom.randomRoll(accuracy,
+                chance - Combat.getHitLocationPenalty(attack.defenderHitLocation), null).ordinal();
+        }
+
+        GameObject dude = ObjectSystem.getDude();
+        if (roll == GameRandom.Roll.FAILURE.ordinal()) {
+            if (TraitDefs.traitIsSelectedAndActive(TraitDefs.Trait.TRAIT_JINXED.id())
+                    || Perk.perkHasRank(dude, Perk.PERK_JINXED)) {
+                if (GameRandom.randomBetween(0, 1) == 1) {
+                    roll = GameRandom.Roll.CRITICAL_FAILURE.ordinal();
+                }
+            }
+        }
+
+        if (roll == GameRandom.Roll.SUCCESS.ordinal()) {
+            if ((attackType == Item.AttackType.ATTACK_TYPE_MELEE.id()
+                    || attackType == Item.AttackType.ATTACK_TYPE_UNARMED.id())
+                    && attack.attacker == dude) {
+                if (Perk.perkHasRank(attack.attacker, Perk.PERK_SLAYER)) {
+                    roll = GameRandom.Roll.CRITICAL_SUCCESS.ordinal();
+                }
+                if (Perk.perkHasRank(dude, Perk.PERK_SILENT_DEATH)
+                        && !isHitFromFront(dude, attack.defender)
+                        && Critter.dudeHasState(Critter.DUDE_STATE_SNEAKING)
+                        && dude != attack.defender.data.critter.combat.whoHitMe) {
+                    damageMultiplier = 4;
+                }
+                int bonusCriticalChance = Item.unarmedGetBonusCriticalChance(attack.hitMode);
+                if (bonusCriticalChance != 0
+                        && GameRandom.randomBetween(1, 100) <= bonusCriticalChance) {
+                    roll = GameRandom.Roll.CRITICAL_SUCCESS.ordinal();
+                }
+            }
+        }
+
+        if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
+                && roll == GameRandom.Roll.SUCCESS.ordinal()
+                && attack.attacker == dude) {
+            if (Perk.perkGetRank(dude, Perk.PERK_SNIPER) != 0) {
+                int d10 = GameRandom.randomBetween(1, 10);
+                if (d10 <= Stat.critterGetStat(dude, StatDefs.Stat.STAT_LUCK.id())) {
+                    roll = GameRandom.Roll.CRITICAL_SUCCESS.ordinal();
+                }
+            }
+        }
+
+        // scriptHooks_AfterHitRoll: identity.
+
+        if (Item.ammoGetCapacity(attack.weapon) > 0) {
+            int rounds = 1;
+            if (anim == AnimationType.FIRE_BURST.value()
+                    || anim == AnimationType.FIRE_CONTINUOUS.value()) {
+                rounds = roundsFired;
+            }
+            attack.ammoQuantity = rounds;
+            int[] ammoQty = { rounds };
+            if (Item.weaponComputeAmmoCost(attack.weapon, ammoQty) == -1) {
+                return -1;
+            }
+            attack.ammoQuantity = ammoQty[0];
+            // scriptHooks_AmmoCost: identity.
+        } else if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()) {
+            attack.ammoQuantity = roundsFired;
+        }
+
+        switch (roll) {
+        case 3: // CRITICAL_SUCCESS
+            damageMultiplier = attackComputeCriticalHit(attack);
+            if ((attackType == Item.AttackType.ATTACK_TYPE_MELEE.id()
+                    || attackType == Item.AttackType.ATTACK_TYPE_UNARMED.id())
+                    && attack.attacker == dude) {
+                if (Perk.perkHasRank(dude, Perk.PERK_SILENT_DEATH)
+                        && !isHitFromFront(dude, attack.defender)
+                        && Critter.dudeHasState(Critter.DUDE_STATE_SNEAKING)
+                        && dude != attack.defender.data.critter.combat.whoHitMe) {
+                    damageMultiplier *= 2;
+                }
+            }
+            // fallthrough
+        case 2: // SUCCESS
+            attack.attackerFlags = attack.attackerFlags.or(ObjTypes.Dam.HIT);
+            attackComputeEnhancedKnockout(attack);
+            attackComputeDamage(attack, roundsHitMainTarget, damageMultiplier);
+            break;
+        case 1: // FAILURE
+            if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
+                    || attackType == Item.AttackType.ATTACK_TYPE_THROW.id()) {
+                // _check_ranged_miss: interception seam, no miss int.
+            }
+            break;
+        case 0: // CRITICAL_FAILURE
+            attackComputeCriticalFailure(attack);
+            break;
+        }
+
+        if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
+                || attackType == Item.AttackType.ATTACK_TYPE_THROW.id()) {
+            if ((attack.attackerFlags.bits()
+                    & (ObjTypes.Dam.HIT.bits() | ObjTypes.Dam.CRITICAL.bits())) == 0) {
+                // Random trajectory and grenade landing: seams.
+            }
+        }
+
+        // _compute_explosion_on_extras: explosion seam.
+
+        attackComputeDeathFlags(attack);
+
+        return 0;
     }
 
     /**

@@ -61,8 +61,16 @@ public final class Perk {
 
     /** PERK_BONUS_MOVE = 4. */
     public static final int PERK_BONUS_MOVE = 4;
+    /** PERK_SLAYER = 23. */
+    public static final int PERK_SLAYER = 23;
+    /** PERK_SNIPER = 24. */
+    public static final int PERK_SNIPER = 24;
+    /** PERK_SILENT_DEATH = 25. */
+    public static final int PERK_SILENT_DEATH = 25;
     /** PERK_QUICK_RECOVERY = 103. */
     public static final int PERK_QUICK_RECOVERY = 103;
+    /** PERK_JINXED = 119. */
+    public static final int PERK_JINXED = 119;
 
     public static boolean perkIsValid(int perk) {
         return perk >= PERK_FIRST && perk < PERK_COUNT;
