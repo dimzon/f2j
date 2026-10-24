@@ -1186,7 +1186,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void giqOption(int iq, int messageListId, Program.ProgramValue msg,
-            Program.ProgramValue a3, int a4) {
+            Program.ProgramValue procedure, int reaction) {
     }
 
     /**
@@ -1380,15 +1380,15 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * answers 0 for it.
      */
     @Override
-    public int hasSkill(Object a0, int a1) {
-        if (a0 == null) {
+    public int hasSkill(Object critter, int skill) {
+        if (critter == null) {
             return 0;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject object = (ObjTypes.GameObject) critter;
         if (ProtoTypes.ProtoId.ofGameObject(object).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
             return 0;
         }
-        return Skill.skillGetValue(object, a1);
+        return Skill.skillGetValue(object, skill);
     }
 
     /**
@@ -1398,16 +1398,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * locked.
      */
     @Override
-    public int objIsLocked(Object a0) {
-        if (a0 == null) {
+    public int objIsLocked(Object object) {
+        if (object == null) {
             return 0;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(obj).objectType();
         if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
-            return (object.data.flags & ObjTypes.CONTAINER_FLAG_LOCKED) != 0 ? 1 : 0;
+            return (obj.data.flags & ObjTypes.CONTAINER_FLAG_LOCKED) != 0 ? 1 : 0;
         } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
-            return (object.data.scenery.door.openFlags & ObjTypes.DOOR_FLAG_LOCKED) != 0 ? 1 : 0;
+            return (obj.data.scenery.door.openFlags & ObjTypes.DOOR_FLAG_LOCKED) != 0 ? 1 : 0;
         }
         return 0;
     }
@@ -1419,11 +1419,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * answers 0 for it.
      */
     @Override
-    public int critterIsFleeing(Object a0) {
-        if (a0 == null) {
+    public int critterIsFleeing(Object critter) {
+        if (critter == null) {
             return 0;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject object = (ObjTypes.GameObject) critter;
         return object.data.critter.combat.maneuver
                 .and(ObjTypes.CritterManeuver.FLEEING)
                 .equals(ObjTypes.CritterManeuver.NONE) ? 0 : 1;
@@ -1447,9 +1447,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * that are due are processed after each day and at the end.
      */
     @Override
-    public void gameTimeAdvance(int a0) {
-        int days = a0 / GameTime.TICKS_PER_DAY;
-        int remainder = a0 % GameTime.TICKS_PER_DAY;
+    public void gameTimeAdvance(int ticks) {
+        int days = ticks / GameTime.TICKS_PER_DAY;
+        int remainder = ticks % GameTime.TICKS_PER_DAY;
         for (int day = 0; day < days; day++) {
             GameTime.gameTimeAddTicks(GameTime.TICKS_PER_DAY);
             EventQueue.queueProcessEvents();
@@ -1465,11 +1465,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>Nothing happens when there is no object at all.
      */
     @Override
-    public void moveObjInvenToObj(Object a0, Object a1) {
-        if (a0 == null || a1 == null) {
+    public void moveObjInvenToObj(Object source, Object destination) {
+        if (source == null || destination == null) {
             return;
         }
-        Item.itemMoveAll((ObjTypes.GameObject) a0, (ObjTypes.GameObject) a1);
+        Item.itemMoveAll((ObjTypes.GameObject) source, (ObjTypes.GameObject) destination);
     }
 
     /**
@@ -1492,7 +1492,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * engine, so the screen is not faded.
      */
     @Override
-    public void gfadeOut(int a0) {
+    public void gfadeOut(int duration) {
     }
 
     /**
@@ -1502,7 +1502,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * engine, so the screen is not faded.
      */
     @Override
-    public void gfadeIn(int a0) {
+    public void gfadeIn(int duration) {
     }
 
     /**
@@ -1512,7 +1512,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * combat system, so there is no damage.
      */
     @Override
-    public void critterDamage(Object a0, int a1, int a2) {
+    public void critterDamage(Object critter, int amount, int damageTypeWithFlags) {
     }
 
     /**
@@ -1524,14 +1524,14 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * is not there has no roll at all.
      */
     @Override
-    public int doCheck(Object a0, int a1, int a2) {
-        if (a0 == null) {
+    public int doCheck(Object critter, int stat, int modifier) {
+        if (critter == null) {
             return 0;
         }
-        if (a1 < 0 || a1 > StatDefs.Stat.STAT_LUCK.id()) {
+        if (stat < 0 || stat > StatDefs.Stat.STAT_LUCK.id()) {
             return 0;
         }
-        return Stat.statRoll((ObjTypes.GameObject) a0, a1, a2, new int[1]).ordinal();
+        return Stat.statRoll((ObjTypes.GameObject) critter, stat, modifier, new int[1]).ordinal();
     }
 
     /**
@@ -1541,7 +1541,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void anim(Object a0, int a1, int a2, Program.ProgramValue a3) {
+    public void anim(Object object, int direction, int anim, Program.ProgramValue frame) {
     }
 
     /**
@@ -1551,7 +1551,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void objClose(Object a0) {
+    public void objClose(Object object) {
     }
 
     /**
@@ -1561,8 +1561,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * critter that is not a critter is not healed.
      */
     @Override
-    public int critterHeal(Object a0, int a1) {
-        return Critter.critterAdjustHitPoints((ObjTypes.GameObject) a0, a1);
+    public int critterHeal(Object critter, int amount) {
+        return Critter.critterAdjustHitPoints((ObjTypes.GameObject) critter, amount);
     }
 
     /**
@@ -1572,11 +1572,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * answers 0 for it.
      */
     @Override
-    public int getPoison(Object a0) {
-        if (a0 == null) {
+    public int getPoison(Object critter) {
+        if (critter == null) {
             return 0;
         }
-        ObjTypes.GameObject obj = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) critter;
         if (ProtoTypes.ProtoId.ofGameObject(obj).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
             return 0;
         }
@@ -1590,19 +1590,19 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * reverse clears them instead, the way the original does.
      */
     @Override
-    public void critterInjure(Object a0, int a1) {
-        if (a0 == null) {
+    public void critterInjure(Object critter, int flags) {
+        if (critter == null) {
             return;
         }
-        ObjTypes.GameObject critter = (ObjTypes.GameObject) a0;
-        boolean reverse = (a1 & ObjTypes.Dam.PERFORM_REVERSE.bits()) != 0;
-        ObjTypes.Dam flags = new ObjTypes.Dam(a1 & ObjTypes.Dam.CRIP.bits());
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) critter;
+        boolean reverse = (flags & ObjTypes.Dam.PERFORM_REVERSE.bits()) != 0;
+        ObjTypes.Dam dam = new ObjTypes.Dam(flags & ObjTypes.Dam.CRIP.bits());
         if (reverse) {
-            critter.data.critter.combat.results =
-                critter.data.critter.combat.results.and(flags.not());
+            obj.data.critter.combat.results =
+                obj.data.critter.combat.results.and(dam.not());
         } else {
-            critter.data.critter.combat.results =
-                critter.data.critter.combat.results.or(flags);
+            obj.data.critter.combat.results =
+                obj.data.critter.combat.results.or(dam);
         }
     }
 
@@ -1613,9 +1613,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * value of the member, or 0 when the game has no such member.
      */
     @Override
-    public Program.ProgramValue protoData(int a0, int a1) {
+    public Program.ProgramValue protoData(int protoId, int member) {
         ProtoDefs.ProtoDataMemberValue value = new ProtoDefs.ProtoDataMemberValue();
-        int valueType = ProtoDb.protoGetDataMember(ProtoTypes.ProtoId.ofPid(a0), a1, value);
+        int valueType = ProtoDb.protoGetDataMember(ProtoTypes.ProtoId.ofPid(protoId), member, value);
         Program.ProgramValue result = new Program.ProgramValue();
         if (valueType == ProtoDefs.ProtoDataMemberType.PROTO_DATA_MEMBER_TYPE_STRING.id()) {
             result.opcode = Program.VALUE_TYPE_STRING;
@@ -1634,8 +1634,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * state belongs to the game phase, so the player is never sneaking.
      */
     @Override
-    public int usingSkill(Object a0, int a1) {
-        if (a1 == SkillDefs.Skill.SKILL_SNEAK.id() && a0 == ObjectSystem.getDude()) {
+    public int usingSkill(Object critter, int skill) {
+        if (skill == SkillDefs.Skill.SKILL_SNEAK.id() && critter == ObjectSystem.getDude()) {
             return Critter.dudeHasState(Critter.DUDE_STATE_SNEAKING) ? 1 : 0;
         }
         return 0;
@@ -1647,11 +1647,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>Nothing happens when there is no object at all.
      */
     @Override
-    public void partyRemove(Object a0) {
-        if (a0 == null) {
+    public void partyRemove(Object who) {
+        if (who == null) {
             return;
         }
-        PartyMembers.partyMemberRemove((ObjTypes.GameObject) a0);
+        PartyMembers.partyMemberRemove((ObjTypes.GameObject) who);
     }
 
     /**
@@ -1662,13 +1662,13 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * original does.
      */
     @Override
-    public void setExitGrids(int a0, int a1, int a2, int a3, int a4) {
-        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtElevation(a0);
+    public void setExitGrids(int elevation, int destinationMap, int destinationElevation, int destinationTile, int destinationRotation) {
+        ObjTypes.GameObject object = ObjectSystem.objectFindFirstAtElevation(elevation);
         while (object != null) {
             if (ProtoDefs.isExitGridProtoId(ProtoTypes.ProtoId.ofGameObject(object))) {
-                object.data.misc.map = WorldmapDefs.ofMap(a1);
-                object.data.misc.tile = a3;
-                object.data.misc.elevation = a2;
+                object.data.misc.map = WorldmapDefs.ofMap(destinationMap);
+                object.data.misc.tile = destinationTile;
+                object.data.misc.elevation = destinationElevation;
             }
             object = ObjectSystem.objectFindNextAtElevation();
         }
@@ -1681,7 +1681,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * engine, so nothing is played.
      */
     @Override
-    public void playSfx(String a0) {
+    public void playSfx(String name) {
     }
 
     /**
@@ -1691,7 +1691,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void regAnimAnimate(Object a0, int a1, int a2) {
+    public void regAnimAnimate(Object object, int anim, int delay) {
     }
 
     /**
@@ -1702,7 +1702,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void regAnimAnimateReverse(Object a0, int a1, int a2) {
+    public void regAnimAnimateReverse(Object object, int anim, int delay) {
     }
 
     /**
@@ -1713,7 +1713,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void regAnimAnimateForever(Object a0, int a1) {
+    public void regAnimAnimateForever(Object object, int anim) {
     }
 
     /**
@@ -1723,7 +1723,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * neither, so nothing is played.
      */
     @Override
-    public void regAnimPlaySfx(Object a0, String a1, int a2) {
+    public void regAnimPlaySfx(Object object, String sfxName, int delay) {
     }
 
     /**
@@ -1733,7 +1733,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * system, so there is no explosion.
      */
     @Override
-    public void explosion(int a0, int a1, int a2) {
+    public void explosion(int tile, int elevation, int maxDamage) {
     }
 
     /**
@@ -1742,8 +1742,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The port has no dialog system, so the option is not shown.
      */
     @Override
-    public void gsayOption(int a0, Program.ProgramValue a1,
-            Program.ProgramValue a2, int a3) {
+    public void gsayOption(int messageListId, Program.ProgramValue message,
+            Program.ProgramValue procedure, int reaction) {
     }
 
     /**
@@ -1752,7 +1752,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The port has no dialog system, so the barter is not started.
      */
     @Override
-    public void gdialogBarter(int a0) {
+    public void gdialogBarter(int modifier) {
     }
 
     /**
@@ -1762,7 +1762,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void objOpen(Object a0) {
+    public void objOpen(Object object) {
     }
 
     /**
@@ -1801,11 +1801,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>Nothing happens when there is no object at all.
      */
     @Override
-    public void partyAdd(Object a0) {
-        if (a0 == null) {
+    public void partyAdd(Object who) {
+        if (who == null) {
             return;
         }
-        PartyMembers.partyMemberAdd((ObjTypes.GameObject) a0);
+        PartyMembers.partyMemberAdd((ObjTypes.GameObject) who);
     }
 
     /**
@@ -1815,11 +1815,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * that is not a critter is not poisoned.
      */
     @Override
-    public void poison(Object a0, int a1) {
-        if (a0 == null) {
+    public void poison(Object critter, int amount) {
+        if (critter == null) {
             return;
         }
-        Critter.critterAdjustPoison((ObjTypes.GameObject) a0, a1);
+        Critter.critterAdjustPoison((ObjTypes.GameObject) critter, amount);
     }
 
     /**
@@ -1829,12 +1829,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>A non-zero value makes the critter flee and a zero stops it.
      */
     @Override
-    public void critterSetFleeState(Object a0, int a1) {
-        if (a0 == null) {
+    public void critterSetFleeState(Object critter, int state) {
+        if (critter == null) {
             return;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        if (a1 != 0) {
+        ObjTypes.GameObject object = (ObjTypes.GameObject) critter;
+        if (state != 0) {
             object.data.critter.combat.maneuver =
                 object.data.critter.combat.maneuver.or(ObjTypes.CritterManeuver.FLEEING);
         } else {
@@ -1851,7 +1851,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * killed.
      */
     @Override
-    public void killCritter(Object a0, int a1) {
+    public void killCritter(Object critter, int deathFrame) {
     }
 
     /**
@@ -1861,7 +1861,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void animateStandObj(Object a0) {
+    public void animateStandObj(Object object) {
     }
 
     /**
@@ -1871,16 +1871,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * other kinds of objects.
      */
     @Override
-    public void jamLock(Object a0) {
-        if (a0 == null) {
+    public void jamLock(Object object) {
+        if (object == null) {
             return;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
-        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(object).objectType();
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofGameObject(obj).objectType();
         if (type == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
-            object.data.flags |= ObjTypes.CONTAINER_FLAG_JAMMED;
+            obj.data.flags |= ObjTypes.CONTAINER_FLAG_JAMMED;
         } else if (type == ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
-            object.data.scenery.door.openFlags |= ObjTypes.DOOR_FLAG_JAMMED;
+            obj.data.scenery.door.openFlags |= ObjTypes.DOOR_FLAG_JAMMED;
         }
     }
 
@@ -1891,7 +1891,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * engine, so no object is on the screen.
      */
     @Override
-    public int objOnScreen(Object a0) {
+    public int objOnScreen(Object object) {
         return 0;
     }
 
@@ -1902,11 +1902,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * there has fid 0.
      */
     @Override
-    public int objArtFid(Object a0) {
-        if (a0 == null) {
+    public int objArtFid(Object object) {
+        if (object == null) {
             return 0;
         }
-        return ((ObjTypes.GameObject) a0).fid;
+        return ((ObjTypes.GameObject) object).fid;
     }
 
     /**
@@ -1915,8 +1915,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The animation is the part of the fid the game names it by.
      */
     @Override
-    public int artAnim(int a0) {
-        return (a0 & 0xFF0000) >> 16;
+    public int artAnim(int fid) {
+        return (fid & 0xFF0000) >> 16;
     }
 
     /**
@@ -1927,15 +1927,14 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * radiation resistance of the player.
      */
     @Override
-    public void radiationInc(Object a0, int a1) {
-        if (a0 == null) {
+    public void radiationInc(Object critter, int amount) {
+        if (critter == null) {
             return;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject object = (ObjTypes.GameObject) critter;
         if (object != ObjectSystem.getDude()) {
             return;
         }
-        int amount = a1;
         if (amount > 0) {
             amount -= Stat.critterGetStat(object,
                 StatDefs.Stat.STAT_RADIATION_RESISTANCE.id()) * amount / 100;
@@ -1951,15 +1950,15 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * zero.
      */
     @Override
-    public void radiationDec(Object a0, int a1) {
-        if (a0 == null) {
+    public void radiationDec(Object critter, int amount) {
+        if (critter == null) {
             return;
         }
-        ObjTypes.GameObject object = (ObjTypes.GameObject) a0;
+        ObjTypes.GameObject object = (ObjTypes.GameObject) critter;
         if (object != ObjectSystem.getDude()) {
             return;
         }
-        int adjustment = object.data.critter.radiation >= 0 ? -a1 : 0;
+        int adjustment = object.data.critter.radiation >= 0 ? -amount : 0;
         object.data.critter.radiation += adjustment;
     }
 
@@ -1980,7 +1979,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * render engine, so nothing is played.
      */
     @Override
-    public void playGmovie(int a0) {
+    public void playGmovie(int movie) {
     }
 
     /**
@@ -2001,7 +2000,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * system, so nothing is used.
      */
     @Override
-    public void useObj(Object a0) {
+    public void useObj(Object item) {
     }
 
     /**
@@ -2011,7 +2010,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * has no sound engine, so there is no name.
      */
     @Override
-    public String sfxBuildCharName(Object a0, int a1, int a2) {
+    public String sfxBuildCharName(Object object, int anim, int soundEffect) {
         return null;
     }
 
@@ -2022,7 +2021,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The port has no dialog system, so the modifier is not set.
      */
     @Override
-    public void gdialogSetBarterMod(int a0) {
+    public void gdialogSetBarterMod(int modifier) {
     }
 
     /**
@@ -2032,7 +2031,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * has no script registry, so there is no caller.
      */
     @Override
-    public void scrReturn(int a0) {
+    public void scrReturn(int value) {
     }
 
     /**
@@ -2042,7 +2041,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * map system, so there is no start.
      */
     @Override
-    public void setMapStart(int a0, int a1, int a2, int a3) {
+    public void setMapStart(int x, int y, int elevation, int rotation) {
     }
 
     /**
@@ -2052,7 +2051,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is dropped.
      */
     @Override
-    public void dropObj(Object a0) {
+    public void dropObj(Object item) {
     }
 
     /**
@@ -2062,7 +2061,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the original answers the same in its harness, where there is no game.
      */
     @Override
-    public int objCanHearObj(Object a0, Object a1) {
+    public int objCanHearObj(Object listener, Object target) {
         return 0;
     }
 
@@ -2073,7 +2072,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * render engine, so no tile is visible.
      */
     @Override
-    public int tileIsVisible(int a0) {
+    public int tileIsVisible(int tile) {
         return 0;
     }
 
@@ -2085,7 +2084,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * animation engine, so nothing is played.
      */
     @Override
-    public void regAnimObjMoveToTile(Object a0, int a1, int a2) {
+    public void regAnimObjMoveToTile(Object object, int tile, int delay) {
     }
 
     /**
@@ -2096,7 +2095,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * has no sound engine, so there is no name.
      */
     @Override
-    public String sfxBuildWeaponName(int a0, Object a1, int a2, Object a3) {
+    public String sfxBuildWeaponName(int weaponSfxType, Object weapon, int hitMode, Object target) {
         return null;
     }
 
@@ -2107,7 +2106,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * system, so nothing is used.
      */
     @Override
-    public void useObjOnObj(Object a0, Object a1) {
+    public void useObjOnObj(Object item, Object target) {
     }
 
     /**
@@ -2128,7 +2127,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * combat system, so there is no attack to stop.
      */
     @Override
-    public void critterStopAttacking(Object a0) {
+    public void critterStopAttacking(Object critter) {
     }
 
     /**
@@ -2139,11 +2138,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * the game is not loaded.
      */
     @Override
-    public void loadMap(Program.ProgramValue a0, int a1) {
+    public void loadMap(Program.ProgramValue map, int elevation) {
         int mapIndex = -1;
-        if (a0.opcode == Program.VALUE_TYPE_INT
-                && MapRegistry.mapIsValid(a0.integerValue)) {
-            mapIndex = a0.integerValue;
+        if (map.opcode == Program.VALUE_TYPE_INT
+                && MapRegistry.mapIsValid(map.integerValue)) {
+            mapIndex = map.integerValue;
         }
         if (mapIndex != -1) {
             Map.MapTransition transition = new Map.MapTransition();
@@ -2225,15 +2224,15 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * destroys the critters.
      */
     @Override
-    public void killCritterType(int a0, int a1) {
-        ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofPid(a0);
+    public void killCritterType(int protoId, int deathFrame) {
+        ProtoTypes.ProtoId pid = ProtoTypes.ProtoId.ofPid(protoId);
         ObjTypes.GameObject object = ObjectSystem.objectFindFirst();
         while (object != null) {
             if (object.flags.and(ObjTypes.ObjectFlags.HIDDEN)
                     .equals(ObjTypes.ObjectFlags.NONE)
-                    && ProtoTypes.ProtoId.ofGameObject(object).equals(protoId)
+                    && ProtoTypes.ProtoId.ofGameObject(object).equals(pid)
                     && !Critter.critterIsDead(object)) {
-                if (a1 == 0) {
+                if (deathFrame == 0) {
                     ObjectSystem.objectDestroy(object);
                 }
                 // The kill with an animation is a seam: the combat system is
