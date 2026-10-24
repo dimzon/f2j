@@ -1216,9 +1216,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * system yet, so there is no attack.
      */
     @Override
-    public void attack(Object target, int attackerResults, int targetResults,
-            int maxDamage, int minDamage, int accuracyBonus, int unused1,
-            int unused2) {
+    public void attack(Object target, int attackType, int numAttacks, int hitBonus,
+            int minDamage, int maxDamage, int attackerResults, int targetResults) {
     }
 
     /**
