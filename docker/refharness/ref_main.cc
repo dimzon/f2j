@@ -6934,6 +6934,7 @@ void sectionMapLoad();
 void sectionMapSave();
 void sectionMapRegistry();
 void sectionMapAreas();
+void sectionWorldmapTiles();
 void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
@@ -7160,6 +7161,7 @@ void sectionMapChild()
     sectionVmLifecycle();
     sectionVmExternal();
     sectionVmTimed();
+    sectionWorldmapTiles();
 }
 
 
@@ -7372,6 +7374,115 @@ void sectionMapSave()
     std::printf("size=%ld crc=%08lX\n", size, crc);
     fallout::fileClose(f);
     free(data);
+}
+
+void sectionWorldmapTiles()
+{
+    std::puts("[worldmaptiles]");
+
+    // wmWorldMap_init reads the game config (start position, paths) the way
+    // the registry section has it, so bring it up the same way.
+    fallout::configInit(&fallout::gGameConfig);
+    char gameCfgPath[] = "/game-en/fallout2.cfg";
+    fallout::configRead(&fallout::gGameConfig, gameCfgPath, false);
+
+    // The temp save at the end of the init writes worldmap.dat through the
+    // VFS, and with no writable base the working directory takes it - the
+    // mounted repo. Step out to /tmp for the call and come back.
+    char cwd[COMPAT_MAX_PATH];
+    getcwd(cwd, sizeof(cwd));
+    chdir("/tmp");
+    int initRc = fallout::wmWorldMap_init();
+    chdir(cwd);
+    std::printf("init=%d\n", initRc);
+
+    // The engine's tile parse is static, so the tile facts come out of the
+    // same file through the exported config API, walked the way wmConfigInit
+    // walks it: sections "Tile 0".. until art_idx misses.
+    fallout::Config config;
+    fallout::configInit(&config);
+    std::printf("read=%d\n", fallout::configRead(&config, "data\\worldmap.txt", true) ? 1 : 0);
+
+    int numHorizontal = 0;
+    if (!fallout::configGetInt(&config, "Tile Data", "num_horizontal_tiles", &numHorizontal)) {
+        std::puts("num-horizontal=missing");
+        fallout::configFree(&config);
+        fallout::configFree(&fallout::gGameConfig);
+        return;
+    }
+    std::printf("num-horizontal=%d\n", numHorizontal);
+
+    int tiles = 0;
+    int lastArtIndex = -1;
+    for (int tileIndex = 0; tileIndex < 9999; tileIndex++) {
+        char section[40];
+        snprintf(section, sizeof(section), "Tile %d", tileIndex);
+
+        int artIndex;
+        if (!fallout::configGetInt(&config, section, "art_idx", &artIndex)) {
+            break;
+        }
+        tiles++;
+        lastArtIndex = artIndex;
+
+        if (tileIndex < 3) {
+            int difficulty;
+            bool hasDifficulty = fallout::configGetInt(&config, section, "encounter_difficulty", &difficulty);
+            char* walkMaskName = nullptr;
+            bool hasMask = fallout::configGetString(&config, section, "walk_mask_name", &walkMaskName);
+            std::printf("tile %d art=%d diff=%d/%d mask=%d/%s\n",
+                tileIndex, artIndex,
+                hasDifficulty ? 1 : 0, hasDifficulty ? difficulty : 0,
+                hasMask ? 1 : 0, hasMask ? walkMaskName : "-");
+        }
+    }
+    std::printf("tiles=%d last-art=%d\n", tiles, lastArtIndex);
+
+    // The bounds the area setters check: the world is num_horizontal_tiles
+    // wide and tiles/num_horizontal_tiles tall, in world units.
+    std::printf("bounds=%d,%d\n",
+        350 * numHorizontal, 300 * (tiles / numHorizontal));
+
+    // Tile 0 carries one subtile string per grid cell: row_column, 7 by 6.
+    int subtileKeys = 0;
+    for (int row = 0; row < 7; row++) {
+        for (int column = 0; column < 6; column++) {
+            char key[40];
+            snprintf(key, sizeof(key), "%d_%d", row, column);
+            char* value;
+            if (fallout::configGetString(&config, "Tile 0", key, &value)) {
+                subtileKeys++;
+            }
+        }
+    }
+    std::printf("tile0-subtile-keys=%d\n", subtileKeys);
+
+    // With the engine's own tiles loaded, its subtile grid answers through
+    // the exported lookups - the machinery mark_area_known rides on.
+    if (initRc == 0 && tiles > 0) {
+        int state = -1;
+        int stateRc = fallout::wmSubTileGetVisitedState(100, 100, &state);
+        std::printf("state 100,100 rc=%d state=%d\n", stateRc, state);
+
+        // The marking probe sits well inside the world (the grid is
+        // 1400x1500): the subtile block around 750,750, one subtile per
+        // step of 50.
+        std::printf("radius rc=%d\n", fallout::wmSubTileMarkRadiusVisited(750, 750, 1));
+        for (int y = 700; y <= 800; y += 50) {
+            for (int x = 700; x <= 800; x += 50) {
+                state = -1;
+                fallout::wmSubTileGetVisitedState(x, y, &state);
+                std::printf("mark %d,%d=%d\n", x, y, state);
+            }
+        }
+
+        // wmMapMarkVisited goes through the areas (loaded by the init's own
+        // area parse); map 3 is the Arroyo caves.
+        std::printf("map-visited rc=%d\n", fallout::wmMapMarkVisited((fallout::Map)3));
+    }
+
+    fallout::configFree(&config);
+    fallout::configFree(&fallout::gGameConfig);
 }
 
 void sectionMapRegistry()

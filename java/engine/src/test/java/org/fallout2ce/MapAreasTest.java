@@ -55,6 +55,7 @@ class MapAreasTest {
         MapRegistry.resetForTests();
         MapAreas.resetForTests();
         Map.resetForTests();
+        WorldmapTiles.resetForTests();
 
         savedLanguage = Settings.settings.system.language;
         String gameEn = Path.of(gameData("master.dat")).getParent().toString();
@@ -166,6 +167,31 @@ class MapAreasTest {
         assertFalse(MapAreas.wmAreaMarkVisitedState(MapAreas.City.CITY_INVALID,
             MapAreas.VisitedState.VISITED));
         assertEquals(0, MapAreas.wmAreaMarkVisited(arroyo));
+    }
+
+    /**
+     * The area setters with the tiles of the worldmap loaded: the same
+     * setters the test above runs unloaded, now inside the 1400x1500
+     * world the tiles give. The position moves inside the bounds and is
+     * refused outside, and the visited marking goes through: a visit of
+     * an unknown area lands as known, the quirk of the original.
+     */
+    @Test
+    void areaSettersRunWithTheTilesLoaded() {
+        loadAreas();
+        assertEquals(0, WorldmapTiles.wmTilesInit());
+
+        MapAreas.City arroyo = MapAreas.City.CITY_ARROYO;
+        assertEquals(0, MapAreas.wmAreaSetWorldPos(arroyo, 100, 100));
+        assertEquals(-1, MapAreas.wmAreaSetWorldPos(arroyo, 1400, 0));
+        assertEquals(-1, MapAreas.wmAreaSetWorldPos(arroyo, 0, 1500));
+        assertEquals(-1, MapAreas.wmAreaSetWorldPos(arroyo, -1, 0));
+
+        assertTrue(MapAreas.wmAreaSetVisibleState(arroyo,
+            MapAreas.CityState.CITY_STATE_KNOWN, true));
+        assertTrue(MapAreas.wmAreaMarkVisitedState(arroyo, MapAreas.VisitedState.VISITED));
+        assertEquals(MapAreas.VisitedState.KNOWN.id(),
+            MapAreas.wmAreaVisitedState(arroyo).id());
     }
 
     /** The map marking of the mark_area_known builtin, on the real table. */

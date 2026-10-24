@@ -2306,10 +2306,10 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The id names an area or a map, by the switch the script gives.
      * An area goes on the worldmap - taken off it when the script asks
      * for the invisible state, put on it as known and marked visited
-     * otherwise. The visited marking is kept the way the worldmap keeps
-     * it: while the worldmap tiles are not ported, the marking stops at
-     * the subtile the original looks up first. A map marks the area it
-     * belongs to, when the map is one the game saves.
+     * otherwise. The visited marking writes the subtile grid of the
+     * worldmap tiles ({@link WorldmapTiles#wmTilesInit}); before they
+     * load, the marking stops at the subtile lookup. A map marks the
+     * area it belongs to, when the map is one the game saves.
      */
     @Override
     public void markAreaKnown(int isMap, int id, int visitedState) {
@@ -2333,11 +2333,11 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /**
      * op_wm_area_set_pos (0x80E5): move an area on the worldmap.
      *
-     * <p>The position is checked against the tiles of the worldmap, and
-     * the tiles come with the worldmap parse the port does not have, so
-     * the move is refused for now, the way the original refuses it before
-     * that parse runs. The invalid-parameter error the original prints
-     * for a refusal is not printed: the game's errors are quiet here.
+     * <p>The position is checked against the tiles of the worldmap
+     * ({@link WorldmapTiles#wmTilesInit}): inside them the area moves,
+     * outside - or before they load - the move is refused. The
+     * invalid-parameter error the original prints for a refusal is not
+     * printed: the game's errors are quiet here.
      */
     @Override
     public void wmAreaSetPos(int city, int x, int y) {
