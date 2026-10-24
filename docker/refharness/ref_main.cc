@@ -6990,6 +6990,7 @@ void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
 void sectionCritterStateOp();
+void sectionAnimMoveTile();
 void sectionPartyPrefs();
 void sectionItemsInit();
 void sectionAutomap();
@@ -7198,6 +7199,7 @@ void sectionMapChild()
     sectionStats();
     sectionCritterState();
     sectionCritterStateOp();
+    sectionAnimMoveTile();
     sectionPartyPrefs();
     sectionItemsInit();
     sectionAutomap();
@@ -8072,6 +8074,81 @@ void sectionCritterStateOp()
         fallout::objectDestroy(stim, nullptr);
     }
     std::printf("null=%d\n", stateOf(nullptr));
+}
+
+void sectionAnimMoveTile()
+{
+    std::puts("[animovetile]");
+
+    // opAnimateMoveObjectToTile (src/interpreter_extra.cc) walks an object
+    // to a tile through the animation queue. The queue is game phase, so
+    // the section pins the part the port keeps: the guards, the walk/run
+    // choice and the teleport target objectSetLocation computes.
+    fallout::critterInit();
+
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    int savedTile = dude->tile;
+    int savedElevation = dude->elevation;
+    int savedHp = dude->data.critter.hp;
+    fallout::Dam savedResults = dude->data.critter.combat.results;
+
+    auto wouldMove = [](fallout::Object* obj, int tile) {
+        if (obj == nullptr) {
+            return 0;
+        }
+        if (tile <= -1) {
+            return 0;
+        }
+        // scriptContextResolve needs a script registry (game phase).
+        if (!fallout::critterIsActive(obj)) {
+            return 0;
+        }
+        if (fallout::isInCombat()) {
+            return 0;
+        }
+        return 1;
+    };
+
+    std::printf("combat=%d\n", fallout::isInCombat() ? 1 : 0);
+
+    dude->data.critter.hp = 10;
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+
+    for (int flags : { 0, 1, 0x10, 0x11 }) {
+        int move = wouldMove(dude, 3015);
+        int run = 0;
+        if (move != 0) {
+            int rest = flags;
+            if ((rest & 0x10) != 0) {
+                rest &= ~0x10;
+            }
+            run = (rest == 0) ? 0 : 1;
+        }
+        int rc = -1;
+        int landed = dude->tile;
+        if (move != 0) {
+            rc = fallout::objectSetLocation(dude, 3015, savedElevation, nullptr);
+            landed = dude->tile;
+            fallout::objectSetLocation(dude, savedTile, savedElevation, nullptr);
+        }
+        std::printf("flags=%d move=%d run=%d rc=%d landed=%d\n", flags, move, run, rc, landed);
+    }
+
+    dude->data.critter.combat.results = fallout::DAM_KNOCKED_OUT;
+    std::printf("inactive move=%d\n", wouldMove(dude, 3015));
+    std::printf("null move=%d\n", wouldMove(nullptr, 3015));
+    for (int tile : { -1, -2 }) {
+        std::printf("tile=%d move=%d\n", tile, wouldMove(dude, tile));
+    }
+
+    dude->data.critter.hp = savedHp;
+    dude->data.critter.combat.results = savedResults;
+    std::printf("restored=%d,%d\n", dude->tile, dude->elevation);
 }
 
 void sectionPartyPrefs()

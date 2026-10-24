@@ -128,6 +128,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80ED, // op_kill_critter
         0x80CC, // op_animate_stand_obj
         0x80CD, // animate_stand_reverse_obj
+        0x80CE, // animate_move_obj_to_tile
         0x814D, // op_jam_lock
         0x8150, // op_obj_on_screen
         0x8149, // op_obj_art_fid
@@ -1506,6 +1507,33 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 TileMath.TILE_SET_CENTER_REFRESH_WINDOW);
         }
         return newTile;
+    }
+
+    /**
+     * animate_move_obj_to_tile (0x80CE): walk an object to a tile.
+     *
+     * <p>There is no animation queue in the port, so there is nothing to
+     * register a walk with: an object that would walk teleports to the
+     * destination instead, on its own elevation. The guards are the
+     * original's: nothing without an object, nothing to a tile of nowhere,
+     * nothing for an object that is not an active critter. The script
+     * registry owns the script-context gate and the combat engine the
+     * in-combat gate, so both stay dormant, and walk and run collapse into
+     * the same teleport.
+     */
+    @Override
+    public void animateMoveObjToTile(Object object, int tile, int flags) {
+        if (object == null) {
+            return;
+        }
+        if (tile <= -1) {
+            return;
+        }
+        ObjTypes.GameObject obj = (ObjTypes.GameObject) object;
+        if (!Critter.critterIsActive(obj)) {
+            return;
+        }
+        ObjectSystem.objectSetLocation(obj, tile, obj.elevation);
     }
 
     /**
