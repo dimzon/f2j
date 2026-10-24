@@ -7551,6 +7551,35 @@ void sectionWorldmapTiles()
     }
     std::printf("encounter-tables=%d\n", encounterTables);
 
+    // The base encounter of the first sub-entry of the first table
+    // (Raiders): the type lines, the team, and the formation block.
+    {
+        char section[40];
+        snprintf(section, sizeof(section), "Encounter: Raiders");
+        int types = 0;
+        for (;;) {
+            char key[40];
+            snprintf(key, sizeof(key), "type_%02d", types);
+            char* typeStr = nullptr;
+            if (!fallout::configGetString(&config, section, key, &typeStr)) {
+                break;
+            }
+            if (types < 2) {
+                std::printf("base %d=%s\n", types, typeStr);
+            }
+            types++;
+        }
+        std::printf("base-types=%d\n", types);
+        int team = 0;
+        if (fallout::configGetInt(&config, section, "team_num", &team)) {
+            std::printf("base-team=%d\n", team);
+        }
+        char* pos = nullptr;
+        if (fallout::configGetString(&config, section, "position", &pos)) {
+            std::printf("base-position=%s\n", pos);
+        }
+    }
+
     // With the engine's own tiles loaded, its subtile grid answers through
     // the exported lookups - the machinery mark_area_known rides on.
     if (initRc == 0 && tiles > 0) {
