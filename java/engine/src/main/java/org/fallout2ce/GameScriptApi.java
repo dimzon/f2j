@@ -2206,6 +2206,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return 0;
         case 14: // METARULE_FIRST_RUN
             return (Map.gMapHeader.flags & 0x01) == 0 ? 1 : 0;
+        case 15: // METARULE_ELEVATOR
+            if (selfObj() instanceof ObjTypes.GameObject) {
+                return ScriptsState.scriptsRequestElevator(
+                    (ObjTypes.GameObject) selfObj(), param.integerValue);
+            }
+            return 0;
         case 16: // METARULE_PARTY_COUNT
             return PartyMembers.partyMembersLength;
         case 17: // METARULE_AREA_KNOWN
