@@ -79,5 +79,24 @@ class WorldmapEncountersTest {
         WorldmapEncounters.EncounterTableEntry dstS0 = dstS.entries[0];
         assertEquals(20, dstS0.chance);
         assertEquals(0, dstS0.scenery);
+
+        // The sub-entries of the same lines: (2-5) Raiders AMBUSH Player.
+        WorldmapEncounters.EncounterTableSubEntry sub0 = dstN0.subEntries[0];
+        assertEquals(1, dstN0.subEntriesLength);
+        assertEquals(2, sub0.minimumCount);
+        assertEquals(5, sub0.maximumCount);
+        assertEquals("Raiders", sub0.name);
+        assertEquals(1, sub0.situation);
+        assertEquals(-1, sub0.encounterIndex);
+
+        WorldmapEncounters.EncounterTableSubEntry sub1 = dstN.entries[1].subEntries[0];
+        assertEquals(3, sub1.minimumCount);
+        assertEquals(8, sub1.maximumCount);
+        assertEquals("Rad_Scorpions", sub1.name);
+
+        WorldmapEncounters.EncounterTableSubEntry subS1 = dstS.entries[1].subEntries[0];
+        assertEquals(2, subS1.minimumCount);
+        assertEquals(5, subS1.maximumCount);
+        assertEquals("Manti", subS1.name);
     }
 }

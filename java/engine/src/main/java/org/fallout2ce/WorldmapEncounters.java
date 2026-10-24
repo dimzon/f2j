@@ -32,14 +32,20 @@ public final class WorldmapEncounters {
     /** The most entries a table can hold. */
     static final int ENCOUNTER_TABLE_ENTRY_MAX_COUNT = 40;
 
-    /** Port of {@code EncounterTableSubEntry}, the header slice. */
+    /** Port of {@code EncounterTableSubEntry}, the scalar slice. */
     public static final class EncounterTableSubEntry {
         /** The least of the encounter, without a range 0. */
         public int minimumCount;
+
         /** The most of the encounter, without a range 0. */
         public int maximumCount;
+
         /** The encounter index this sub-entry names. */
         public int encounterIndex;
+
+        /** The name the index waits for, from the base types. */
+        public String name = "";
+
         /** The situation of the encounter. */
         public int situation;
     }
@@ -64,8 +70,12 @@ public final class WorldmapEncounters {
         /** The scenery of the entry, read from {@code Scenery:}. */
         public int scenery;
 
-        /** How many sub-entries the entry holds (parsed next). */
+        /** How many sub-entries the entry holds. */
         public int subEntriesLength;
+
+        /** The sub-entries, by the order the line names them. */
+        public final EncounterTableSubEntry[] subEntries =
+            new EncounterTableSubEntry[6];
     }
 
     /** Port of {@code EncounterTable}, the header slice. */
@@ -193,7 +203,78 @@ public final class WorldmapEncounters {
             entry.scenery = sceneryId(scenery.trim().toLowerCase());
         }
 
+        parseSubEntries(entry, raw);
+
         return entry;
+    }
+
+    /**
+     * Port of {@code wmParseEncounterSubEncStr}: the {@code Enc:}
+     * segment of an entry line.
+     *
+     * <p>Every chunk is {@code (min-max) name SITUATION}. The index the
+     * name resolves to waits for the base encounter types, so the name
+     * is kept until then; the situation is the enum id.
+     */
+    private static void parseSubEntries(EncounterTableEntry entry, String raw) {
+        int at = raw.indexOf("Enc:");
+        if (at < 0) {
+            return;
+        }
+        int from = at + 4;
+        int to = raw.indexOf(',', from);
+        String chunk = (to < 0 ? raw.substring(from) : raw.substring(from, to)).trim();
+
+        while (!chunk.isEmpty() && entry.subEntriesLength < 6) {
+            EncounterTableSubEntry sub = new EncounterTableSubEntry();
+
+            if (chunk.charAt(0) == '(') {
+                int close = chunk.indexOf(')');
+                String range = chunk.substring(1, close);
+                int dash = range.indexOf('-');
+                sub.minimumCount = Integer.parseInt(range.substring(0, dash).trim());
+                sub.maximumCount = Integer.parseInt(range.substring(dash + 1).trim());
+                chunk = chunk.substring(close + 1).trim();
+            }
+
+            int space = chunk.indexOf(' ');
+            String name = space < 0 ? chunk : chunk.substring(0, space);
+            sub.name = name;
+            chunk = space < 0 ? "" : chunk.substring(space + 1).trim();
+
+            int sitSpace = chunk.indexOf(' ');
+            String situation = sitSpace < 0 ? chunk : chunk.substring(0, sitSpace);
+            sub.situation = situationId(situation);
+            chunk = sitSpace < 0 ? "" : chunk.substring(sitSpace + 1).trim();
+
+            // The trailing "player" token is the marker of the player
+            // encounter index (-1), not another sub-entry.
+            if (!chunk.isEmpty()) {
+                if (chunk.equalsIgnoreCase("player")) {
+                    sub.encounterIndex = -1;
+                }
+                chunk = "";
+            }
+
+            entry.subEntries[entry.subEntriesLength] = sub;
+            entry.subEntriesLength++;
+        }
+    }
+
+    /** Port of the situation name list ({@code wmEncOpStrs}). */
+    private static int situationId(String name) {
+        switch (name.toLowerCase()) {
+        case "nothing":
+            return 0;
+        case "ambush":
+            return 1;
+        case "fighting":
+            return 2;
+        case "and":
+            return 3;
+        default:
+            return 0;
+        }
     }
 
     /** The integer after a key, or 0 when absent. */
