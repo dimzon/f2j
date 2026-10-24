@@ -205,6 +205,28 @@ public final class Critter {
     }
 
     /**
+     * Port of {@code critterIsActive} (0x42DCDC): non-critter false; any of
+     * knocked-out, dead or lose-turn set false; otherwise the dead bit
+     * decides. Hit points play no part here, unlike in critterIsDead.
+     */
+    public static boolean critterIsActive(GameObject critter) {
+        if (ProtoTypes.ProtoId.ofGameObject(critter).objectType() != ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            return false;
+        }
+
+        int results = critter.data.critter.combat.results.bits();
+        if ((results & (Dam.KNOCKED_OUT.bits() | Dam.DEAD.bits())) != 0) {
+            return false;
+        }
+
+        if ((results & (Dam.KNOCKED_OUT.bits() | Dam.DEAD.bits() | Dam.LOSE_TURN.bits())) != 0) {
+            return false;
+        }
+
+        return critter.data.critter.combat.results.and(Dam.DEAD).equals(Dam.NONE);
+    }
+
+    /**
      * Port of {@code critterIsProne} (0x42DD80): non-critter false; then the
      * knockdown bits, or the animation inside either death range.
      */

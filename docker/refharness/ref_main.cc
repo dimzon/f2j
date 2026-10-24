@@ -6989,6 +6989,7 @@ void sectionWorldmapTiles();
 void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
+void sectionCritterStateOp();
 void sectionPartyPrefs();
 void sectionItemsInit();
 void sectionAutomap();
@@ -7196,6 +7197,7 @@ void sectionMapChild()
     sectionMapNames();
     sectionStats();
     sectionCritterState();
+    sectionCritterStateOp();
     sectionPartyPrefs();
     sectionItemsInit();
     sectionAutomap();
@@ -7978,6 +7980,98 @@ void sectionCritterState()
     dude->data.critter.poison = 0;
     std::printf("poison 0 state1 = %d\n",
         fallout::dudeHasState((fallout::DudeState)1) ? 1 : 0);
+}
+
+void sectionCritterStateOp()
+{
+    std::puts("[critterstateop]");
+
+    // opGetCritterState (src/interpreter_extra.cc): CRITTER_STATE_* is a
+    // local enum there (NORMAL = 0, DEAD = 1, PRONE = 2). The lambda below
+    // is the op body with the stack pops taken off.
+    fallout::critterInit();
+
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    int savedFid = dude->fid;
+    int savedHp = dude->data.critter.hp;
+    fallout::Dam savedResults = dude->data.critter.combat.results;
+
+    auto stateOf = [](fallout::Object* obj) {
+        int state = 1; // CRITTER_STATE_DEAD
+        if (fallout::ProtoId(obj).objectType() == fallout::OBJ_TYPE_CRITTER) {
+            if (fallout::critterIsActive(obj)) {
+                state = 0; // CRITTER_STATE_NORMAL
+                fallout::AnimationType anim = fallout::FrmId(obj).animationType();
+                if (anim >= fallout::ANIM_FALL_BACK_SF && anim <= fallout::ANIM_FALL_FRONT_SF) {
+                    state = 2; // CRITTER_STATE_PRONE
+                }
+                state |= (obj->data.critter.combat.results & fallout::DAM_CRIP);
+            } else {
+                if (!fallout::critterIsDead(obj)) {
+                    state = 2; // CRITTER_STATE_PRONE
+                }
+            }
+        }
+        return state;
+    };
+
+    auto setFidAnim = [&](int anim) {
+        dude->fid = (dude->fid & ~0x00FF0000) | ((anim << 16) & 0x00FF0000);
+    };
+
+    dude->data.critter.hp = 10;
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+    std::printf("anim=%d normal=%d\n",
+        (int)fallout::FrmId(dude).animationType(), stateOf(dude));
+
+    dude->data.critter.combat.results = fallout::DAM_CRIP;
+    std::printf("crip=%d\n", stateOf(dude));
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+
+    // The op's prone range is the narrow SF pair (48-49), not the whole
+    // death range critterIsProne reads.
+    for (int anim : { 47, 48, 49, 50, 20 }) {
+        setFidAnim(anim);
+        std::printf("anim=%d state=%d\n", anim, stateOf(dude));
+    }
+
+    setFidAnim(48);
+    dude->data.critter.combat.results = fallout::DAM_CRIP;
+    std::printf("prone-crip=%d\n", stateOf(dude));
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+    dude->fid = savedFid;
+
+    // Inactive without death reads prone; hp alone never inactivates.
+    dude->data.critter.combat.results = fallout::DAM_KNOCKED_OUT;
+    std::printf("knocked-out=%d\n", stateOf(dude));
+    dude->data.critter.combat.results = fallout::DAM_LOSE_TURN;
+    std::printf("lose-turn=%d\n", stateOf(dude));
+    dude->data.critter.hp = 0;
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+    std::printf("hp0-clear=%d\n", stateOf(dude));
+    dude->data.critter.hp = 10;
+    dude->data.critter.combat.results = fallout::DAM_DEAD;
+    std::printf("dead-bit=%d\n", stateOf(dude));
+
+    dude->data.critter.hp = savedHp;
+    dude->data.critter.combat.results = savedResults;
+
+    // A thing that is not a critter reads dead (the op logs a script
+    // error on top, which is a log side channel, not a vector).
+    fallout::Object* stim = nullptr;
+    fallout::objectCreateWithProtoId(&stim, fallout::ProtoId(40));
+    if (stim == nullptr) {
+        std::puts("stim=null");
+    } else {
+        std::printf("stim=%d\n", stateOf(stim));
+        fallout::objectDestroy(stim, nullptr);
+    }
+    std::printf("null=%d\n", stateOf(nullptr));
 }
 
 void sectionPartyPrefs()

@@ -175,6 +175,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80F0, // op_add_timer_event
         0x80F1, // op_rm_timer_event
         0x80F3, // op_has_trait
+        0x80FB, // critter_state
         0x80F4, // op_destroy_object
         0x8107, // op_obj_set_light_level
         0x8116, // op_add_mult_objs_to_inven
@@ -811,12 +812,45 @@ public class GameScriptApi extends UnsupportedScriptApi {
                 return obj.flags.and(ObjTypes.ObjectFlags.HIDDEN).bits() == 0 ? 1 : 0;
             case CRITTER_TRAIT_OBJECT_GET_INVENTORY_WEIGHT:
                 return Item.objectGetInventoryWeight(obj);
-            default:
-                return 0;
-            }
         default:
             return 0;
         }
+        default:
+            return 0;
+        }
+    }
+
+    /** The states of a critter (a local enum in interpreter_extra.cc). */
+    private static final int CRITTER_STATE_NORMAL = 0;
+    private static final int CRITTER_STATE_DEAD = 1;
+    private static final int CRITTER_STATE_PRONE = 2;
+
+    /**
+     * critter_state (0x80FB): the state of a critter.
+     *
+     * <p>An active critter stands, unless its animation is the falling
+     * pair - then it lies. A crippled one carries its crippled bits on
+     * top of either. An inactive critter that is not dead lies too.
+     * Anything that is not a critter is dead.
+     */
+    @Override
+    public int critterState(Object critter) {
+        int state = CRITTER_STATE_DEAD;
+        if (critter != null
+                && ProtoId.ofGameObject((GameObject) critter).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+            GameObject obj = (GameObject) critter;
+            if (Critter.critterIsActive(obj)) {
+                state = CRITTER_STATE_NORMAL;
+                int anim = FrmId.ofFid(obj.fid).animationType();
+                if (anim >= AnimationType.FALL_BACK_SF.value() && anim <= AnimationType.FALL_FRONT_SF.value()) {
+                    state = CRITTER_STATE_PRONE;
+                }
+                state |= obj.data.critter.combat.results.and(ObjTypes.Dam.CRIP).bits();
+            } else if (!Critter.critterIsDead(obj)) {
+                state = CRITTER_STATE_PRONE;
+            }
+        }
+        return state;
     }
 
     /**
