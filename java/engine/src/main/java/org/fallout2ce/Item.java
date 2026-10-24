@@ -1424,6 +1424,33 @@ public final class Item {
         return slot[0].item.data.weapon.perk;
     }
 
+    /**
+     * Port of {@code unarmedIsPenetrating} (src/combat.cc): the vanilla
+     * hits that bypass armor are the palm/piercing strikes and the
+     * hook/piercing kicks. The custom table (sfall) is not read headless.
+     */
+    public static boolean unarmedIsPenetrating(int hitMode) {
+        return hitMode == CombatDefs.HitMode.HIT_MODE_PALM_STRIKE.id()
+            || hitMode == CombatDefs.HitMode.HIT_MODE_PIERCING_STRIKE.id()
+            || hitMode == CombatDefs.HitMode.HIT_MODE_HOOK_KICK.id()
+            || hitMode == CombatDefs.HitMode.HIT_MODE_PIERCING_KICK.id();
+    }
+
+    // 0x4791E0 weapon_get_ammo_damage_resistance_modifier.
+    public static int weaponGetAmmoDamageResistanceModifier(GameObject weapon) {
+        ProtoId ammoTypeProtoId = weaponGetAmmoTypeProtoId(weapon);
+        if (!ammoTypeProtoId.valid()) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ammoTypeProtoId, slot) == -1) {
+            return 0;
+        }
+
+        return slot[0].item.data.ammo.damageResistanceModifier;
+    }
+
     // 0x47912C weapon_get_ammo_damage_multiplier.
     public static int weaponGetAmmoDamageMultiplier(GameObject weapon) {
         ProtoId ammoTypeProtoId = weaponGetAmmoTypeProtoId(weapon);

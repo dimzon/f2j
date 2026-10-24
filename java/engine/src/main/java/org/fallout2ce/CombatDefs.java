@@ -296,6 +296,31 @@ public final class CombatDefs {
     }
 
     /**
+     * Port of {@code Attack} ({@code src/combat_defs.h}), the damage
+     * slice the formula reads: who attacks whom, with what, and the
+     * results of the strike.
+     */
+    public static final class Attack {
+        public ObjTypes.GameObject attacker;
+        public int hitMode;
+        public ObjTypes.GameObject weapon;
+        /** {@code attackHitLocation}: the original marks it unused. */
+        public int attackHitLocation;
+        public int attackerDamage;
+        public ObjTypes.Dam attackerFlags = ObjTypes.Dam.NONE;
+        public int ammoQuantity;
+        public int criticalMessageId = -1;
+        public ObjTypes.GameObject defender;
+        public int tile;
+        public int defenderHitLocation;
+        public int defenderDamage;
+        public ObjTypes.Dam defenderFlags = ObjTypes.Dam.NONE;
+        public int defenderKnockback;
+        public ObjTypes.GameObject intendedTarget;
+        public int extrasLength;
+    }
+
+    /**
      * Port of {@code CriticalHitDescription}. The C union overlays
      * {@code values[7]} on the named fields; Java keeps named fields with an
      * indexed view ({@link #values()} builds the array,

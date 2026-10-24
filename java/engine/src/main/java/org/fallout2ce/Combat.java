@@ -215,6 +215,140 @@ public final class Combat {
         return toHit;
     }
 
+    /**
+     * Port of {@code attackInit} (0x422E1C): set up an attack record.
+     */
+    public static void attackInit(CombatDefs.Attack attack, ObjTypes.GameObject attacker,
+            ObjTypes.GameObject defender, int hitMode, int hitLocation) {
+        attack.attacker = attacker;
+        attack.hitMode = hitMode;
+        attack.weapon = Item.getWeaponForHitMode(attacker, hitMode);
+        attack.attackHitLocation = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+        attack.attackerDamage = 0;
+        attack.attackerFlags = ObjTypes.Dam.NONE;
+        attack.ammoQuantity = 0;
+        attack.criticalMessageId = -1;
+        attack.defender = defender;
+        attack.tile = defender != null ? defender.tile : -1;
+        attack.defenderHitLocation = hitLocation;
+        attack.defenderDamage = 0;
+        attack.defenderFlags = ObjTypes.Dam.NONE;
+        attack.defenderKnockback = 0;
+        attack.extrasLength = 0;
+        attack.intendedTarget = defender;
+    }
+
+    /**
+     * Port of {@code attackComputeDamage} (0x4247B8), the vanilla
+     * formula.
+     *
+     * <p>The target's threshold and resistance come from its stats at
+     * the damage type of the weapon; a bypass strike cuts both to a
+     * fifth (EMP is immune to the cut), the penetrate perk and the
+     * penetrating unarmed hits cut the threshold, the dude's Finesse
+     * raises the resistance. The ammo resistance modifier joins in and
+     * the resistance is clamped to 0..100; every round draws its damage,
+     * multiplies by the base multiplier and the ammo multiplier, divides
+     * by the ammo divisor and by 2, applies the difficulty percent, then
+     * the threshold and the resistance.
+     *
+     * <p>The dude-gated perk bonuses (Bonus Ranged Damage, Living
+     * Anatomy, Pyromaniac) are dormant headless; the knockback tail and
+     * the script hook come with their own slices.
+     */
+    public static void attackComputeDamage(CombatDefs.Attack attack, int numRounds,
+            int baseDamageMult) {
+        boolean hit = (attack.attackerFlags.bits() & ObjTypes.Dam.HIT.bits()) != 0;
+
+        ObjTypes.GameObject critter;
+        ObjTypes.Dam flags;
+        if (hit) {
+            critter = attack.defender;
+            flags = attack.defenderFlags;
+        } else {
+            critter = attack.attacker;
+            flags = attack.attackerFlags;
+        }
+
+        int damage = 0;
+
+        if (critter != null
+                && FrmId.ofFid(critter.fid).objectType()
+                    == ObjectType.CRITTER) {
+            ProtoTypes.DamageType damageType = Item.weaponGetDamageType(attack.attacker,
+                attack.weapon);
+            int damageThreshold = Stat.critterGetStat(critter,
+                StatDefs.Stat.STAT_DAMAGE_THRESHOLD.id() + damageType.id());
+            int damageResistance = Stat.critterGetStat(critter,
+                StatDefs.Stat.STAT_DAMAGE_RESISTANCE.id() + damageType.id());
+
+            if ((flags.bits() & ObjTypes.Dam.BYPASS.bits()) != 0
+                    && damageType != ProtoTypes.DamageType.DAMAGE_TYPE_EMP) {
+                damageThreshold = 20 * damageThreshold / 100;
+                damageResistance = 20 * damageResistance / 100;
+            } else {
+                if (Item.weaponGetPerk(attack.weapon) == PerkDefs.Perk.PERK_WEAPON_PENETRATE
+                        || Item.unarmedIsPenetrating(attack.hitMode)) {
+                    damageThreshold = 20 * damageThreshold / 100;
+                }
+
+                if (isDude(attack.attacker)
+                        && TraitDefs.traitIsSelectedAndActive(TraitDefs.Trait.TRAIT_FINESSE.id())) {
+                    damageResistance += 30;
+                }
+            }
+
+            int damageBonus = 0;
+
+            int difficultyDamagePercent = 100;
+
+            int damageResistanceWithAmmo = damageResistance
+                + Item.weaponGetAmmoDamageResistanceModifier(attack.weapon);
+            if (damageResistanceWithAmmo > 100) {
+                damageResistanceWithAmmo = 100;
+            } else if (damageResistanceWithAmmo < 0) {
+                damageResistanceWithAmmo = 0;
+            }
+
+            int damageMultiplier = baseDamageMult
+                * Item.weaponGetAmmoDamageMultiplier(attack.weapon);
+            int damageDivisor = Item.weaponGetAmmoDamageDivisor(attack.weapon);
+
+            for (int index = 0; index < numRounds; index++) {
+                int roundDamage = Item.weaponGetDamage(attack.attacker, attack.hitMode);
+
+                roundDamage += damageBonus;
+
+                roundDamage *= damageMultiplier;
+
+                if (damageDivisor != 0) {
+                    roundDamage /= damageDivisor;
+                }
+
+                roundDamage /= 2;
+
+                roundDamage *= difficultyDamagePercent;
+                roundDamage /= 100;
+
+                roundDamage -= damageThreshold;
+
+                if (roundDamage > 0) {
+                    roundDamage -= roundDamage * damageResistanceWithAmmo / 100;
+                }
+
+                if (roundDamage > 0) {
+                    damage += roundDamage;
+                }
+            }
+        }
+
+        if (hit) {
+            attack.defenderDamage = damage;
+        } else {
+            attack.attackerDamage = damage;
+        }
+    }
+
     /** gDude seam: headless there is no dude. */
     private static boolean isDude(ObjTypes.GameObject critter) {
         return critter != null && critter == ObjectSystem.getDude();
