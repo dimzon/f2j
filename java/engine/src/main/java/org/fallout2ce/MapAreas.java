@@ -796,6 +796,18 @@ public final class MapAreas {
         city.visitedState = VisitedState.UNKNOWN;
     }
 
+    /**
+     * Port of {@code wmMatchWorldPosToArea} (0x4C0FE8), headless: the
+     * area a world position lies in.
+     *
+     * <p>The original tests the position against the city spheres, whose
+     * sizes come with the worldmap art; the art is not loaded by the
+     * port, so no position matches and the answer is invalid.
+     */
+    public static City wmMatchAreaFromWorldPos(int x, int y) {
+        return City.CITY_INVALID;
+    }
+
     /** Test seam: fresh-process mirror (empty table). */
     static void resetForTests() {
         areaInfoList.clear();

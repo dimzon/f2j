@@ -48,12 +48,40 @@ public final class WorldmapGenData {
     /** Whether the party rides the car. */
     private static boolean isInCar;
 
+    // The walk state of the party (wmGenData's walk slice).
+    private static int walkDestinationX;
+    private static int walkDestinationY;
+    private static int walkDistance;
+    private static int walkLineDelta;
+    private static int walkLineDeltaMainAxisStep;
+    private static int walkLineDeltaCrossAxisStep;
+    private static int walkWorldPosMainAxisStepX;
+    private static int walkWorldPosMainAxisStepY;
+    private static int walkWorldPosCrossAxisStepX;
+    private static int walkWorldPosCrossAxisStepY;
+    private static boolean isWalking;
+
+    /** Port of {@code _terrainCounter} (src/worldmap.cc). */
+    private static int terrainCounter;
+
     /** Port of {@code wmGenDataInit} (0x4BC984), the slice the reads use. */
     public static void wmGenDataInit() {
         currentAreaId = MapAreas.City.CITY_INVALID;
         carFuel = CAR_FUEL_MAX;
         currentCarAreaId = MapAreas.City.CITY_INVALID;
         isInCar = false;
+        walkDestinationX = 0;
+        walkDestinationY = 0;
+        walkDistance = 0;
+        walkLineDelta = 0;
+        walkLineDeltaMainAxisStep = 0;
+        walkLineDeltaCrossAxisStep = 0;
+        walkWorldPosMainAxisStepX = 0;
+        walkWorldPosMainAxisStepY = 0;
+        walkWorldPosCrossAxisStepX = 0;
+        walkWorldPosCrossAxisStepY = 0;
+        isWalking = false;
+        terrainCounter = 0;
         wmGenDataSetStartWorldPos();
         wmGenDataClampWorldPosToBounds();
     }
@@ -180,6 +208,147 @@ public final class WorldmapGenData {
         return 0;
     }
 
+    /**
+     * Port of {@code wmPartyInitWalking} (0x4C1E54): start the party
+     * walking to a world position.
+     *
+     * <p>The Bresenham line is set up the way the original sets it up;
+     * the interface centering is not ported.
+     */
+    public static void wmPartyInitWalking(int x, int y) {
+        walkDestinationX = x;
+        walkDestinationY = y;
+        currentAreaId = MapAreas.City.CITY_INVALID;
+        isWalking = true;
+
+        int dx = Math.abs(x - worldPosX);
+        int dy = Math.abs(y - worldPosY);
+
+        if (dx < dy) {
+            walkDistance = dy;
+            walkLineDeltaMainAxisStep = 2 * dx;
+            walkWorldPosMainAxisStepX = 0;
+            walkLineDelta = 2 * dx - dy;
+            walkLineDeltaCrossAxisStep = 2 * (dx - dy);
+            walkWorldPosCrossAxisStepX = 1;
+            walkWorldPosMainAxisStepY = 1;
+            walkWorldPosCrossAxisStepY = 1;
+        } else {
+            walkDistance = dx;
+            walkLineDeltaMainAxisStep = 2 * dy;
+            walkWorldPosMainAxisStepY = 0;
+            walkLineDelta = 2 * dy - dx;
+            walkLineDeltaCrossAxisStep = 2 * (dy - dx);
+            walkWorldPosMainAxisStepX = 1;
+            walkWorldPosCrossAxisStepX = 1;
+            walkWorldPosCrossAxisStepY = 1;
+        }
+
+        if (walkDestinationX < worldPosX) {
+            walkWorldPosCrossAxisStepX = -walkWorldPosCrossAxisStepX;
+            walkWorldPosMainAxisStepX = -walkWorldPosMainAxisStepX;
+        }
+
+        if (walkDestinationY < worldPosY) {
+            walkWorldPosCrossAxisStepY = -walkWorldPosCrossAxisStepY;
+            walkWorldPosMainAxisStepY = -walkWorldPosMainAxisStepY;
+        }
+    }
+
+    /** The walk of the party is in progress. */
+    public static boolean wmPartyIsWalking() {
+        return isWalking;
+    }
+
+    /** How far the party still walks, in steps. */
+    public static int wmPartyWalkDistance() {
+        return walkDistance;
+    }
+
+    /**
+     * Port of {@code wmWorldPosInvalid} (0x4C1E38): whether a world
+     * position is blocked by the walk mask of its tile.
+     *
+     * <p>The walk masks come with the tile art and are not loaded by the
+     * port, so the position is never invalid - the same answer the
+     * original gives before the masks load.
+     */
+    private static boolean wmWorldPosInvalid(int x, int y) {
+        return false;
+    }
+
+    /**
+     * Port of {@code wmPartyWalkingStep} (0x4C1F90): one step of the
+     * party's walk.
+     *
+     * <p>The step moves along the line the init set up, once the terrain
+     * difficulty allows it; the interface scroll and the trail markers
+     * are not ported. A blocked position stops the walk at the current
+     * spot and resolves the area from it.
+     */
+    public static void wmPartyWalkingStep() {
+        if (walkDistance <= 0) {
+            return;
+        }
+
+        terrainCounter++;
+        if (terrainCounter > 4) {
+            terrainCounter = 1;
+        }
+
+        WorldmapTiles.SubtileInfo subtile = WorldmapTiles.wmFindCurSubTileFromPos(worldPosX, worldPosY);
+        if (subtile == null) {
+            return;
+        }
+
+        int terrainDifficulty = WorldmapTerrain.terrainAt(subtile.terrain).difficulty;
+        if (terrainDifficulty < 1) {
+            terrainDifficulty = 1;
+        }
+
+        if (terrainCounter / terrainDifficulty < 1) {
+            return;
+        }
+
+        if (walkLineDelta >= 0) {
+            if (wmWorldPosInvalid(walkWorldPosCrossAxisStepX + worldPosX,
+                    walkWorldPosCrossAxisStepY + worldPosY)) {
+                stopAtCurrent();
+                return;
+            }
+
+            walkLineDelta += walkLineDeltaCrossAxisStep;
+            worldPosX += walkWorldPosCrossAxisStepX;
+            worldPosY += walkWorldPosCrossAxisStepY;
+        } else {
+            if (wmWorldPosInvalid(walkWorldPosMainAxisStepX + worldPosX,
+                    walkWorldPosMainAxisStepY + worldPosY)) {
+                stopAtCurrent();
+                return;
+            }
+
+            walkLineDelta += walkLineDeltaMainAxisStep;
+            worldPosX += walkWorldPosMainAxisStepX;
+            worldPosY += walkWorldPosMainAxisStepY;
+        }
+
+        walkDistance -= 1;
+        if (walkDistance == 0) {
+            walkDestinationX = 0;
+            walkDestinationY = 0;
+            isWalking = false;
+        }
+    }
+
+    /** The stop the walking step does when the walk ends or is blocked. */
+    private static void stopAtCurrent() {
+        walkDestinationX = 0;
+        walkDestinationY = 0;
+        isWalking = false;
+        currentAreaId = MapAreas.wmMatchAreaFromWorldPos(worldPosX, worldPosY);
+        walkDistance = 0;
+    }
+
     /** Test seam: fresh-process mirror. */
     static void resetForTests() {
         worldPosX = 0;
@@ -188,5 +357,17 @@ public final class WorldmapGenData {
         carFuel = CAR_FUEL_MAX;
         currentCarAreaId = MapAreas.City.CITY_INVALID;
         isInCar = false;
+        walkDestinationX = 0;
+        walkDestinationY = 0;
+        walkDistance = 0;
+        walkLineDelta = 0;
+        walkLineDeltaMainAxisStep = 0;
+        walkLineDeltaCrossAxisStep = 0;
+        walkWorldPosMainAxisStepX = 0;
+        walkWorldPosMainAxisStepY = 0;
+        walkWorldPosCrossAxisStepX = 0;
+        walkWorldPosCrossAxisStepY = 0;
+        isWalking = false;
+        terrainCounter = 0;
     }
 }
