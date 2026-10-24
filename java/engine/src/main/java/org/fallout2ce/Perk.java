@@ -55,9 +55,14 @@ public final class Perk {
     }
 
     /** Port of {@code PERK_COUNT} / {@code PERK_FIRST} (src/perk_defs.h). */
-    public static final int PERK_COUNT = 124;
+    public static final int PERK_COUNT = 120;
     public static final int PERK_FIRST = 0;
     public static final int PERK_INVALID = -1;
+
+    /** PERK_BONUS_MOVE = 4. */
+    public static final int PERK_BONUS_MOVE = 4;
+    /** PERK_QUICK_RECOVERY = 103. */
+    public static final int PERK_QUICK_RECOVERY = 103;
 
     public static boolean perkIsValid(int perk) {
         return perk >= PERK_FIRST && perk < PERK_COUNT;

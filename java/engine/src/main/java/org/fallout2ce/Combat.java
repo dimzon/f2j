@@ -553,6 +553,136 @@ public final class Combat {
         GameTime.gameTimeAddSeconds(5);
     }
 
+    // ===== turns (src/combat.cc) =====
+
+    static GameObject combatTurnObj;
+    static int combatFreeMove;
+    static int combatElev;
+    static final CombatDefs.Attack mainAttack = new CombatDefs.Attack();
+
+    /**
+     * Port of {@code _combat_standup} (0x426640): stand a prone critter
+     * up, costing 3 AP (1 with Quick Recovery for the dude). The standing
+     * animation is a render seam; the observable part is the AP cost and
+     * the knockdown-bit clear.
+     */
+    static void combatStandup(GameObject a1) {
+        int v2 = 3;
+        if (a1 == ObjectSystem.getDude()
+                && Perk.perkHasRank(a1, Perk.PERK_QUICK_RECOVERY)) {
+            v2 = 1;
+        }
+
+        if (v2 > a1.data.critter.combat.ap) {
+            a1.data.critter.combat.ap = 0;
+        } else {
+            a1.data.critter.combat.ap -= v2;
+        }
+
+        // dude interfaceRenderActionPoints: UI seam.
+        // _dude_standup: the standing animation is a render seam.
+        a1.data.critter.combat.results = a1.data.critter.combat.results
+                .and(ObjTypes.Dam.KNOCKED_DOWN.not());
+        // _combat_turn_run: animation loop seam.
+    }
+
+    /** Seam for {@code _combat_input} (player turn loop, game phase). */
+    static int combatInput() {
+        return 0;
+    }
+
+    /**
+     * Port of {@code _combat_turn} (0x422E1C), the turn of one combatant.
+     * The player-input and AI turns and the UI/audio/render tails are game-
+     * phase seams; what stays is the turn state, the script combat proc with
+     * its override, the stand-up, the gcsd seed and the cleanup.
+     */
+    static int combatTurn(GameObject obj, boolean reloadedDuringCombat) {
+        combatTurnObj = obj;
+
+        attackInit(mainAttack, obj, null,
+            CombatDefs.HitMode.HIT_MODE_PUNCH.id(),
+            CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
+
+        int results = obj.data.critter.combat.results.bits();
+        if ((results & (ObjTypes.Dam.KNOCKED_OUT.bits() | ObjTypes.Dam.DEAD.bits()
+                | ObjTypes.Dam.LOSE_TURN.bits())) != 0) {
+            obj.data.critter.combat.results = obj.data.critter.combat.results
+                    .and(ObjTypes.Dam.LOSE_TURN.not());
+        } else {
+            if (obj == ObjectSystem.getDude()) {
+                // keyboardReset/inputEventQueueReset/interfaceRender*: seams.
+                combatFreeMove = 2 * Perk.perkGetRank(obj, Perk.PERK_BONUS_MOVE);
+            } else {
+                // soundContinueAll: audio seam.
+            }
+
+            boolean scriptOverrides = false;
+            if (obj.sid != -1) {
+                ObjectSystem.scriptSetObjects(obj.sid, null, null);
+                ObjectSystem.scriptSetFixedParam(obj.sid, 4);
+                ObjectSystem.scriptExecProc(obj.sid, ObjectSystem.SCRIPT_PROC_COMBAT);
+
+                ObjectSystem.Script[] slot = new ObjectSystem.Script[1];
+                if (ObjectSystem.scriptGetScript(obj.sid, slot) != -1) {
+                    scriptOverrides = slot[0].scriptOverrides != 0;
+                }
+
+                // _game_user_wants_to_quit == END_COMBAT: game-phase seam.
+            }
+
+            if (!scriptOverrides) {
+                if (!reloadedDuringCombat && Critter.critterIsProne(obj)) {
+                    combatStandup(obj);
+                }
+
+                if (obj == ObjectSystem.getDude()) {
+                    // gameUiEnable/_gmouse_3d_refresh/outlines: seams.
+                    if (gcsd != null) {
+                        // _combat_attack_this(gcsd.defender): needs the
+                        // attack computation (attackCompute), deferred.
+                    }
+
+                    if (!reloadedDuringCombat) {
+                        combatState |= COMBAT_STATE_PLAYER_TURN;
+                    }
+
+                    if (combatInput() == -1) {
+                        obj.data.critter.combat.damageLastTurn = 0;
+                        combatFreeMove = 0;
+                        return -1;
+                    }
+                } else {
+                    // outline enable: render seam.
+                    // _combat_ai(obj, target): AI seam.
+                    // retry loop with _combat_turn_run: animation seam.
+                }
+            }
+
+            // _combat_turn_run: animation loop seam.
+
+            if (obj == ObjectSystem.getDude()) {
+                // UI cleanup seams; turnObj goes null and back to dude.
+                combatTurnObj = null;
+                combatTurnObj = ObjectSystem.getDude();
+            } else {
+                // outline disable: render seam.
+            }
+        }
+
+        GameObject dude = ObjectSystem.getDude();
+        if ((dude.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) != 0) {
+            return -1;
+        }
+
+        if (obj != dude || combatElev == dude.elevation) {
+            combatFreeMove = 0;
+            return 0;
+        }
+
+        return -1;
+    }
+
     /**
      * Port of {@code _combat_should_end} (0x422C4C).
      */
@@ -929,5 +1059,14 @@ public final class Combat {
         java.util.Arrays.fill(killsByType, 0);
         combatExps = 0;
         combatState = COMBAT_STATE_OUT_COMBAT;
+        combatList = null;
+        listTotal = 0;
+        listCom = 0;
+        listNoncom = 0;
+        combatNumTurns = 0;
+        gcsd = null;
+        combatTurnObj = null;
+        combatFreeMove = 0;
+        combatElev = 0;
     }
 }
