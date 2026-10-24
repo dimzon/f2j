@@ -684,6 +684,133 @@ public final class Combat {
     }
 
     /**
+     * Port of {@code _combat_set_move_all} (0x4228B0): every combatant's
+     * action points refresh from their stat plus the combat-start bonus.
+     */
+    static void combatSetMoveAll() {
+        for (int index = 0; index < listCom; index++) {
+            GameObject object = combatList[index];
+            int actionPoints = Stat.critterGetStat(object,
+                StatDefs.Stat.STAT_MAXIMUM_ACTION_POINTS.id());
+            if (gcsd != null) {
+                actionPoints += gcsd.actionPointsBonus;
+            }
+            object.data.critter.combat.ap = actionPoints;
+            // _combatAIInfoSetLastMove(object, 0): AI seam.
+        }
+    }
+
+    /**
+     * Port of {@code _combat_over} (0x422130): close the fight: clear the
+     * combat data, hand the banked experience over (a seam), clear the
+     * in-combat state (the player-turn re-raise is the original's quirk)
+     * and drop the list. The AI reload, outlines, UI and Goris animation
+     * are seams.
+     */
+    static void combatOver() {
+        for (int index = 0; index < listNoncom + listCom; index++) {
+            GameObject critter = combatList[index];
+            critter.data.critter.combat.damageLastTurn = 0;
+            critter.data.critter.combat.maneuver = ObjTypes.CritterManeuver.NONE;
+        }
+
+        for (int index = 0; index < listTotal; index++) {
+            GameObject critter = combatList[index];
+            critter.data.critter.combat.ap = 0;
+            // objectClearOutline: render seam.
+            critter.data.critter.combat.whoHitMe = null;
+            ObjectSystem.scriptSetObjects(critter.sid, null, null);
+            ObjectSystem.scriptSetFixedParam(critter.sid, 0);
+        }
+
+        // tileWindowRefresh/interface: render seams.
+
+        GameObject dude = ObjectSystem.getDude();
+        dude.data.critter.combat.ap = Stat.critterGetStat(dude,
+            StatDefs.Stat.STAT_MAXIMUM_ACTION_POINTS.id());
+
+        // _combat_give_exps(combatExps): pcAddExperience is game phase.
+        combatExps = 0;
+
+        combatState &= ~(COMBAT_STATE_IN_COMBAT | COMBAT_STATE_PLAYER_TURN);
+        combatState |= COMBAT_STATE_PLAYER_TURN;
+
+        combatList = null;
+        listTotal = 0;
+        listCom = 0;
+        listNoncom = 0;
+    }
+
+    /**
+     * Port of {@code _combat} (0x422D2C), the fight loop. The player-input
+     * and AI turns inside each turn are seams (turn returns without
+     * input), as are the Goris animations, the end-due-to-load branch and
+     * the map-update scripts.
+     */
+    static void combat(ScriptsState.CombatStartData csd) {
+        if (csd == null
+                || (csd.attacker == null || csd.attacker.elevation == Map.gElevation)
+                || (csd.defender == null || csd.defender.elevation == Map.gElevation)) {
+            boolean wasInCombat = isInCombat();
+
+            combatBegin(null);
+
+            int curIndex;
+
+            if (wasInCombat) {
+                GameObject dude = ObjectSystem.getDude();
+                if (combatTurn(dude, true) == -1) {
+                    curIndex = -1;
+                } else {
+                    int index;
+                    for (index = 0; index < listCom; index++) {
+                        if (combatList[index] == dude) {
+                            break;
+                        }
+                    }
+                    curIndex = index + 1;
+                }
+                gcsd = null;
+            } else {
+                GameObject defender = csd != null ? csd.defender : null;
+                GameObject attacker = csd != null ? csd.attacker : null;
+                combatSequenceInit(attacker, defender);
+                gcsd = csd;
+                curIndex = 0;
+            }
+
+            do {
+                if (curIndex == -1) {
+                    break;
+                }
+
+                combatSetMoveAll();
+
+                for (; curIndex < listCom; curIndex++) {
+                    if (combatTurn(combatList[curIndex], false) == -1) {
+                        break;
+                    }
+                    // _combat_ending_guy: never set headless.
+                    gcsd = null;
+                }
+
+                if (curIndex < listCom) {
+                    break;
+                }
+
+                combatSequence();
+                curIndex = 0;
+                combatNumTurns += 1;
+            } while (!combatShouldEnd());
+
+            // _combat_end_due_to_load branch: save/load seam.
+            // Goris begin/end animations, UI, hooks: seams.
+            combatOver();
+            // scriptsExecMapUpdateProc: map-script engine seam.
+        }
+    }
+
+    /**
      * Port of {@code _combat_should_end} (0x422C4C).
      */
     static boolean combatShouldEnd() {
