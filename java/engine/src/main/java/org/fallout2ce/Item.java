@@ -1284,6 +1284,64 @@ public final class Item {
     // RANGED 4).
     private static final int[] ATTACK_SUBTYPE = { 0, 1, 1, 2, 2, 3, 4, 4, 4 };
 
+    // 0x478598 weapon_is_two_handed.
+    public static boolean weaponIsTwoHanded(GameObject weapon) {
+        if (weapon == null) {
+            return false;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot) == -1) {
+            return false;
+        }
+
+        return (slot[0].item.extendedFlags.bits()
+                & ProtoTypes.ProtoExtendedFlags.IS_TWO_HANDED.bits()) != 0;
+    }
+
+    // 0x4786D8 weapon_get_min_strength_required.
+    public static int weaponGetMinStrengthRequired(GameObject weapon) {
+        if (weapon == null) {
+            return -1;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot) == -1) {
+            return -1;
+        }
+
+        return slot[0].item.data.weapon.minStrength;
+    }
+
+    // 0x478D58 weapon_get_perk.
+    public static PerkDefs.Perk weaponGetPerk(GameObject weapon) {
+        if (weapon == null) {
+            return PerkDefs.Perk.PERK_INVALID;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot) == -1) {
+            return PerkDefs.Perk.PERK_INVALID;
+        }
+
+        return slot[0].item.data.weapon.perk;
+    }
+
+    // 0x478D80 weapon_get_ammo_armor_class_modifier.
+    public static int weaponGetAmmoArmorClassModifier(GameObject weapon) {
+        ProtoId ammoTypeProtoId = weaponGetAmmoTypeProtoId(weapon);
+        if (!ammoTypeProtoId.valid()) {
+            return 0;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ammoTypeProtoId, slot) == -1) {
+            return 0;
+        }
+
+        return slot[0].item.data.ammo.armorClassModifier;
+    }
+
     // 0x478280 weapon_get_attack_type_for_hit_mode. Returns the AttackType
     // id; null weapon -> UNARMED, like C++. The primary/secondary nibble
     // pick mirrors C++; weapon protos only use indices 0-8.
