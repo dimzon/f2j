@@ -145,18 +145,17 @@
   интерпретатора: скомпилированный скрипт получает любую реализацию —
   игру, mock или декоратор-логгер. `MockScriptApi` записывает вызовы,
   `UnsupportedScriptApi` отказывает, `GameScriptApi` — игра.
-- Игра отдаёт 148 из 161 билд-инов `GameApi` (`PROVIDED_OPCODES` в
+- Игра отдаёт все 161 билд-инов `GameApi` (`PROVIDED_OPCODES` в
   `GameScriptApi.java`; полнота числа слотов проверяется
   `GameApiDispatchStackTest`, который сверяет съём со стека всех 161
-  блоков диспетчера против оригинала). Не отдаются 13 (см. также
-  `java/PLAN.md`, §2 — там очередь по числу вызовов в скриптах):
-  say-экран `0x804D/4E/52/53/54/6B` (диалоги — `src/interpreter_lib.cc`,
-  не `interpreter_extra.cc`), `_op_gsay_start/end` `0x811C/1D`,
+  блоков диспетчера против оригинала). Последние закрыты Этапом 1
+  (план `java/PLAN.md`): `tile_in_tile_rect` `0x80CF`, `critter_state`
+  `0x80FB`, say-экран `0x804D/4E/52/53/54/6B` (диалоги —
+  `src/interpreter_lib.cc`), `_op_gsay_start/end` `0x811C/1D`,
   `animate_stand_reverse_obj` `0x80CD`, `animate_move_obj_to_tile` `0x80CE`,
-  `tile_in_tile_rect` `0x80CF`, `critter_state` `0x80FB`,
-  `critter_attempt_placement` `0x80FF`. Блоки диспетчера для них уже
-  снимают со стека ровно столько, сколько оригинал, — проверено тем же
-  тестом.
+  `critter_attempt_placement` `0x80FF` — из них полные порты с векторами
+  `[tileinrect]`/`[critterstateop]`/`[animovetile]`/`[critterplace]`
+  (golden `v147`-`v150`), остальное честные no-op под швами.
 - Вне `GameApi` остаются 26 опкодов, зарегистрированных C++
   (`interpreter_extra.cc`: `op_roll_dice` — он и в оригинале только
   отвечает `SCRIPT_ERROR_NOT_IMPLEMENTED`, `op_pickup`, `op_skill_contest`,
@@ -242,8 +241,8 @@ powershell -File docker/refharness/check-refharness.ps1  # эталон цел
   Проверка с предметом «в руке» у критера (не игрока) сделана: объект в инвентаре и его флаг IN_RIGHT_HAND — одно и то же, как в C.
 ### Последние билд-ины и их швы
 
-148 билд-инов, объявленных в `GameApi`, отдаются игрой. Последние два
-упирались в мировую карту — теперь тайлы мира спарсены
+Все 161 билд-инов, объявленных в `GameApi`, отдаются игрой. До Этапа 1
+последние два упирались в мировую карту — теперь тайлы мира спарсены
 (`WorldmapTiles`, векторы `[worldmaptiles]` golden/v139), и оба живут:
 
 - op_mark_area_known (0x80B2): область снимается с карты и ставится на

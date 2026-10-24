@@ -14,12 +14,12 @@
 | Файлов Java в `engine/src/main` | 136 | `rglob('*.java')` |
 | Файлов Java в `engine/src/test` | 186 | то же |
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
-| Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **148** (все уникальные) | `GameScriptApi.java:38+` |
-| **Не отдаётся игрой** | **13** | сверка `opcode & 0x3FF` со слотами; полноту держит `GameApiDispatchStackTest` |
+| Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
+| **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
 | Тесты (последний прогон) | **712, 0 падений, 0 ошибок, 3 skipped** | `target/surefire-reports` (195 файлов) |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v146.txt` (1682 строки), файлов v1..v146 (нет v102, v144 — пропуски нумерации, не данных) | `docker/refharness/golden`, `check.sh` |
-| Активный фронт работ | Этап 1: `tile_in_tile_rect` (векторы `golden/v147.txt`, секция `[tileinrect]`) | `git log` |
+| Эталон харнеса | `golden/v150.txt` (файлов v1..v150, нет v102, v144 — пропуски нумерации, не данных) | `docker/refharness/golden`, `check.sh` (с `diff -I '^block50='` — см. §3.5) |
+| Активный фронт работ | Этап 1 закрыт: все 161 билд-ин отдаются (коммиты `d4487e75`, `2ce3d230`, `a9dfaaf`, `9a35dd4d`, `51b2a3ca`); дальше — Этап 2 (реестр скриптов) | `git log` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -30,7 +30,11 @@
 не соответствует коду (147/161). Правильные числа — выше; PORTING.md
 требует правки в Этапе 0.
 
-## 2. Карта недостающих 13 билд-инов
+## 2. Карта недостающих билд-инов: закрыта Этапом 1
+
+Все 13 недостававших билд-инов отданны (коммиты указаны). Таблица ниже —
+история скоупа; актуальное состояние — `PROVIDED_OPCODES` (161/161),
+полноту держит `GameApiDispatchStackTest`.
 
 Сверка `PROVIDED_OPCODES` против слотов `GameApiSlots` (порядок — по числу
 вызовов в shipped-скриптах, т.е. по цене). `critter_rm_trait` (0x8103) уже
@@ -39,14 +43,14 @@
 
 | Вызовов | Opcode | Метод | Что нужно | Вердикт |
 |---|---|---|---|---|
-| 1601 | 0x80CE | `animateMoveObjToTile` | очередь анимаций + straight path; вне боя | Этап 1: телепорт через `objectSetLocation` + пометка, что промежуточных кадров нет |
-| 1221 | 0x811C | `opGsayStart` | диалоговая подсистема | Этап 1: no-op с корректным съёмом стека (как gsay_reply и др.) |
-| 1221 | 0x811D | `opGsayEnd` | то же | Этап 1: то же |
-| 1073 | 0x80CF | `tileInTileRect` | чистая арифметика тайла (`% 200`, `/ 200`, границы) | Этап 1: **полный порт**, векторы тривиальны |
-| 507 | 0x80FB | `critterState` | `critterIsActive` + `FrmId.animationType` + `DAM_CRIP` — всё портировано | Этап 1: **полный порт** |
-| 471 | 0x80FF | `critterAttemptPlacement` | `objectAttemptPlacement` не портирован (есть только party-вариант); combat-delete — seam | Этап 2: портировать `objectAttemptPlacement` |
-| 46/12/12/3/3/0 | 0x8053/52/54/4D/4E/6B | `opSay*`, `opDisplay` | say-экран (рендер) | Этап 1: no-op заглушки |
-| 16 | 0x80CD | `animateStandReverseObj` | анимация | Этап 1: no-op (как 0x80CC) |
+| 1601 | 0x80CE | `animateMoveObjToTile` | очередь анимаций + straight path; вне боя | Этап 1: телепорт через `objectSetLocation` + проверки (`9a35dd4d`, `[animovetile]`/`v149`) |
+| 1221 | 0x811C | `opGsayStart` | диалоговая подсистема | Этап 1: no-op (`a9dfaaf`) |
+| 1221 | 0x811D | `opGsayEnd` | то же | Этап 1: no-op (`a9dfaaf`) |
+| 1073 | 0x80CF | `tileInTileRect` | чистая арифметика тайла (`% 200`, `/ 200`, границы) | Этап 1: **полный порт** (`d4487e75`, `[tileinrect]`/`v147`) |
+| 507 | 0x80FB | `critterState` | `critterIsActive` + `FrmId.animationType` + `DAM_CRIP` — всё портировано | Этап 1: **полный порт** (`2ce3d230`, `[critterstateop]`/`v148`) |
+| 471 | 0x80FF | `critterAttemptPlacement` | `objectAttemptPlacement` не портирован (есть только party-вариант); combat-delete — seam | Этап 1: портирован (`51b2a3ca`, `[critterplace]`/`v150`) |
+| 46/12/12/3/3/0 | 0x8053/52/54/4D/4E/6B | `opSay*`, `opDisplay` | say-экран (рендер) | Этап 1: no-op заглушки (`a9dfaaf`) |
+| 16 | 0x80CD | `animateStandReverseObj` | анимация | Этап 1: no-op (`a9dfaaf`) |
 
 Вне `GameApi` — ещё 26 опкодов, зарегистрированных C++ без слотов и блоков
 диспетчера (`op_roll_dice` и в оригинале только отвечает NOT_IMPLEMENTED,
@@ -105,14 +109,14 @@
 - [x] Расширить `POPS`-таблицу `GameApiDispatchStackTest` на все 161 опкод (сверка против `interpreter_extra.cc` + `interpreter_lib.cc`; loop-pop развёрнуты; тест зелёный — диспетчер снимает корректно везде, включая ещё не отданные билд-ины).
 - Приёмка: `mvn -B test` зелёный, `VECTORS_MATCH`, `git status` чист, коммит «f2j: housekeeping».
 
-### Этап 1 — закрыть 13 недостающих (быстрые победы + 3 маленьких порта)
-Порядок — по вызовам, каждый пункт = векторы (если есть что сверять) + класс + тест + коммит:
-1. `tileInTileRect` (1073) — **полный порт**: чистая арифметика тайла (`% 200`, `/ 200`, границы `minX/maxX/minY/maxY`). Вектор: точки внутри/снаружи/на границе.
-2. `critterState` (507) — **полный порт**: `critterIsDead/critterIsActive` + `FrmId.animationType` в диапазоне FALL_BACK_SF..FALL_FRONT_SF → PRONE + `DAM_CRIP`. Вектор на dog (144-й слот? нет — на критере из protodb).
-3. `critterAttemptPlacement` (471) — портировать `objectAttemptPlacement` из `proto_instance.cc` (игнор combat-ветки с пометкой); `elevation != critter.elevation` + `_combat_delete_critter` → seam.
-4. `animateMoveObjToTile` (1601) — **телепорт** через `objectSetLocation` + проверки оригинала (не null, tile != -1, не `isInCombat`, активный критер); очередь анимаций и `reg_anim_*` — seam с пометкой. Вектор: конечный тайл объекта.
-5. Say/diag-заглушки (1221×2, 46/12/12/3/3/0) и `animateStandReverseObj` (16): no-op с корректным съёмом аргументов (образец — уже принятые `gsayReply`, `regAnimFunc`); проверить через `GameApiDispatchStackTest`.
-- Приёмка: `PROVIDED_OPCODES` = 161/161, свип без новых `KNOWN`, `check.sh` зелёный.
+### Этап 1 — закрыт: все 161 отдаются (коммиты `d4487e75`, `2ce3d230`, `a9dfaaf`, `9a35dd4d`, `51b2a3ca`)
+Порядок был по вызовам, каждый пункт = векторы + класс + тест + коммит:
+1. `tileInTileRect` (1073) — **полный порт**: чистая арифметика тайла.
+2. `critterState` (507) — **полный порт**: `critterIsDead/critterIsActive` + `FrmId.animationType` в диапазоне FALL_BACK_SF..FALL_FRONT_SF → PRONE + `DAM_CRIP`.
+3. `critterAttemptPlacement` (471) — портирован `objectAttemptPlacement` из `proto_instance.cc` (+ его `_obj_blocking_at`); `_combat_delete_critter` → seam; поиск как написан никогда не останавливается на находке (break только из rotation-цикла) — воспроизведено дословно, зафиксировано векторами.
+4. `animateMoveObjToTile` (1601) — **телепорт** через `objectSetLocation` + проверки оригинала; очередь анимаций и `reg_anim_*` — seam.
+5. Say/diag-заглушки (1221×2, 46/12/12/3/3/0) и `animateStandReverseObj` (16): no-op; проверены `GameSayStubsTest` + `POPS`-таблицей.
+- Приёмка: `PROVIDED_OPCODES` = 161/161, свип без новых `KNOWN`, `check.sh` зелёный — выполнено.
 
 ### Этап 2 — реестр скриптов (разблокирует контекст)
 `scriptGetScript(sid)` + привязка `Program ↔ GameObject` при `objectCreateWithProtoId`/`objectsInit`. Векторы: `selfObj`/`targetObj`/`fixedParam` после привязки. После — осмысленные `attack`, `useObj`, `scrReturn`, `scriptOverrides`.
@@ -133,10 +137,10 @@
 - `KRUPPER.int` — неустранимо для компилятора (прыжок на вычисленный адрес); держать в `KNOWN` с комментарием, не пытаться «починить».
 - Временные `Probe*`-тесты и файлы мимо `java/`/`docker` — ловить ревью чек-листом: `git status`, `git ls-files`, отсутствие `System.out.println("PROBE`.
 
-## 7. Ближайшие конкретные коммиты (порядок)
+## 7. Ближайшие конкретные коммиты (порядок) — Этап 1 выполнен
 
-1. `f2j: housekeeping` (Этап 0).
-2. `f2j: give the game the tile rect and the critter state builtins` (`0x80CF`, `0x80FB` — полные порты с векторами).
-3. `f2j: give the game the say screen and dialog stubs` (`0x804D/4E/52/53/54/6B`, `0x811C/D`, `0x80CD` — no-op + `POPS`-таблица).
-4. `f2j: give the game the move to tile and the placement builtins` (`0x80CE`, `0x80FF`).
+1. ~~`f2j: housekeeping` (Этап 0).~~ — `60acaef0`.
+2. ~~`f2j: give the game the tile rect and the critter state builtins`~~ — `d4487e75` (`0x80CF`), `2ce3d230` (`0x80FB`).
+3. ~~`f2j: give the game the say screen and dialog stubs`~~ — `a9dfaaf` (say-экран, gsay start/end, `0x80CD`).
+4. ~~`f2j: give the game the move to tile and the placement builtins`~~ — `9a35dd4d` (`0x80CE`), `51b2a3ca` (`0x80FF`).
 5. Далее — Этап 2 (реестр скриптов).
