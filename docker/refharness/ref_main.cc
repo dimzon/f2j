@@ -7496,6 +7496,53 @@ void sectionWorldmapTiles()
         }
     }
 
+    // The encounter tables of the world: how many the config names, and
+    // the header fields of the first ones (lookup name, maps, and how
+    // many entries each holds - the entries themselves come with the
+    // full table parse).
+    int encounterTables = 0;
+    for (int index = 0;; index++) {
+        char section[40];
+        snprintf(section, sizeof(section), "Encounter Table %d", index);
+        char* lookupName = nullptr;
+        if (!fallout::configGetString(&config, section, "lookup_name", &lookupName)) {
+            break;
+        }
+        encounterTables++;
+        if (index < 2) {
+            std::printf("encounter %d name=%s\n", index, lookupName);
+            int maps = 0;
+            char* mapsStr = nullptr;
+            if (fallout::configGetString(&config, section, "maps", &mapsStr)) {
+                char* pch = mapsStr;
+                while (*pch != '\0' && maps < 6) {
+                    pch += std::strspn(pch, " ");
+                    size_t endPos = std::strcspn(pch, ",");
+                    std::printf("encounter %d map %d=%s\n", index, maps,
+                        std::string(pch, endPos).c_str());
+                    maps++;
+                    if (pch[endPos] != ',') {
+                        break;
+                    }
+                    pch += endPos + 1;
+                }
+            }
+            std::printf("encounter %d maps=%d\n", index, maps);
+            int entries = 0;
+            for (;;) {
+                char key[40];
+                snprintf(key, sizeof(key), "enc_%02d", entries);
+                char* entryStr = nullptr;
+                if (!fallout::configGetString(&config, section, key, &entryStr)) {
+                    break;
+                }
+                entries++;
+            }
+            std::printf("encounter %d entries=%d\n", index, entries);
+        }
+    }
+    std::printf("encounter-tables=%d\n", encounterTables);
+
     // With the engine's own tiles loaded, its subtile grid answers through
     // the exported lookups - the machinery mark_area_known rides on.
     if (initRc == 0 && tiles > 0) {
