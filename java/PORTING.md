@@ -217,9 +217,10 @@ powershell -File docker/refharness/check-refharness.ps1  # эталон цел
   загрузки отказывает.
 - op_metarule (0x810B) реализован для правил, не требующих непортированных
   подсистем: партия, очередь (DRUG), навык-тег, фильтры, тип убийства и
-  чтения мира — `AREA_KNOWN` (17, `wmAreaVisitedState`) и `MAP_KNOWN`
-  (19, `wmMapIsKnown` через входы областей; `[worldmaptiles]`,
-  golden/v140). Правила машины, лифта и позиции партии на карте — 0.
+  мира — `AREA_KNOWN` (17), `MAP_KNOWN` (19),
+  `GET_WORLDMAP_XPOS/YPOS` (44/45) и `CURRENT_TOWN` (46); чтения мира
+  на `[worldmaptiles]` golden/v141 (стартовая позиция 173,122, область
+  не задана до движения партии). Правила машины и лифта — 0.
 - op_get_pc_stat (0x80A6) отдаёт статы игрока как персонажа из
   перенесённого стат-движка (`Stat.pcGetStat`; домен PcStat уже был
   в `Stat.java` с векторами `[pcstat]`).

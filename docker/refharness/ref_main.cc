@@ -7504,6 +7504,18 @@ void sectionWorldmapTiles()
             fallout::wmMapMarkMapEntranceState((fallout::Map)3, -1, 1));
         std::printf("map-known-after=%d\n",
             fallout::wmMapIsKnown((fallout::Map)3) ? 1 : 0);
+
+        // The gen-data reads the metarule rules answer: where the party
+        // stands on the world, and which area that is. The init leaves
+        // the area unset (the party's own movement sets it), and the
+        // position is the defualt start - the config has no worldmap_x/y.
+        int partyX = -1;
+        int partyY = -1;
+        fallout::wmGetPartyWorldPos(&partyX, &partyY);
+        std::printf("party-pos=%d,%d\n", partyX, partyY);
+        fallout::City curArea = fallout::CITY_INVALID;
+        fallout::wmGetPartyCurArea(&curArea);
+        std::printf("party-area=%d\n", (int)curArea);
     }
 
     fallout::configFree(&config);

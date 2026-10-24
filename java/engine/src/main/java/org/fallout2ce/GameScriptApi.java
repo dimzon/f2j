@@ -2185,10 +2185,10 @@ public class GameScriptApi extends UnsupportedScriptApi {
      * <p>The rule is the number the game gives it, and the parameter is the
      * number or the object it asks about. The rules that need the party,
      * the queue, the skills, the settings, the kill type of a critter or
-     * the reads of the worldmap (how much the player knows of an area,
-     * whether a map is known) are answered; the ones that need the car,
-     * the elevator or the party's own position on the worldmap are not
-     * ported and answer 0.
+     * the worldmap - how much the player knows of an area, whether a map
+     * is known, where the party stands and which area that is - are
+     * answered; the ones that need the car or the elevator are not ported
+     * and answer 0.
      */
     @Override
     public int metarule(int rule, Program.ProgramValue param) {
@@ -2207,6 +2207,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return MapAreas.wmMapIsKnown(param.integerValue) ? 1 : 0;
         case 40: // METARULE_SKILL_CHECK_TAG
             return Skill.isTagged(param.integerValue) ? 1 : 0;
+        case 44: // METARULE_GET_WORLDMAP_XPOS
+            return WorldmapGenData.wmGetPartyWorldPosX();
+        case 45: // METARULE_GET_WORLDMAP_YPOS
+            return WorldmapGenData.wmGetPartyWorldPosY();
+        case 46: // METARULE_CURRENT_TOWN
+            return WorldmapGenData.wmGetPartyCurArea().id();
         case 47: // METARULE_LANGUAGE_FILTER
             return Settings.settings.preferences.language_filter ? 1 : 0;
         case 48: // METARULE_VIOLENCE_FILTER
