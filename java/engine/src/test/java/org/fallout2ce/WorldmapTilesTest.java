@@ -1,6 +1,7 @@
 package org.fallout2ce;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -84,6 +85,33 @@ class WorldmapTilesTest {
 
         // tiles=20 last-art=358
         assertEquals(358, WorldmapTiles.tileAt(19).fid);
+    }
+
+    @Test
+    void theSubtileStringsParse() {
+        assertTrue(Config.configRead(GameConfig.gameConfig, "data\\worldmap.txt", true));
+        assertEquals(0, MapRegistry.wmMapInit());
+        assertEquals(0, WorldmapTerrain.wmParseTerrainTypes(GameConfig.gameConfig));
+        assertEquals(0, WorldmapTiles.wmParseTilesConfig(GameConfig.gameConfig));
+
+        // tile0-st-0=Ocean,Fill_W,None,None,None,Fish_O
+        WorldmapTiles.SubtileInfo st0 = WorldmapTiles.tileAt(0).subtiles[0][0];
+        WorldmapTerrain.Terrain ocean = WorldmapTerrain.terrainAt(3);
+        assertEquals(3, st0.terrain);
+        assertEquals("ocean", ocean.lookupName);
+        assertEquals(4, st0.fill); // fill_w
+        assertEquals(0, st0.encounterChance[0]);
+        assertEquals(0, st0.encounterChance[1]);
+        assertEquals(0, st0.encounterChance[2]);
+        assertEquals("Fish_O", st0.encounterType);
+
+        // tile0-st-last=Desert,No_Fill,Uncommon,Uncommon,Uncommon,Kla_D
+        WorldmapTiles.SubtileInfo stLast = WorldmapTiles.tileAt(0).subtiles[5][6];
+        assertEquals(0, stLast.terrain); // desert
+        assertEquals(0, stLast.fill); // no_fill
+        assertEquals(2, stLast.encounterChance[0]);
+        assertEquals(2, stLast.encounterChance[2]);
+        assertEquals("Kla_D", stLast.encounterType);
     }
 
     @Test

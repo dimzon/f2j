@@ -75,13 +75,40 @@ public final class WorldmapTiles {
     }
 
     /**
-     * Port of {@code SubtileInfo}, the state slice: how much the player
-     * has seen of this square of the world.
+     * Port of {@code SubtileInfo}, the parsed slice: the terrain, the
+     * fill, the encounter chances and the encounter type of a square of
+     * the world, with how much the player has seen of it.
      */
     public static final class SubtileInfo {
         /** How much the player has seen: unknown, known or visited. */
         public SubtileState state = SubtileState.SUBTILE_STATE_UNKNOWN;
+
+        /** The terrain index, into the world's terrain table. */
+        public int terrain;
+
+        /** The fill of the subtile (wmFillStrs). */
+        public int fill;
+
+        /** The encounter chances of the day parts (wmFreqStrs). */
+        public final int[] encounterChance = new int[DAY_PART_COUNT];
+
+        /** The encounter type, as the line names it. */
+        public String encounterType = "";
     }
+
+    /** Port of {@code DAY_PART_COUNT} (src/worldmap.cc). */
+    public static final int DAY_PART_COUNT = 3;
+
+    /** Port of {@code wmFillStrs}. */
+    private static final String[] FILL_STRS = {
+        "no_fill", "fill_n", "fill_s", "fill_e", "fill_w",
+        "fill_nw", "fill_ne", "fill_sw", "fill_se",
+    };
+
+    /** Port of {@code wmFreqStrs}. */
+    private static final String[] FREQ_STRS = {
+        "none", "rare", "uncommon", "common", "frequent", "forced",
+    };
 
     /**
      * Port of {@code TileInfo}, the parsed slice: the art of the tile, how
@@ -123,7 +150,8 @@ public final class WorldmapTiles {
      * {@code data\worldmap.txt} and load its tiles.
      *
      * <p>0 when the tiles loaded, -1 when the file would not read or a
-     * tile came without one of its subtile strings.
+     * tile came without one of its subtile strings. The terrain table
+     * the subtile strings name is read by its own init, before this.
      */
     public static int wmTilesInit() {
         if (Config.configRead(GameConfig.gameConfig, "data\\worldmap.txt", true)) {
@@ -173,17 +201,48 @@ public final class WorldmapTiles {
 
             for (int column = 0; column < SUBTILE_GRID_HEIGHT; column++) {
                 for (int row = 0; row < SUBTILE_GRID_WIDTH; row++) {
-                    // The string is required the way the original requires
-                    // it; what it says waits for the terrain and encounter
-                    // tables, and the subtile starts from the state every
-                    // parse starts it from.
                     if (!Config.configGetString(cfg, section, row + "_" + column, valuePtr)) {
                         return -1;
                     }
+                    parseSubtile(tile, column, row, valuePtr[0]);
                 }
             }
         }
 
+        return 0;
+    }
+
+    /**
+     * Port of {@code wmParseSubTileInfo} (0x4BE61C): the comma-separated
+     * fields of a subtile line.
+     *
+     * <p>The terrain is looked up in the world's terrain table, the fill
+     * and the chances in their name lists; the encounter type is kept as
+     * the name the line gives it.
+     */
+    private static void parseSubtile(TileInfo tile, int column, int row, String line) {
+        String[] parts = line.split(",");
+        SubtileInfo subtile = tile.subtiles[column][row];
+
+        String terrainName = parts[0].trim().toLowerCase();
+        subtile.terrain = WorldmapTerrain.terrainIndexByLookup(terrainName);
+
+        subtile.fill = indexOf(FILL_STRS, parts[1].trim().toLowerCase());
+
+        for (int day = 0; day < DAY_PART_COUNT; day++) {
+            subtile.encounterChance[day] = indexOf(FREQ_STRS, parts[2 + day].trim().toLowerCase());
+        }
+
+        subtile.encounterType = parts[5].trim();
+    }
+
+    /** The index of a name in a list, 0 when it is not there. */
+    private static int indexOf(String[] list, String name) {
+        for (int i = 0; i < list.length; i++) {
+            if (list[i].equals(name)) {
+                return i;
+            }
+        }
         return 0;
     }
 

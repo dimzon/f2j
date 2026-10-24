@@ -161,6 +161,20 @@ public final class WorldmapTerrain {
         return terrainTypeList.get(index);
     }
 
+    /**
+     * The index of the terrain a name belongs to, 0 when it is not in
+     * the table - the same default the original's match yields for a
+     * miss.
+     */
+    public static int terrainIndexByLookup(String name) {
+        for (int i = 0; i < terrainTypeList.size(); i++) {
+            if (terrainTypeList.get(i).lookupName.equals(name)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
     /** Test seam: fresh-process mirror (empty table). */
     static void resetForTests() {
         terrainTypeList.clear();

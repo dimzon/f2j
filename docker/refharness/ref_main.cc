@@ -7457,6 +7457,17 @@ void sectionWorldmapTiles()
     }
     std::printf("tile0-subtile-keys=%d\n", subtileKeys);
 
+    // The subtile strings of tile 0 (the first cell of the grid and the
+    // last), as the engine's own parse reads them.
+    char* st0 = nullptr;
+    if (fallout::configGetString(&config, "Tile 0", "0_0", &st0)) {
+        std::printf("tile0-st-0=%s\n", st0);
+    }
+    char* stLast = nullptr;
+    if (fallout::configGetString(&config, "Tile 0", "6_5", &stLast)) {
+        std::printf("tile0-st-last=%s\n", stLast);
+    }
+
     // The terrain table of the world: the raw list, the first entries
     // parsed the way wmParseTerrainTypes parses them (name:difficulty,
     // comma separated), and the first random-map names the terrain's
