@@ -18,8 +18,8 @@
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
 | Тесты (последний прогон) | **712, 0 падений, 0 ошибок, 3 skipped** | `target/surefire-reports` (195 файлов) |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v150.txt` (файлов v1..v150, нет v102, v144 — пропуски нумерации, не данных) | `docker/refharness/golden`, `check.sh` (с `diff -I '^block50='` — см. §3.5) |
-| Активный фронт работ | Этап 1 закрыт: все 161 билд-ин отдаются (коммиты `d4487e75`, `2ce3d230`, `a9dfaaf`, `9a35dd4d`, `51b2a3ca`); дальше — Этап 2 (реестр скриптов) | `git log` |
+| Эталон харнеса | `golden/v152.txt` (файлов v1..v152, нет v102, v144 — пропуски нумерации, не данных) | `docker/refharness/golden`, `check.sh` (с `diff -I '^block50='` — см. §3.5) |
+| Активный фронт работ | Этап 3 начат: применение урона/смерть (`e3f6eb67`, `[combatdamage]`); дальше — боевой запрос/ход (combat team, AP, AI) | `git log` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -118,11 +118,11 @@
 5. Say/diag-заглушки (1221×2, 46/12/12/3/3/0) и `animateStandReverseObj` (16): no-op; проверены `GameSayStubsTest` + `POPS`-таблицей.
 - Приёмка: `PROVIDED_OPCODES` = 161/161, свип без новых `KNOWN`, `check.sh` зелёный — выполнено.
 
-### Этап 2 — реестр скриптов (разблокирует контекст)
-`scriptGetScript(sid)` + привязка `Program ↔ GameObject` при `objectCreateWithProtoId`/`objectsInit`. Векторы: `selfObj`/`targetObj`/`fixedParam` после привязки. После — осмысленные `attack`, `useObj`, `scrReturn`, `scriptOverrides`.
+### Этап 2 — реестр скриптов — закрыт (`efe77878`)
+`scriptGetScript(sid)` + `scriptGetSid(program)` + `scriptAdd` + `objectSetScriptFromProto` (привязка при создании объекта) + `scriptGetSelf/scriptGetTarget/scriptGetSource/scriptGetFixedParam/scriptGetActionBeingUsed` + `scriptSetOverrides`. Векторы: `[scriptattach]` (golden `v151`). `GameScriptApi` теперь читает контекст из реестра; «голый» запуск программы (как в `[scriptrun]`) по-прежнему отвечает null/0 — тесты `ScriptApiTest`/`CompiledSweepTest` не изменились. Отложено: `scriptExecProc`, `scriptRemove`, detached-контексты, `_scr_find_str_run_info`-хвост (`localVarsCount` из `scripts.lst`), поиск «дома» для spatial-маркера.
 
-### Этап 3 — боевой цикл
-Применение урона к HP (`critterAdjustHitPoints` уже есть) → смерть (`critterKill`, сейчас seam) → `attackSetup`/`attack` поверх уже портированной `attackComputeDamage` → `isInCombat`/манёвры. Векторы: урон/HP/смерть в новом `golden/v14x`. `combat_ai` — следующим слайсом.
+### Этап 3 — боевой цикл — в работе
+Применение урона закрыто (`e3f6eb67`): `_check_for_death`/`attackComputeDeathFlags`, `_set_new_results`, `_damage_object`, `_apply_damage`, `_compute_dmg_damage` (через результат), `actionDamage` (не-анимированная ветка), `critterKill` полный, счётчики убийств/опыта; векторы `[combatdamage]` (golden `v152`). Опкоды `critter_damage`/`kill_critter` реально работают. Заодно закрыт скрипт-запуск (`scripts.lst`, `scriptLocateProcs`, `scriptExecProc`, `scriptRemove`) — без него damage/destroy/combat-процедуры не исполнялись бы. Отложено: запрос/ход боя (`scriptsRequestCombat`, combat team, AP, AI-уведомления — швы), анимированная рука, детали `scriptRemove` (NO_REMOVE). Дальше: `scriptsRequestCombat` + `combat_ai`.
 
 ### Этап 4 — игровой цикл
 `gameInit`-минимум: `objectsInit` → загрузка карты (`mapLoad` уже отдан) → привязка скриптов → обработка очереди событий (`queueProcessEvents` уже вызывается таймерами). Это делает dude/таймеры/партию настоящими. Критерий: скрипт уровня `miJerky` проходит end-to-end в headless.
