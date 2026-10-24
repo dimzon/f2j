@@ -1302,6 +1302,85 @@ public final class Item {
         return ATTACK_SKILL[attackType];
     }
 
+    /** Port of {@code weaponGetDamage} (0x478448): the damage of an attack. */
+    public static int weaponGetDamage(ObjTypes.GameObject critter, int hitMode) {
+        if (critter == null) {
+            return 0;
+        }
+
+        int minDamage = 0;
+        int maxDamage = 0;
+        int meleeDamage = 0;
+        int bonusDamage = 0;
+        boolean isMeleeWeaponAttack = false;
+
+        ObjTypes.GameObject weapon = critterGetWeaponForHitMode(critter, hitMode);
+
+        if (weapon != null) {
+            Proto[] slot = new Proto[1];
+            if (ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot) != -1) {
+                minDamage = slot[0].item.data.weapon.minDamage;
+                maxDamage = slot[0].item.data.weapon.maxDamage;
+            }
+
+            int attackType = weaponGetAttackTypeForHitMode(weapon, hitMode);
+            if (attackType == AttackType.ATTACK_TYPE_MELEE.id()
+                    || attackType == AttackType.ATTACK_TYPE_UNARMED.id()) {
+                meleeDamage = Stat.critterGetStat(critter, StatDefs.Stat.STAT_MELEE_DAMAGE.id());
+                isMeleeWeaponAttack = attackType == AttackType.ATTACK_TYPE_MELEE.id();
+            }
+        } else {
+            int[] mm = unarmedMinMax(hitMode);
+            minDamage = mm[0];
+            maxDamage = mm[1];
+            bonusDamage = mm[2];
+            meleeDamage = Stat.critterGetStat(critter, StatDefs.Stat.STAT_MELEE_DAMAGE.id());
+        }
+
+        minDamage += bonusDamage;
+        maxDamage += bonusDamage + meleeDamage;
+
+        return GameRandom.randomBetween(minDamage, maxDamage);
+    }
+
+    /** The unarmed hit description of a mode (min, max, bonus). */
+    public static int[] unarmedMinMax(int hitMode) {
+        // The vanilla table (combat.cc unarmedInitVanilla), keyed by hit
+        // mode id: min, max, bonus.
+        switch (hitMode) {
+        case 4:  // HIT_MODE_PUNCH
+            return new int[] { 1, 2, 0 };
+        case 8:  // HIT_MODE_STRONG_PUNCH
+            return new int[] { 1, 2, 3 };
+        case 9:  // HIT_MODE_HAMMER_PUNCH
+            return new int[] { 1, 2, 5 };
+        case 10: // HIT_MODE_HAYMAKER
+            return new int[] { 1, 2, 7 };
+        case 11: // HIT_MODE_JAB
+            return new int[] { 1, 2, 3 };
+        case 12: // HIT_MODE_PALM_STRIKE
+            return new int[] { 1, 2, 7 };
+        case 13: // HIT_MODE_PIERCING_STRIKE
+            return new int[] { 1, 2, 10 };
+        case 5:  // HIT_MODE_KICK
+            return new int[] { 1, 2, 0 };
+        case 14: // HIT_MODE_STRONG_KICK
+            return new int[] { 1, 2, 5 };
+        case 15: // HIT_MODE_SNAP_KICK
+            return new int[] { 1, 2, 7 };
+        case 16: // HIT_MODE_POWER_KICK
+            return new int[] { 1, 2, 9 };
+        case 17: // HIT_MODE_HIP_KICK
+            return new int[] { 1, 2, 7 };
+        case 18: // HIT_MODE_HOOK_KICK
+            return new int[] { 1, 2, 9 };
+        case 19: // HIT_MODE_PIERCING_KICK
+            return new int[] { 1, 2, 0 };
+        default:
+            return new int[] { 0, 0, 0 };
+        }
+    }
+
     // 0x478598 weapon_is_two_handed.
     public static boolean weaponIsTwoHanded(GameObject weapon) {
         if (weapon == null) {
@@ -1343,6 +1422,54 @@ public final class Item {
         }
 
         return slot[0].item.data.weapon.perk;
+    }
+
+    // 0x47912C weapon_get_ammo_damage_multiplier.
+    public static int weaponGetAmmoDamageMultiplier(GameObject weapon) {
+        ProtoId ammoTypeProtoId = weaponGetAmmoTypeProtoId(weapon);
+        if (!ammoTypeProtoId.valid()) {
+            return 1;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ammoTypeProtoId, slot) == -1) {
+            return 1;
+        }
+
+        return slot[0].item.data.ammo.damageMultiplier;
+    }
+
+    // 0x479294 weapon_get_ammo_damage_divisor.
+    public static int weaponGetAmmoDamageDivisor(GameObject weapon) {
+        ProtoId ammoTypeProtoId = weaponGetAmmoTypeProtoId(weapon);
+        if (!ammoTypeProtoId.valid()) {
+            return 1;
+        }
+
+        Proto[] slot = new Proto[1];
+        if (ProtoDb.protoGetProto(ammoTypeProtoId, slot) == -1) {
+            return 1;
+        }
+
+        return slot[0].item.data.ammo.damageDivisor;
+    }
+
+    // 0x478570 weapon_get_damage_type.
+    public static ProtoTypes.DamageType weaponGetDamageType(ObjTypes.GameObject critter,
+            ObjTypes.GameObject weapon) {
+        if (weapon != null) {
+            Proto[] slot = new Proto[1];
+            if (ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot) == -1) {
+                return ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
+            }
+            return slot[0].item.data.weapon.damageType;
+        }
+
+        if (critter != null) {
+            return critterGetDamageType(critter);
+        }
+
+        return ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
     }
 
     // 0x478D80 weapon_get_ammo_armor_class_modifier.
@@ -1419,22 +1546,6 @@ public final class Item {
         }
 
         return skill;
-    }
-
-    // 0x478570 weapon_get_damage_type.
-    public static ProtoTypes.DamageType weaponGetDamageType(GameObject critter, GameObject weapon) {
-        if (weapon != null) {
-            Proto[] slot = new Proto[1];
-            ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
-
-            return slot[0].item.data.weapon.damageType;
-        }
-
-        if (critter != null) {
-            return critterGetDamageType(critter);
-        }
-
-        return ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
     }
 
     // critter_get_damage_type (src/critter.cc): non-critter or proto miss
