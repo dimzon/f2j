@@ -59,6 +59,12 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8106, // op_critter_inven_obj
         0x8105, // op_message_str
         0x80B8, // op_display_msg
+        0x804D, // opSayEnd
+        0x804E, // opSayStart
+        0x8052, // opSayOption
+        0x8053, // opSayReply
+        0x8054, // opSayMessage
+        0x806B, // opDisplay
         0x8154, // op_debug_msg
         0x80C8, // op_obj_type
         0x80D4, // op_tile_num
@@ -121,6 +127,7 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x8152, // op_critter_set_flee_state
         0x80ED, // op_kill_critter
         0x80CC, // op_animate_stand_obj
+        0x80CD, // animate_stand_reverse_obj
         0x814D, // op_jam_lock
         0x8150, // op_obj_on_screen
         0x8149, // op_obj_art_fid
@@ -167,6 +174,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
         0x80DE, // op_start_gdialog
         0x80DF, // op_end_gdialog
         0x80F9, // op_dialogue_system_enter
+        0x811C, // _op_gsay_start
+        0x811D, // _op_gsay_end
         0x811E, // op_gsay_reply
         0x8120, // op_gsay_message
         0x8121, // op_giq_option
@@ -1191,6 +1200,69 @@ public class GameScriptApi extends UnsupportedScriptApi {
     }
 
     /**
+     * opSayEnd (0x804D): end the say-screen dialog.
+     *
+     * <p>The say screen belongs to the dialog system of the base
+     * interpreter, and the port has no dialog system, so nothing is ended.
+     */
+    @Override
+    public void opSayEnd() {
+    }
+
+    /**
+     * opSayStart (0x804E): start the say-screen dialog.
+     *
+     * <p>The say screen belongs to the dialog system of the base
+     * interpreter, and the port has no dialog system, so nothing is
+     * started.
+     */
+    @Override
+    public void opSayStart() {
+    }
+
+    /**
+     * opSayOption (0x8052): add an option to the say screen.
+     *
+     * <p>The say screen belongs to the dialog system of the base
+     * interpreter, and the port has no dialog system, so nothing is added.
+     */
+    @Override
+    public void opSayOption(Program.ProgramValue text, Program.ProgramValue procedure) {
+    }
+
+    /**
+     * opSayReply (0x8053): set the reply of the say screen.
+     *
+     * <p>The say screen belongs to the dialog system of the base
+     * interpreter, and the port has no dialog system, so nothing is set.
+     * (The crossed names are the original's: its opSayReply fills an
+     * option and its opSayOption fills a reply.)
+     */
+    @Override
+    public void opSayReply(Program.ProgramValue text, Program.ProgramValue title) {
+    }
+
+    /**
+     * opSayMessage (0x8054): show a message of the say screen.
+     *
+     * <p>The say screen belongs to the dialog system of the base
+     * interpreter, and the port has no dialog system, so nothing is shown.
+     */
+    @Override
+    public void opSayMessage(Program.ProgramValue text, Program.ProgramValue title) {
+    }
+
+    /**
+     * opDisplay (0x806B): show a string on the say screen.
+     *
+     * <p>The say screen belongs to the dialog system of the base
+     * interpreter, and the port has no dialog system, so nothing is shown.
+     */
+    @Override
+    public void opDisplay(String text) {
+    }
+
+    /**
      * op_start_gdialog (0x80DE): start a dialog with a critter.
      *
      * <p>The dialog needs the dialog system, and the port has no dialog
@@ -1217,6 +1289,24 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void dialogueSystemEnter() {
+    }
+
+    /**
+     * _op_gsay_start (0x811C): start a gsay dialog.
+     *
+     * <p>The port has no dialog system, so nothing is started.
+     */
+    @Override
+    public void opGsayStart() {
+    }
+
+    /**
+     * _op_gsay_end (0x811D): end a gsay dialog.
+     *
+     * <p>The port has no dialog system, so nothing is ended.
+     */
+    @Override
+    public void opGsayEnd() {
     }
 
     /**
@@ -1920,6 +2010,16 @@ public class GameScriptApi extends UnsupportedScriptApi {
      */
     @Override
     public void animateStandObj(Object object) {
+    }
+
+    /**
+     * animate_stand_reverse_obj (0x80CD): make an object stand backwards.
+     *
+     * <p>The stand is played by the animation engine, and the port has no
+     * animation engine, so nothing is played.
+     */
+    @Override
+    public void animateStandReverseObj(Object object) {
     }
 
     /**
