@@ -3,6 +3,7 @@ package org.fallout2ce;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.fallout2ce.CombatDefs.Attack;
@@ -46,6 +47,9 @@ class GameAttackComputeTest {
         EventQueue.resetForTests();
         ScriptsState.resetForTests();
         Skill.resetForTests();
+        Stat.resetForTests();
+        TraitDefs.resetForTests();
+        GameRandom.resetProviders();
 
         Svga.scrSize.left = 0;
         Svga.scrSize.top = 0;
@@ -87,14 +91,24 @@ class GameAttackComputeTest {
     private void armDude() {
         assertEquals(0, Item.itemAdd(dude, gun, 1));
         gun.flags = gun.flags.or(ObjTypes.ObjectFlags.IN_RIGHT_HAND);
-        // The headless dude reads no light and only the proto's 25 small
-        // guns, so a shot would mostly miss (toHit -60 with the light
-        // penalty). Raise the skill to the maximum and light the target
-        // for the hit tests.
-        while (Skill.skillAddForce(dude, SkillDefs.Skill.SKILL_SMALL_GUNS.id()) == 0) {
+        // The Solar Scorcher uses energy weapons. Raise that skill, not an
+        // index into ATTACK_SUBTYPE: weaponGetSkillValue reads a skill value.
+        int skill = Item.weaponGetSkillForHitMode(gun,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
+        assertEquals(SkillDefs.Skill.SKILL_ENERGY_WEAPONS.id(), skill);
+        while (Skill.skillAddForce(dude, skill) == 0) {
             // raise to the maximum
         }
         ObjectSystem.objectSetLight(dog, 4, 0x10000);
+    }
+
+    @AfterEach
+    void cleanup() {
+        ProtoDb.resetForTests();
+        ObjectSystem.resetForTests();
+        Skill.resetForTests();
+        Stat.resetForTests();
+        GameRandom.resetProviders();
     }
 
     private static int findSeed(int min, int max, int threshold, boolean below) {
@@ -160,10 +174,15 @@ class GameAttackComputeTest {
     }
 
     @Test
-    void aGunInsideRangeIsNotRefused() {
+    void aGunHitUsesEnergySkillAndDamages() {
         armDude();
+        GameRandom.randomSeedPrerandom(1);
         Attack attack = attack(dude, dog,
             CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
         assertEquals(0, Combat.attackCompute(attack));
+        assertEquals(300, Item.weaponGetSkillValue(dude,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()));
+        assertTrue((attack.attackerFlags.bits() & Dam.HIT.bits()) != 0);
+        assertTrue(attack.defenderDamage > 0);
     }
 }

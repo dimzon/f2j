@@ -16,19 +16,19 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон) | **712, 0 падений, 0 ошибок, 3 skipped** | `target/surefire-reports` (195 файлов) |
+| Тесты (последний прогон, 2026-10-25) | **766 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v155.txt` (файлов v1..v155, нет v102, v144 — пропуски нумерации, не данных) | `docker/refharness/golden`, `check.sh` (с `diff -I '^block50=' -I '^INFO: Random number'` — см. §3.5) |
-| Активный фронт работ | Этап 3: каркас, читалки, `attackCompute` закрыты (до `6b3df2b5`); дальше — баллистика/криты-таблицы, AI/ввод; после — Этап 4 | `git log` |
+| Эталон харнеса | `golden/v156.txt`; новый `[combatattack]` вызывает настоящий C++ `_combat_attack` и callback завершения | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки и её завершение проверены C++-векторами; дальше — `_combat_attack_this` (выбор hit mode/прицела, проверка выстрела), критические таблицы, баллистика и AI | `Combat.combatAttack`, `GameCombatAttackTest` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
 фундаментальное ограничение KRUPPER.int — прыжок на вычисленный адрес,
 который скомпилированный код знать не может.
 
-**Важно: `PORTING.md` сейчас врёт.** Строка «Игра даёт все 161 билд-инов»
-не соответствует коду (147/161). Правильные числа — выше; PORTING.md
-требует правки в Этапе 0.
+Исходное расхождение `PORTING.md` (161 заявлено, 147 фактически) закрыто
+Этапами 0–1. Сейчас все 161 слота доступны; наличие слота само по себе
+не означает полной реализации всех ветвей игрового поведения.
 
 ## 2. Карта недостающих билд-инов: закрыта Этапом 1
 
@@ -121,6 +121,31 @@
 `scriptGetScript(sid)` + `scriptGetSid(program)` + `scriptAdd` + `objectSetScriptFromProto` (привязка при создании объекта) + `scriptGetSelf/scriptGetTarget/scriptGetSource/scriptGetFixedParam/scriptGetActionBeingUsed` + `scriptSetOverrides`. Векторы: `[scriptattach]` (golden `v151`). `GameScriptApi` теперь читает контекст из реестра; «голый» запуск программы (как в `[scriptrun]`) по-прежнему отвечает null/0 — тесты `ScriptApiTest`/`CompiledSweepTest` не изменились. Отложено: `scriptExecProc`, `scriptRemove`, detached-контексты, `_scr_find_str_run_info`-хвост (`localVarsCount` из `scripts.lst`), поиск «дома» для spatial-маркера.
 
 ### Этап 3 — боевой цикл — в работе
+Последний слайс (2026-10-25): `_combat_attack` → планирование → расход AP →
+`_combat_anim_finished` → расход аммо / `_apply_damage` → сброс главной атаки.
+Векторы `[combatattack]` (`v156`) снимаются с настоящего C++-кода через отдельный
+translation unit, включающий неизменённый `combat.cc`; подменяется только
+`_action_attack`, чтобы контролировать успех/отказ планирования без кадров.
+Это позволяет проверять и private `_gcsd`: объявление функции `static`
+не делает инструментирование исходника невозможным.
+
+- Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
+  через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar
+  Scorcher использует Energy Weapons; это проверяется регрессионным тестом.
+- Бонус точности `_gcsd` применяется до ограничения 95%; проверен выстрел,
+  который без бонуса имеет отрицательную точность, а с бонусом попадает.
+- Сохранён баг C++: два override-присваивания записывают `defenderFlags`,
+  второе (`targetResults`) затирает первое (`attackerResults`).
+- Headless-планировщик завершает pending-атаку на `combatTurnRun`, без
+  визуальных кадров. Отдельный тест подтверждает отсутствие двойного урона
+  и расхода патронов при повторном ожидании.
+- `_combat_attack_this`, выбор прицела интерфейсом, AI lastTarget,
+  `_scr_end_combat`, реальные анимации и баллистика ещё требуют порта.
+
+История предыдущих слайсов (формулировки «дальше» в ней относятся к тому
+снимку; актуальная очередь — `_combat_attack_this`, затем критические таблицы,
+баллистика и AI):
+
 Применение урона закрыто (`e3f6eb67`): `_check_for_death`/`attackComputeDeathFlags`, `_set_new_results`, `_damage_object`, `_apply_damage`, `_compute_dmg_damage` (через результат), `actionDamage` (не-анимированная ветка), `critterKill` полный, счётчики убийств/опыта; векторы `[combatdamage]` (golden `v152`). Боевой запрос закрыт (`311c3822`): `scriptsRequestCombat`/locked/clear/handle, `CombatStartData`, `combatState`/`isInCombat`, опкоды `attack`/`attack_setup` с гардами и quirk'ом override-результатов; векторы `[combatrequest]` (golden `v153`). Структура боя закрыта (`0f5c3284`): `_combat_begin`, `_combat_sequence_init`, `_combat_sequence`, `_combat_should_end`, `_compare_faster` — тесты `GameCombatSeqTest` (функции static, недоступны харнесу — задокументировано). Перк-ранги закрыты (`90f01002`): векторы `[perkrank]` (golden `v154`), `perkGetRank`/`perkHasRank`/`perkIsValid`. Скелет хода закрыт (`272e01cf`): `_combat_turn` (LOSE_TURN, script-процедура COMBAT+override, standup, PLAYER_TURN, завершения) и `_combat_standup` — тесты `GameCombatTurnTest`; ввод/AI/анимации — швы. Цикл боя закрыт (`e1512aa7`): `_combat` (цикл раундов), `_combat_set_move_all`, `_combat_over` — тесты `GameCombatLoopTest`. Читалки оружия для `attackCompute` закрыты (`36dbdacb`): векторы `[weapondata]` (golden `v155`), `critterGetAnimationForHitMode`, `weaponGetCriticalFailureType`, `weaponComputeAmmoCost`, `unarmedGetBonusCriticalChance` (BSS). `attackCompute` закрыт (`6b3df2b5`): single-shot ролл-путь, критич. провал по `_cf_table`, критич. хит (структура; таблицы эффектов отложены — крит = ванильный ×2), enhanced knockout, `_attackFindInvalidFlags`, `_do_random_cripple`, `_is_hit_from_front`, `explosionGetDamageType`; найден и исправлен баг порта `attackDetermineToHit` (база = `skillGetValue(attacker, weaponGetSkillValue(...))`). Отложено: spray/баллистика, перехват промаха, взрывы, таблицы критических хитов, `_combat_input`, `combat_ai`, `_combat_attack_this`. Дальше: `_combat_attack`.
 
 ### Этап 4 — игровой цикл

@@ -194,6 +194,23 @@
 
 ## Проверка
 
+### Выполнение атаки (2026-10-25)
+
+- `Combat.combatAttack` переносит `_combat_attack`: расчёт, бонусы начала
+  боя, планирование и расход AP. Патроны/HP меняются только в callback
+  завершения; headless-планировщик завершает его на `combatTurnRun`.
+- Эталон `[combatattack]` (`golden/v156.txt`) вызывает настоящий C++
+  `_combat_attack` и `_combat_anim_finished`. `combat_attack_probe.cc`
+  включает неизменённый `src/combat.cc`, заменяя только вызов очереди
+  анимаций на управляемый результат. Для остальных секций вызов идёт в
+  настоящий `_action_attack`; старые векторы сохранились.
+- `Item.weaponGetSkillValue` возвращает значение выбранного навыка,
+  `weaponGetSkillForHitMode` — его ID. Повторное применение `skillGetValue`
+  к первому результату неверно. Перк/тип атаки и nibble оружия не являются
+  взаимозаменяемыми индексами таблиц.
+- Не перенесены: интерфейсный выбор прицела/`_combat_attack_this`, реальные
+  кадры, AI lastTarget и `_scr_end_combat`; см. Этап 3 в `PLAN.md`.
+
 ```powershell
 mvn -pl engine test          # из java/
 powershell -File docker/refharness/check-refharness.ps1  # эталон цел

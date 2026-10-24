@@ -7238,6 +7238,91 @@ void sectionWeaponData()
     std::printf("bonuscrit=%d,%d,%d\n", critHammer, critKick, critPunch);
 }
 
+namespace fallout {
+int f2jReferenceCombatAttack(Object*, Object*, HitMode, HitLocation,
+    CombatStartData*, int, bool, Attack*);
+}
+
+void sectionCombatAttack()
+{
+    std::puts("[combatattack]");
+    fallout::Object* attacker = nullptr;
+    fallout::Object* defender = nullptr;
+    fallout::Object* weapon = nullptr;
+    fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&defender, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8)); // 10mm pistol
+    if (attacker == nullptr || defender == nullptr || weapon == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::objectSetLocation(attacker, 20100, 0, nullptr);
+    fallout::objectSetLocation(defender, 20101, 0, nullptr);
+    fallout::itemAdd(attacker, weapon, 1);
+    weapon->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+    fallout::Proto* proto = nullptr;
+    fallout::protoGetProto(attacker, &proto);
+    int savedSkill = proto->critter.data.skills[fallout::SKILL_SMALL_GUNS];
+    proto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 200;
+    unsigned int savedTime = fallout::gameTimeGetTime();
+    fallout::gameTimeSetTime(0); // no critical-roll promotion
+
+    std::printf("weapon-skill=%d value=%d null=%d\n",
+        (int)fallout::weaponGetSkillForHitMode(weapon, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY),
+        fallout::weaponGetSkillValue(attacker, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY),
+        fallout::weaponGetSkillValue(nullptr, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY));
+
+    auto run = [&](const char* name, fallout::CombatStartData* start, int ap,
+                   int schedule, bool finish, fallout::HitLocation location) {
+        attacker->data.critter.hp = 50;
+        attacker->data.critter.combat.ap = ap;
+        attacker->data.critter.combat.results = fallout::DAM_NONE;
+        defender->data.critter.hp = 50;
+        defender->data.critter.combat.results = fallout::DAM_NONE;
+        defender->data.critter.combat.damageLastTurn = 0;
+        fallout::ammoSetQuantity(weapon, 10);
+        fallout::randomSeedPrerandom(1);
+        fallout::Attack attack;
+        int rc = fallout::f2jReferenceCombatAttack(attacker, defender,
+            fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, location, start, schedule, finish, &attack);
+        std::printf("%s rc=%d ap=%d hit=%d damage=%d flags=%d used=%d ammo=%d hp=%d last=%d\n",
+            name, rc, attacker->data.critter.combat.ap,
+            (attack.attackerFlags & fallout::DAM_HIT) != fallout::DAM_NONE ? 1 : 0,
+            attack.defenderDamage, (int)attack.defenderFlags, attack.ammoQuantity,
+            fallout::ammoGetQuantity(weapon), defender->data.critter.hp,
+            defender->data.critter.combat.damageLastTurn);
+    };
+
+    run("normal", nullptr, 10, 0, false, fallout::HIT_LOCATION_TORSO);
+    run("aimed", nullptr, 10, 0, false, fallout::HIT_LOCATION_HEAD);
+    run("low-ap", nullptr, 2, 0, false, fallout::HIT_LOCATION_TORSO);
+    run("schedule-fail", nullptr, 10, -1, false, fallout::HIT_LOCATION_TORSO);
+    fallout::CombatStartData start{};
+    start.damageBonus = 100;
+    start.minDamage = 3;
+    start.maxDamage = 9;
+    start.overrideAttackResults = 1;
+    start.attackerResults = fallout::DAM_DEAD;
+    start.targetResults = fallout::DAM_KNOCKED_DOWN;
+    run("override", &start, 10, 0, false, fallout::HIT_LOCATION_TORSO);
+    start.damageBonus = -100;
+    run("minimum", &start, 10, 0, false, fallout::HIT_LOCATION_TORSO);
+    proto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 20;
+    start.damageBonus = 0;
+    start.minDamage = 0;
+    start.maxDamage = INT_MAX;
+    start.overrideAttackResults = 0;
+    start.accuracyBonus = 100;
+    run("accuracy-bonus", &start, 10, 0, false, fallout::HIT_LOCATION_TORSO);
+    proto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 200;
+    run("finished", nullptr, 10, 0, true, fallout::HIT_LOCATION_TORSO);
+    fallout::objectSetLocation(defender, 23000, 0, nullptr);
+    run("out-of-range", nullptr, 10, 0, false, fallout::HIT_LOCATION_TORSO);
+
+    proto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = savedSkill;
+    fallout::gameTimeSetTime(savedTime);
+}
+
 void sectionIsoRest()
 {
     std::puts("[isorest]");
@@ -10828,6 +10913,7 @@ int main()
     RUN_SECTION(ObjPlaceOnTile);
     RUN_SECTION(MapStart);
     RUN_SECTION(ScriptAttach);
+    RUN_SECTION(CombatAttack);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

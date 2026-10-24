@@ -1290,16 +1290,17 @@ public final class Item {
     }
 
     /**
-     * Port of {@code weaponGetSkillValue} (0x519160): the skill an
-     * attack with a weapon uses, from the weapon's attack type.
+     * Port of {@code weaponGetSkillValue} (0x478370): the value of the
+     * weapon's skill, selected by its extended-flags nibble and damage type.
      */
     public static int weaponGetSkillValue(GameObject critter, int hitMode) {
-        GameObject weapon = critterGetWeaponForHitMode(critter, hitMode);
-        int attackType = weaponGetAttackTypeForHitMode(weapon, hitMode);
-        if (weapon == null || attackType >= ATTACK_SKILL.length) {
-            return SkillDefs.Skill.SKILL_UNARMED.id();
+        if (critter == null) {
+            return 0;
         }
-        return ATTACK_SKILL[attackType];
+        GameObject weapon = critterGetWeaponForHitMode(critter, hitMode);
+        int skill = weapon == null ? SkillDefs.Skill.SKILL_UNARMED.id()
+                : weaponGetSkillForHitMode(weapon, hitMode);
+        return Skill.skillGetValue(critter, skill);
     }
 
     /** Port of {@code weaponGetDamage} (0x478448): the damage of an attack. */

@@ -125,7 +125,7 @@ public final class Combat {
         if (weapon == null || isUnarmedHitMode(hitMode)) {
             toHit = Skill.skillGetValue(attacker, SkillDefs.Skill.SKILL_UNARMED.id());
         } else {
-            toHit = Skill.skillGetValue(attacker, Item.weaponGetSkillValue(attacker, hitMode));
+            toHit = Item.weaponGetSkillValue(attacker, hitMode);
 
             int attackType = Item.weaponGetAttackTypeForHitMode(weapon, hitMode);
             if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
@@ -209,6 +209,9 @@ public final class Combat {
             toHit += 40;
         }
 
+        if (gcsd != null) {
+            toHit += gcsd.accuracyBonus;
+        }
         if (toHit > 95) {
             toHit = 95;
         }
@@ -561,6 +564,129 @@ public final class Combat {
     static int combatElev;
     static final CombatDefs.Attack mainAttack = new CombatDefs.Attack();
 
+    /** Scheduling boundary of {@code _action_attack}; completion must be later. */
+    @FunctionalInterface
+    interface AttackScheduler {
+        int schedule(CombatDefs.Attack attack);
+    }
+
+    // NOTE: managed headless scheduling has no visual frames. It starts one
+    // pending animation; combatTurnRun completes it at the engine's wait point.
+    private static final AttackScheduler HEADLESS_ATTACK_SCHEDULER = attack -> {
+        combatAnimBegin();
+        return 0;
+    };
+    static AttackScheduler attackScheduler = HEADLESS_ATTACK_SCHEDULER;
+    static int combatTurnRunning;
+    static boolean combatCleanupEnabled;
+    static boolean combatCallDisplay;
+
+    /**
+     * {@code _combat_attack} (src/combat.cc:3631): compute, apply start
+     * modifiers, schedule, then spend AP. Ammo and HP change on completion.
+     */
+    public static int combatAttack(GameObject attacker, GameObject defender,
+            int hitMode, int hitLocation) {
+        // NOTE: the headless scheduler supports one outstanding main attack.
+        // Reject another submission rather than overwriting its callback data.
+        if (combatCleanupEnabled || attacker == null || defender == null) {
+            return -1;
+        }
+        if (attacker != ObjectSystem.getDude()
+                && hitMode == CombatDefs.HitMode.HIT_MODE_PUNCH.id()
+                && GameRandom.randomBetween(1, 4) == 1) {
+            FrmId base = FrmId.ofFid(attacker.fid);
+            FrmId kick = FrmId.ofObject(base.objectType().value(), base.frameId(),
+                    AnimationType.KICK_LEG.value(), base.weaponAnimation(), base.rotation());
+            if (kick.exist()) {
+                hitMode = CombatDefs.HitMode.HIT_MODE_KICK.id();
+            }
+        }
+
+        attackInit(mainAttack, attacker, defender, hitMode, hitLocation);
+        if (attackCompute(mainAttack) == -1) {
+            return -1;
+        }
+        if (gcsd != null) {
+            mainAttack.defenderDamage += gcsd.damageBonus;
+            if (mainAttack.defenderDamage < gcsd.minDamage) {
+                mainAttack.defenderDamage = gcsd.minDamage;
+            }
+            if (mainAttack.defenderDamage > gcsd.maxDamage) {
+                mainAttack.defenderDamage = gcsd.maxDamage;
+            }
+            if (gcsd.overrideAttackResults != 0) {
+                // Original bug: both writes target defenderFlags. Preserve it.
+                mainAttack.defenderFlags = gcsd.attackerResults;
+                mainAttack.defenderFlags = gcsd.targetResults;
+            }
+        }
+
+        boolean aiming = mainAttack.defenderHitLocation != CombatDefs.HitLocation.HIT_LOCATION_TORSO.id()
+                && mainAttack.defenderHitLocation != CombatDefs.HitLocation.HIT_LOCATION_UNCALLED.id();
+        // Interface-selected aiming for the dude's torso shot is not yet
+        // available; it defaults to false at this boundary.
+        int actionPoints = Item.weaponGetActionPointCost(attacker, mainAttack.hitMode, aiming);
+        if (attackScheduler.schedule(mainAttack) == -1) {
+            return -1;
+        }
+        if (actionPoints > attacker.data.critter.combat.ap) {
+            attacker.data.critter.combat.ap = 0;
+        } else {
+            attacker.data.critter.combat.ap -= actionPoints;
+        }
+        if (attacker == ObjectSystem.getDude()) {
+            Critter.critterSetWhoHitMe(attacker, defender);
+        }
+        // explosionSettingsReset / aiInfoSetLastTarget and UI updates are
+        // deferred with their respective modules.
+        combatCallDisplay = true;
+        combatCleanupEnabled = true;
+        return 0;
+    }
+
+    /** {@code _combat_anim_begin} (src/combat.cc:5503). */
+    static void combatAnimBegin() {
+        combatTurnRunning++;
+        // First animation of a dude attack also disables the UI in C++.
+    }
+
+    /** {@code _combat_anim_finished} (src/combat.cc:5515), observable cleanup. */
+    static void combatAnimFinished() {
+        combatTurnRunning--;
+        if (combatTurnRunning != 0 || !combatCleanupEnabled) {
+            return;
+        }
+        // Clear before damage scripts run, as in C++; they can issue calls.
+        combatCleanupEnabled = false;
+        GameObject weapon = Item.getWeaponForHitMode(mainAttack.attacker, mainAttack.hitMode);
+        if (weapon != null && Item.ammoGetCapacity(weapon) > 0) {
+            Item.ammoSetQuantity(weapon, Item.ammoGetQuantity(weapon) - mainAttack.ammoQuantity);
+        }
+        // _combat_display is battle text/UI. The flag still clears once.
+        combatCallDisplay = false;
+        applyDamage(mainAttack, true);
+
+        GameObject attacker = mainAttack.attacker;
+        // _scr_end_combat / _combat_ending_guy belongs to the turn/AI slice.
+        attackInit(mainAttack, attacker, null, CombatDefs.HitMode.HIT_MODE_PUNCH.id(),
+                CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
+        int results = attacker.data.critter.combat.results.bits();
+        if ((results & (Dam.KNOCKED_OUT.bits() | Dam.KNOCKED_DOWN.bits())) != 0
+                && (results & (Dam.KNOCKED_OUT.bits() | Dam.DEAD.bits() | Dam.LOSE_TURN.bits())) == 0) {
+            combatStandup(attacker);
+        }
+    }
+
+    /** Headless counterpart of the animation wait in {@code _combat_turn_run}. */
+    static void combatTurnRun() {
+        if (attackScheduler == HEADLESS_ATTACK_SCHEDULER) {
+            while (combatTurnRunning > 0) {
+                combatAnimFinished();
+            }
+        }
+    }
+
     /**
      * Port of {@code _combat_standup} (0x426640): stand a prone critter
      * up, costing 3 AP (1 with Quick Recovery for the dude). The standing
@@ -584,7 +710,7 @@ public final class Combat {
         // _dude_standup: the standing animation is a render seam.
         a1.data.critter.combat.results = a1.data.critter.combat.results
                 .and(ObjTypes.Dam.KNOCKED_DOWN.not());
-        // _combat_turn_run: animation loop seam.
+        combatTurnRun();
     }
 
     /** Seam for {@code _combat_input} (player turn loop, game phase). */
@@ -660,7 +786,7 @@ public final class Combat {
                 }
             }
 
-            // _combat_turn_run: animation loop seam.
+            combatTurnRun();
 
             if (obj == ObjectSystem.getDude()) {
                 // UI cleanup seams; turnObj goes null and back to dude.
@@ -1564,5 +1690,9 @@ public final class Combat {
         combatTurnObj = null;
         combatFreeMove = 0;
         combatElev = 0;
+        combatTurnRunning = 0;
+        combatCleanupEnabled = false;
+        combatCallDisplay = false;
+        attackScheduler = HEADLESS_ATTACK_SCHEDULER;
     }
 }
