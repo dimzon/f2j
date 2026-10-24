@@ -214,6 +214,51 @@ public final class Inventory {
         return null;
     }
 
+    /**
+     * Port of {@code inventoryUnequipFunc} (src/inventory.cc 0x472A54),
+     * the slice the INVEN_UNWIELD_WHO metarule uses: take what a critter
+     * wields off its hand.
+     *
+     * <p>Animations and interface refresh are not ported, so the wield
+     * change happens without them; the hook result is ignored the way C
+     * ignores it in the drop-all path. A non-dude critter also clears the
+     * left hand's weapon flag, which the original does for its NPCs.
+     */
+    public static int inventoryUnequipFunc(GameObject critter) {
+        Hand hand = Hand.HAND_RIGHT;
+        if (isDude(critter)) {
+            if (interfaceCurrentHand() == Hand.HAND_LEFT) {
+                hand = Hand.HAND_LEFT;
+            }
+        }
+
+        GameObject item = hand == Hand.HAND_RIGHT
+            ? critterGetItem2(critter)
+            : critterGetItem1(critter);
+        if (item == null) {
+            return 0;
+        }
+
+        InvenSlot invenSlot = hand == Hand.HAND_RIGHT
+            ? InvenSlot.RIGHT_HAND : InvenSlot.LEFT_HAND;
+        scriptHooksInvenWield(critter, item, invenSlot);
+
+        item.flags = item.flags.and(ObjectFlags.IN_ANY_HAND.not());
+
+        if (ProtoId.ofGameObject(item).matchesItemType(ItemProtoTypeId.LitFlare)) {
+            critterRestoreLightWithoutFlare(critter);
+        }
+
+        if (!isDude(critter)) {
+            GameObject leftItem = critterGetItem1(critter);
+            if (leftItem != null && Item.itemGetType(leftItem) == ItemType.ITEM_TYPE_WEAPON) {
+                leftItem.flags = leftItem.flags.and(ObjectFlags.IN_LEFT_HAND.not());
+            }
+        }
+
+        return 0;
+    }
+
     // 0x471C08 critter_get_armor (worn flag scan).
     public static GameObject critterGetArmor(GameObject critter) {
         for (InventoryItem entry : critter.data.inventory.items) {

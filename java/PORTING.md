@@ -216,8 +216,9 @@ powershell -File docker/refharness/check-refharness.ps1  # эталон цел
   — мир 1400×1500 из `data\worldmap.txt`; внутри двигает, вне и до
   загрузки отказывает.
 - op_metarule (0x810B) реализован для правил, не требующих непортированных
-  подсистем: партия, очередь (DRUG), навык-тег, фильтры, тип убийства и
-  мира — `AREA_KNOWN` (17), `MAP_KNOWN` (19),
+  подсистем: партия, очередь (DRUG), навык-тег, фильтры, тип убийства,
+  инвентарь (`DROP_ALL_INVEN` 42, `INVEN_UNWIELD_WHO` 43, `WEAPON_DAMAGE_TYPE`
+  49, `CRITTER_BARTERS` 50) и мир — `AREA_KNOWN` (17), `MAP_KNOWN` (19),
   `GET_WORLDMAP_XPOS/YPOS` (44/45) и `CURRENT_TOWN` (46); чтения мира
   на `[worldmaptiles]` golden/v141 (стартовая позиция 173,122, область
   не задана до движения партии). Правила машины и лифта — 0.

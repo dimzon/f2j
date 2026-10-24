@@ -2184,9 +2184,8 @@ public class GameScriptApi extends UnsupportedScriptApi {
      *
      * <p>The rule is the number the game gives it, and the parameter is the
      * number or the object it asks about. The rules that need the party,
-     * the queue, the skills, the settings, the kill type of a critter or
-     * the worldmap - how much the player knows of an area, whether a map
-     * is known, where the party stands and which area that is - are
+     * the queue, the skills, the settings, the kill type of a critter,
+     * the inventory (drop everything, unwield a hand) or the worldmap are
      * answered; the ones that need the car or the elevator are not ported
      * and answer 0.
      */
@@ -2207,6 +2206,17 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return MapAreas.wmMapIsKnown(param.integerValue) ? 1 : 0;
         case 40: // METARULE_SKILL_CHECK_TAG
             return Skill.isTagged(param.integerValue) ? 1 : 0;
+        case 42: // METARULE_DROP_ALL_INVEN
+            if (param.pointerValue instanceof ObjTypes.GameObject) {
+                ObjTypes.GameObject object = (ObjTypes.GameObject) param.pointerValue;
+                return Item.itemDropAll(object, object.tile);
+            }
+            return -1;
+        case 43: // METARULE_INVEN_UNWIELD_WHO
+            if (param.pointerValue instanceof ObjTypes.GameObject) {
+                return Inventory.inventoryUnequipFunc((ObjTypes.GameObject) param.pointerValue);
+            }
+            return -1;
         case 44: // METARULE_GET_WORLDMAP_XPOS
             return WorldmapGenData.wmGetPartyWorldPosX();
         case 45: // METARULE_GET_WORLDMAP_YPOS
@@ -2217,6 +2227,34 @@ public class GameScriptApi extends UnsupportedScriptApi {
             return Settings.settings.preferences.language_filter ? 1 : 0;
         case 48: // METARULE_VIOLENCE_FILTER
             return Settings.settings.preferences.violence_level;
+        case 49: // METARULE_WEAPON_DAMAGE_TYPE
+            if (param.pointerValue instanceof ObjTypes.GameObject) {
+                ObjTypes.GameObject object = (ObjTypes.GameObject) param.pointerValue;
+                if (ProtoTypes.ProtoId.ofGameObject(object).objectType()
+                        == ObjTypes.ObjectType.OBJ_TYPE_ITEM) {
+                    if (Item.itemGetType(object) == ProtoTypes.ItemType.ITEM_TYPE_WEAPON) {
+                        return Item.weaponGetDamageType(null, object).id();
+                    }
+                } else {
+                    if (FrmId.ofFid(object.fid).frameId() == ArtDefs.MiscFrameId.RocketExplosion.id()) {
+                        return ProtoTypes.DamageType.DAMAGE_TYPE_EXPLOSION.id();
+                    }
+                }
+            }
+            return 0;
+        case 50: // METARULE_CRITTER_BARTERS
+            if (param.pointerValue instanceof ObjTypes.GameObject) {
+                ObjTypes.GameObject object = (ObjTypes.GameObject) param.pointerValue;
+                ProtoTypes.ProtoId protoId = ProtoTypes.ProtoId.ofGameObject(object);
+                if (protoId.objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+                    ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+                    if (ProtoDb.protoGetProto(protoId, slot) != -1) {
+                        return (slot[0].critter.data.flags.bits()
+                            & ObjTypes.CritterFlags.BARTER.bits()) != 0 ? 1 : 0;
+                    }
+                }
+            }
+            return 0;
         case 51: // METARULE_CRITTER_KILL_TYPE
             if (param.pointerValue instanceof ObjTypes.GameObject) {
                 return Critter.critterGetKillType((ObjTypes.GameObject) param.pointerValue).id();
