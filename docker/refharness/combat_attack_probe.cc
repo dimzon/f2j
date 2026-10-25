@@ -169,4 +169,20 @@ void f2jReferenceRangedMiss(Object* attacker, Object* defender, Object* weapon,
     *snapshot = attack;
 }
 
+// Real _combat_player_knocked_out_by with arranged dude/ending-guy state.
+int f2jReferencePlayerKnockedOutBy(int dudeDead)
+{
+    if (dudeDead != 0) {
+        gDude->data.critter.combat.results |= DAM_DEAD;
+    } else {
+        gDude->data.critter.combat.results &= ~DAM_DEAD;
+    }
+    return _combat_player_knocked_out_by();
+}
+
+void f2jReferenceSetEndingGuy(Object* guy)
+{
+    _combat_ending_guy = guy;
+}
+
 } // namespace fallout

@@ -115,6 +115,11 @@ public final class Map {
     /** Script-side map id ({@code gMapSid}, fresh-process mirror: -1). */
     private static int mapSid = -1;
 
+    /** Port of {@code gMapSid} read for combat-end scripts. */
+    static int mapSid() {
+        return mapSid;
+    }
+
     /** Square grids for {@link TileMath#tileInit} (C passes {@code _square}). */
     static TileData[] squareGrids() {
         return square;

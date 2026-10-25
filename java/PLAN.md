@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-25) | **773 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-25) | **776 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v161.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[rangedmiss]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, ветку случайной траектории/гранаты, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, случайные траектории, взрывные-эффекты и spray проверены C++-векторами; дальше — `_combat_attack_this` с интерфейсом и AI | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.applyRangedMissTrajectory`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
+| Эталон харнеса | `golden/v162.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[rangedmiss]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, ветку случайной траектории/гранаты, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя (ending guy), случайные траектории, взрывные-эффекты и spray проверены C++-векторами; дальше — AI (combat_ai) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `Combat.combatToHit`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -177,6 +177,19 @@ tile 2301/2102/1902, без попаданий) и дальнобойная (til
 полный `_make_straight_path_func`-обход с возможным случайным попаданием в
 стороннюю цель). Остаются швами: `noDamage`/`isFromAttacker` и взрывной
 рендеринг.
+
+Следующий слайс (2026-10-25): завершение боя.
+Векторы `[combatend]` (`v162`) снимают `_combat_player_knocked_out_by` с
+напрямую расставленным состоянием: мёртвый dude → -1, пустой ending guy → -1,
+ending guy с team=3 → 3, снова мёртвый → -1. Портированы
+`combatPlayerKnockedOutBy`, поле `combatEndingGuy` (сбрасывается в combatBegin/
+resetForTests и выставляется в `combatAnimFinished` после `scrEndCombat`),
+`scrEndCombat` (guard по `gMapSid`; полный сценарный путь с картой-скриптом
+остаётся швом, т.к. харнесу некуда зарегистрировать dude) и
+`combatToHit` (`_combat_to_hit`, шов hit-mode как в `combatAttackThis`; точное
+число точности для dude не пиннится — харнессный C++ `objectSetLocation(gDude)`
+segfault'ит headless, поэтому тест сверяет `combatToHit` с прямым вызовом
+`attackDetermineToHit`).
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar

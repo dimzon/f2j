@@ -431,6 +431,8 @@ public final class Combat {
 
         combatState |= COMBAT_STATE_IN_COMBAT;
 
+        combatEndingGuy = null;
+
         // _combat_begin_extra(attacker): attackInit on the main attack and
         // the AI begin are game-phase seams.
     }
@@ -585,6 +587,8 @@ public final class Combat {
     static int combatTurnRunning;
     static boolean combatCleanupEnabled;
     static boolean combatCallDisplay;
+    /** {@code _combat_ending_guy} (src/combat.cc): who ended the fight. */
+    static GameObject combatEndingGuy;
 
     /**
      * {@code _combat_attack} (src/combat.cc:3631): compute, apply start
@@ -673,7 +677,16 @@ public final class Combat {
         applyDamage(mainAttack, true);
 
         GameObject attacker = mainAttack.attacker;
-        // _scr_end_combat / _combat_ending_guy belongs to the turn/AI slice.
+        if (scrEndCombat()) {
+            GameObject dude = ObjectSystem.getDude();
+            if ((dude.data.critter.combat.results.bits() & Dam.KNOCKED_OUT.bits()) != 0) {
+                if (attacker.data.critter.combat.team == dude.data.critter.combat.team) {
+                    combatEndingGuy = dude.data.critter.combat.whoHitMe;
+                } else {
+                    combatEndingGuy = attacker;
+                }
+            }
+        }
         attackInit(mainAttack, attacker, null, CombatDefs.HitMode.HIT_MODE_PUNCH.id(),
                 CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
         int results = attacker.data.critter.combat.results.bits();
@@ -681,6 +694,66 @@ public final class Combat {
                 && (results & (Dam.KNOCKED_OUT.bits() | Dam.DEAD.bits() | Dam.LOSE_TURN.bits())) == 0) {
             combatStandup(attacker);
         }
+    }
+
+    /** {@code _combat_player_knocked_out_by} (0x426D94). */
+    public static int combatPlayerKnockedOutBy() {
+        GameObject dude = ObjectSystem.getDude();
+        if ((dude.data.critter.combat.results.bits() & Dam.DEAD.bits()) != 0) {
+            return -1;
+        }
+        if (combatEndingGuy == null) {
+            return -1;
+        }
+        return combatEndingGuy.data.critter.combat.team;
+    }
+
+    /**
+     * Port of {@code _scr_end_combat} (src/scripts.cc:3345): run the map
+     * script's COMBAT proc with the team that knocked the dude out and
+     * report whether it overrode the ending. Without a loaded map script
+     * ({@code gMapSid} fresh-mirror -1) it returns false, like C.
+     */
+    static boolean scrEndCombat() {
+        int mapSid = Map.mapSid();
+        if (mapSid == 0 || mapSid == -1) {
+            return false;
+        }
+        int team = combatPlayerKnockedOutBy();
+        if (team == -1) {
+            return false;
+        }
+        ObjectSystem.scriptSetFixedParam(mapSid, team);
+        ObjectSystem.scriptExecProc(mapSid, ObjectSystem.SCRIPT_PROC_COMBAT);
+        boolean success = false;
+        ObjectSystem.Script[] after = new ObjectSystem.Script[1];
+        if (ObjectSystem.scriptGetScript(mapSid, after) != -1) {
+            if (after[0].scriptOverrides != 0) {
+                success = true;
+            }
+        }
+        return success;
+    }
+
+    /**
+     * Port of {@code _combat_to_hit} (0x426744): the accuracy shown for a
+     * target. The interface-derived hit mode uses the same headless primary
+     * hand seam as {@link #combatAttackThis}.
+     */
+    public static boolean combatToHit(GameObject target, int[] accuracy) {
+        GameObject dude = ObjectSystem.getDude();
+        int hitMode = CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+        boolean aiming = false;
+        if (Interface.interfaceGetCurrentHand() == Inventory.Hand.HAND_LEFT) {
+            hitMode = CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id();
+        }
+        if (combatCheckBadShot(dude, target, hitMode, aiming)
+                != CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK) {
+            return false;
+        }
+        accuracy[0] = attackDetermineToHit(dude, dude.tile, target,
+                CombatDefs.HitLocation.HIT_LOCATION_UNCALLED.id(), hitMode, true);
+        return true;
     }
 
     /** Headless counterpart of the animation wait in {@code _combat_turn_run}. */
@@ -2263,6 +2336,7 @@ public final class Combat {
         combatTurnRunning = 0;
         combatCleanupEnabled = false;
         combatCallDisplay = false;
+        combatEndingGuy = null;
         attackScheduler = HEADLESS_ATTACK_SCHEDULER;
     }
 }

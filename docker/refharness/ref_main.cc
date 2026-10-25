@@ -7246,6 +7246,8 @@ int f2jReferenceCriticalHit(Object*, Object*, HitMode, HitLocation, int, Attack*
 int f2jReferenceSpray(Object*, Object*, Object*, HitMode, int, int, int*, Attack*);
 void f2jReferenceExplosionExtras(Object*, Object*, Object*, HitMode, int, Attack*);
 void f2jReferenceRangedMiss(Object*, Object*, Object*, HitMode, int, bool, Attack*);
+int f2jReferencePlayerKnockedOutBy(int);
+void f2jReferenceSetEndingGuy(Object*);
 }
 
 void sectionCombatBadShot()
@@ -7464,6 +7466,30 @@ void sectionRangedMiss()
                 snapshot.defenderDamage, snapshot.defender->pid);
         }
     }
+}
+
+void sectionCombatEnd()
+{
+    std::puts("[combatend]");
+    if (fallout::gDude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+    std::printf("dead1=%d\n", fallout::f2jReferencePlayerKnockedOutBy(1));
+    std::printf("dead0=%d\n", fallout::f2jReferencePlayerKnockedOutBy(0));
+
+    fallout::Object* attacker = nullptr;
+    fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+    if (attacker == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    attacker->data.critter.combat.team = 3;
+    fallout::f2jReferenceSetEndingGuy(attacker);
+    std::printf("team=%d\n", fallout::f2jReferencePlayerKnockedOutBy(0));
+    fallout::f2jReferenceSetEndingGuy(nullptr);
+    std::printf("team-null=%d\n", fallout::f2jReferencePlayerKnockedOutBy(0));
+    std::printf("dead-team=%d\n", fallout::f2jReferencePlayerKnockedOutBy(1));
 }
 
 void sectionCriticalHit()
@@ -11166,6 +11192,7 @@ int main()
     RUN_SECTION(ScriptAttach);
     RUN_SECTION(CombatBadShot);
     RUN_SECTION(CriticalHit);
+    RUN_SECTION(CombatEnd);
     RUN_SECTION(RangedMiss);
     RUN_SECTION(ExplosionExtras);
     RUN_SECTION(Spray);
