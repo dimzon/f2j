@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-25) | **787 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-26) | **788 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v164.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[rangedmiss]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, ветку случайной траектории/гранаты, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений и баллистика проверены C++-векторами; дальше — остаток дерева AI-решений (движение/атака/химия) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
+| Эталон харнеса | `golden/v165.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия и баллистика проверены C++-векторами; дальше — остаток дерева AI-решений (движение/атака/химия) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -225,8 +225,33 @@ segfault'ит headless, поэтому тест сверяет `combatToHit` с 
 Прото-мутации `[ai]` (STR=5, AC-бонус 50) общие для всего харнесс-процесса,
 поэтому тесты зеркалят их явно; art-гейт требует boot как в харнессе
 (xbase master/patch/critter + `artInit` + `tileInit` + `partyMembersInit`).
+Следующий слайс (2026-10-26): AI-инвентарь/выбор оружия.
+Векторы `[aiinv]` (`v165`) снимают настоящий C++: `weaponCanBeReloadedWith`
+(тип/калибр/ammo-тип, solar-scorcher light-гейт, правило «непустое оружие»),
+`aiHaveAmmo` (поиск ammo, scorcher, right-hand unequip по дальности),
+`_ai_best_weapon` (порядок `_weapPrefOrderings`, tie-break по урону/цене,
+hidden/flare/random-режимы, safety-invalidate), `_ai_search_inven_weap`
+(body/AP/навык/ammo-гейты, right-hand skip), `_ai_search_inven_armor`
+(party/body, броневой счёт), `aiCanUseItem` (chem-desire, body/kill/INT,
+healing, HP-пороги), `_combat_safety_invalidate_weapon` (AutoCannon,
+explosive-radius vs INT/дистанция, burst/continuous spray) и
+`_ai_pick_hit_mode` (area-политика, burst-disable, предпочтение, дистанция,
+AP, THROW-гейт).
+Портированы `Item.weaponCanBeReloadedWith[ReplacingAmmo]`,
+`CombatAi.aiHaveAmmo`, `aiBestWeapon`, `aiSearchInvenWeap`,
+`aiSearchInvenArmor`, `aiCanUseItem`, `aiPickHitMode`, `aiIs/Set/RemoveBurstDisabled`,
+`Inventory.inventoryUnequip(critter, hand)` и `Combat.combatSafetyInvalidateWeapon`/
+`determineToHit`.
+Найдено и исправлено: `aiPickHitMode` не имел финального THROW-гейта
+(`attackType != THROW || aiSearchInvenWeap(...) != null || statRoll <= 1`), а
+несуществующие поля `best_weapon`/`area_attack_mode`/`chem_use` теперь читаются
+из `AiPacket` напрямую. Расхождение по `pick-tohit=-22` (против 34 в Java)
+вызвано глобальной мутацией прото/сложности в харнесс-процессе до `[aiinv]`
+(AC-бонус → 50, unarmed-скилл 34 vs 50), а не портом: в изоляции гейт
+BE_SURE остаётся закрытым, что и проверяется.
 Отложено: само дерево решений `_combat_ai`/`_ai_*` (движение, атака, химия),
-`_ai_best_weapon`, `_ai_search_inven_*`, `aiLoad/aiSave`.
+`_ai_search_environ`, `_ai_retrieve_object`, `_ai_switch_weapons`,
+`aiLoad/aiSave`.
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar

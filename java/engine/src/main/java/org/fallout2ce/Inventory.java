@@ -259,6 +259,34 @@ public final class Inventory {
         return 0;
     }
 
+    /**
+     * Port of {@code inventoryUnequip} (src/inventory.cc 0x472A54): unwield
+     * the given hand's item, matching the C++ {@code inventoryUnequipFunc}
+     * shape (the hand is explicit, no extra left-hand clearing). Animations
+     * are omitted headless, and the hook result is ignored the way C ignores
+     * it in the drop-all path.
+     */
+    public static int inventoryUnequip(GameObject critter, Hand hand) {
+        GameObject item = hand == Hand.HAND_RIGHT
+            ? critterGetItem2(critter)
+            : critterGetItem1(critter);
+        if (item == null) {
+            return 0;
+        }
+
+        InvenSlot invenSlot = hand == Hand.HAND_RIGHT
+            ? InvenSlot.RIGHT_HAND : InvenSlot.LEFT_HAND;
+        scriptHooksInvenWield(critter, item, invenSlot);
+
+        item.flags = item.flags.and(ObjectFlags.IN_ANY_HAND.not());
+
+        if (ProtoId.ofGameObject(item).matchesItemType(ItemProtoTypeId.LitFlare)) {
+            critterRestoreLightWithoutFlare(critter);
+        }
+
+        return 0;
+    }
+
     // 0x471C08 critter_get_armor (worn flag scan).
     public static GameObject critterGetArmor(GameObject critter) {
         for (InventoryItem entry : critter.data.inventory.items) {

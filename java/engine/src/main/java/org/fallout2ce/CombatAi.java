@@ -1,5 +1,8 @@
 package org.fallout2ce;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.fallout2ce.Config.Cfg;
 import org.fallout2ce.Config.ScopedConfig;
 import org.fallout2ce.ObjTypes.Dam;
@@ -26,6 +29,16 @@ public final class CombatAi {
     }
 
     public static final int AI_PACKET_CHEM_PRIMARY_DESIRE_COUNT = 3;
+
+    // kChemUseStims*HpRatio (src/combat_ai.cc): the heal threshold used by
+    // aiCanUseItem for each chem-use mode.
+    private static final int K_CHEM_USE_STIMS_WHEN_HURT_LITTLE_HP_RATIO = 60;
+    private static final int K_CHEM_USE_STIMS_WHEN_HURT_LOTS_HP_RATIO = 30;
+    private static final int K_CHEM_USE_STIMS_HP_RATIO = 50;
+
+    // burstDisabledCritters (src/combat_ai.cc): critters whose burst/continuous
+    // secondary mode is suppressed.
+    private static final Set<GameObject> burstDisabledCritters = new HashSet<>();
 
     /** {@code AiMessageRange} (src/combat_ai.h). */
     public static final class AiMessageRange {
@@ -553,10 +566,529 @@ public final class CombatAi {
         }
     }
 
+    /** {@code aiGetChemUse} (src/combat_ai.cc 0x4280F0). */
+    public static int aiGetChemUse(GameObject obj) {
+        return aiGetPacket(obj).chemUse;
+    }
+
+    /** {@code aiHaveAmmo} (src/combat_ai.cc 0x4292D4). */
+    public static boolean aiHaveAmmo(GameObject critter, GameObject weapon, GameObject[] ammoPtr) {
+        if (ammoPtr != null) {
+            ammoPtr[0] = null;
+        }
+
+        if (ProtoTypes.ProtoId.ofGameObject(weapon)
+                .matchesItemType(ProtoTypes.ItemProtoTypeId.SolarScorcher)) {
+            return Light.lightGetAmbientIntensity() > Light.LIGHT_INTENSITY_MAX * 0.95;
+        }
+
+        int[] inventoryItemIndex = new int[] { -1 };
+        while (true) {
+            GameObject ammo = Inventory.inventoryFindByType(critter,
+                    ProtoTypes.ItemType.ITEM_TYPE_AMMO, inventoryItemIndex);
+            if (ammo == null) {
+                break;
+            }
+
+            if (Item.weaponCanBeReloadedWith(weapon, ammo)) {
+                if (ammoPtr != null) {
+                    ammoPtr[0] = ammo;
+                }
+                return true;
+            }
+
+            if (Item.weaponGetAnimationCode(weapon) != ArtDefs.WeaponAnimation.None.id()) {
+                if (Item.weaponGetRange(critter,
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) < 3) {
+                    Inventory.inventoryUnequip(critter, Inventory.Hand.HAND_RIGHT);
+                }
+            } else {
+                Inventory.inventoryUnequip(critter, Inventory.Hand.HAND_RIGHT);
+            }
+        }
+
+        return false;
+    }
+
+    /** {@code _ai_best_weapon} (src/combat_ai.cc 0x4293BC). */
+    public static GameObject aiBestWeapon(GameObject attacker, GameObject weapon1,
+            GameObject weapon2, GameObject defender) {
+        if (attacker == null) {
+            return null;
+        }
+
+        AiPacket ai = aiGetPacket(attacker);
+        if (ai.bestWeapon == CombatAiDefs.BestWeapon.BEST_WEAPON_RANDOM.id()) {
+            return GameRandom.randomBetween(1, 100) <= 50 ? weapon1 : weapon2;
+        }
+
+        boolean ignoreWeapon1 = false;
+        int order2 = 999;
+        int order1 = 999;
+        int avgDamage1 = 0;
+
+        CombatDefs.Attack attack = new CombatDefs.Attack();
+        Combat.attackInit(attack, attacker, defender,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(),
+                CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
+
+        int attackType1 = Item.AttackType.ATTACK_TYPE_INVALID.id();
+        int distance = 0;
+        int attackType2 = Item.AttackType.ATTACK_TYPE_INVALID.id();
+        int avgDamage2 = 0;
+
+        boolean ignoreWeapon2 = false;
+
+        if (weapon1 != null) {
+            attackType1 = Item.weaponGetAttackTypeForHitMode(weapon1,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
+            int[] minDamage = new int[1];
+            int[] maxDamage = new int[1];
+            if (Item.weaponGetDamageMinMax(weapon1, minDamage, maxDamage) == -1) {
+                return null;
+            }
+
+            avgDamage1 = (maxDamage[0] + minDamage[0]) / 2;
+            if (Item.weaponGetDamageRadius(weapon1,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) > 0
+                    && defender != null) {
+                attack.weapon = weapon1;
+                Combat.computeExplosionOnExtras(attack, false,
+                        Item.weaponIsGrenade(weapon1), true);
+                avgDamage1 *= attack.extrasLength + 1;
+            }
+
+            if (Item.weaponGetPerk(weapon1) != PerkDefs.Perk.PERK_INVALID) {
+                avgDamage1 *= 2;
+            }
+
+            if (defender != null) {
+                if (Combat.combatSafetyInvalidateWeapon(attacker, weapon1,
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(),
+                        defender, null)) {
+                    ignoreWeapon1 = true;
+                }
+            }
+
+            if (Item.itemIsHidden(weapon1)) {
+                return weapon1;
+            }
+        } else {
+            distance = ObjectSystem.objectGetDistanceBetween(attacker, defender);
+            if (Item.weaponGetRange(attacker,
+                    CombatDefs.HitMode.HIT_MODE_PUNCH.id()) >= distance) {
+                attackType1 = Item.AttackType.ATTACK_TYPE_UNARMED.id();
+            }
+        }
+
+        if (!ignoreWeapon1) {
+            for (int index = 0; index < Item.ATTACK_TYPE_COUNT; index++) {
+                if (WEAP_PREF_ORDERINGS[ai.bestWeapon + 1][index] == attackType1) {
+                    order1 = index;
+                    break;
+                }
+            }
+        }
+
+        if (weapon2 != null) {
+            attackType2 = Item.weaponGetAttackTypeForHitMode(weapon2,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
+            int[] minDamage = new int[1];
+            int[] maxDamage = new int[1];
+            if (Item.weaponGetDamageMinMax(weapon2, minDamage, maxDamage) == -1) {
+                return null;
+            }
+
+            avgDamage2 = (maxDamage[0] + minDamage[0]) / 2;
+            if (Item.weaponGetDamageRadius(weapon2,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) > 0
+                    && defender != null) {
+                attack.weapon = weapon2;
+                Combat.computeExplosionOnExtras(attack, false,
+                        Item.weaponIsGrenade(weapon2), true);
+                avgDamage2 *= attack.extrasLength + 1;
+            }
+
+            if (Item.weaponGetPerk(weapon2) != PerkDefs.Perk.PERK_INVALID) {
+                avgDamage2 *= 2;
+            }
+
+            if (defender != null) {
+                if (Combat.combatSafetyInvalidateWeapon(attacker, weapon2,
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(),
+                        defender, null)) {
+                    ignoreWeapon2 = true;
+                }
+            }
+
+            if (Item.itemIsHidden(weapon2)) {
+                return weapon2;
+            }
+        } else {
+            if (distance == 0) {
+                distance = ObjectSystem.objectGetDistanceBetween(attacker, weapon1);
+            }
+
+            if (Item.weaponGetRange(attacker,
+                    CombatDefs.HitMode.HIT_MODE_PUNCH.id()) >= distance) {
+                attackType2 = Item.AttackType.ATTACK_TYPE_UNARMED.id();
+            }
+        }
+
+        if (!ignoreWeapon2) {
+            for (int index = 0; index < Item.ATTACK_TYPE_COUNT; index++) {
+                if (WEAP_PREF_ORDERINGS[ai.bestWeapon + 1][index] == attackType2) {
+                    order2 = index;
+                    break;
+                }
+            }
+        }
+
+        if (order1 == order2) {
+            if (order1 == 999) {
+                return null;
+            }
+
+            if (Math.abs(avgDamage2 - avgDamage1) <= 5) {
+                return Item.itemGetCost(weapon2) > Item.itemGetCost(weapon1)
+                        ? weapon2 : weapon1;
+            }
+
+            return avgDamage2 > avgDamage1 ? weapon2 : weapon1;
+        }
+
+        if (ProtoTypes.ProtoId.ofGameObject(weapon1)
+                .matchesItemType(ProtoTypes.ItemProtoTypeId.Flare) && weapon2 != null) {
+            return weapon2;
+        }
+
+        if (ProtoTypes.ProtoId.ofGameObject(weapon2)
+                .matchesItemType(ProtoTypes.ItemProtoTypeId.Flare) && weapon1 != null) {
+            return weapon1;
+        }
+
+        if ((ai.bestWeapon == -1
+                || ai.bestWeapon >= CombatAiDefs.BestWeapon.BEST_WEAPON_UNARMED_OVER_THROW.id())
+                && Math.abs(avgDamage2 - avgDamage1) > 5) {
+            return avgDamage2 > avgDamage1 ? weapon2 : weapon1;
+        }
+
+        return order1 > order2 ? weapon2 : weapon1;
+    }
+
+    /** {@code _ai_search_inven_weap} (src/combat_ai.cc 0x4299A0). */
+    public static GameObject aiSearchInvenWeap(GameObject critter, boolean checkRequiredActionPoints,
+            GameObject defender) {
+        int bodyType = Critter.critterGetBodyType(critter).id();
+        if (bodyType != ProtoTypes.BodyType.BODY_TYPE_BIPED.id()
+                && bodyType != ProtoTypes.BodyType.BODY_TYPE_ROBOTIC.id()
+                && !ProtoTypes.ProtoId.ofGameObject(critter)
+                        .matchesCritterType(ProtoTypes.CritterProtoTypeId.Goris)) {
+            return null;
+        }
+
+        int[] token = new int[] { -1 };
+        GameObject bestWeapon = null;
+        GameObject rightHandWeapon = Inventory.critterGetItem2(critter);
+        while (true) {
+            GameObject weapon = Inventory.inventoryFindByType(critter,
+                    ProtoTypes.ItemType.ITEM_TYPE_WEAPON, token);
+            if (weapon == null) {
+                break;
+            }
+
+            if (weapon == rightHandWeapon) {
+                continue;
+            }
+
+            if (checkRequiredActionPoints) {
+                if (Item.weaponGetPrimaryActionPointCost(weapon)
+                        > critter.data.critter.combat.ap) {
+                    continue;
+                }
+            }
+
+            if (!aiCanUseWeapon(critter, weapon,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id())) {
+                continue;
+            }
+
+            if (Item.weaponGetAttackTypeForHitMode(weapon,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id())
+                    == Item.AttackType.ATTACK_TYPE_RANGED.id()) {
+                if (!Item.weaponHasAmmoForAttack(weapon,
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id())) {
+                    if (!aiHaveAmmo(critter, weapon, null)) {
+                        continue;
+                    }
+                }
+            }
+
+            bestWeapon = aiBestWeapon(critter, bestWeapon, weapon, defender);
+        }
+
+        return bestWeapon;
+    }
+
+    /** {@code _ai_search_inven_armor} (src/combat_ai.cc 0x429A6C). */
+    public static GameObject aiSearchInvenArmor(GameObject critter) {
+        if (!PartyMembers.objectIsPartyMember(critter)) {
+            return null;
+        }
+
+        if (Critter.critterGetBodyType(critter) != ProtoTypes.BodyType.BODY_TYPE_BIPED) {
+            return null;
+        }
+
+        int armorScore = 0;
+        GameObject armor = Inventory.critterGetArmor(critter);
+        if (armor != null) {
+            armorScore = Item.armorGetArmorClass(armor);
+            for (int damageType = ProtoTypes.DAMAGE_TYPE_FIRST;
+                    damageType < ProtoTypes.DAMAGE_TYPE_COUNT; damageType++) {
+                armorScore += Item.armorGetDamageResistance(armor, damageType);
+                armorScore += Item.armorGetDamageThreshold(armor, damageType);
+            }
+        }
+
+        GameObject bestArmor = null;
+
+        int[] inventoryItemIndex = new int[] { -1 };
+        while (true) {
+            GameObject candidate = Inventory.inventoryFindByType(critter,
+                    ProtoTypes.ItemType.ITEM_TYPE_ARMOR, inventoryItemIndex);
+            if (candidate == null) {
+                break;
+            }
+
+            if (armor != candidate) {
+                int candidateScore = Item.armorGetArmorClass(candidate);
+                for (int damageType = ProtoTypes.DAMAGE_TYPE_FIRST;
+                        damageType < ProtoTypes.DAMAGE_TYPE_COUNT; damageType++) {
+                    candidateScore += Item.armorGetDamageResistance(candidate, damageType);
+                    candidateScore += Item.armorGetDamageThreshold(candidate, damageType);
+                }
+
+                if (candidateScore > armorScore) {
+                    armorScore = candidateScore;
+                    bestArmor = candidate;
+                }
+            }
+        }
+
+        return bestArmor;
+    }
+
+    /** {@code aiCanUseItem} (src/combat_ai.cc 0x429B44). */
+    public static boolean aiCanUseItem(GameObject critter, GameObject item) {
+        if (critter == null || item == null) {
+            return false;
+        }
+
+        AiPacket ai = aiGetPacketByNum(critter.data.critter.combat.aiPacket);
+        if (ai == null) {
+            return false;
+        }
+
+        for (int index = 0; index < AI_PACKET_CHEM_PRIMARY_DESIRE_COUNT; index++) {
+            if (item.pid == ai.chemPrimaryDesire[index]) {
+                return true;
+            }
+        }
+
+        if (Critter.critterGetBodyType(critter) != ProtoTypes.BodyType.BODY_TYPE_BIPED) {
+            return false;
+        }
+
+        int killType = Critter.critterGetKillType(critter).id();
+        if (killType != ProtoTypes.KillType.KILL_TYPE_MAN.id()
+                && killType != ProtoTypes.KillType.KILL_TYPE_WOMAN.id()
+                && killType != ProtoTypes.KillType.KILL_TYPE_SUPER_MUTANT.id()
+                && killType != ProtoTypes.KillType.KILL_TYPE_GHOUL.id()
+                && killType != ProtoTypes.KillType.KILL_TYPE_CHILD.id()) {
+            return false;
+        }
+
+        if (Stat.critterGetStat(critter, StatDefs.Stat.STAT_INTELLIGENCE.id()) < 3) {
+            return false;
+        }
+
+        if (!Item.itemIsHealing(ProtoTypes.ProtoId.ofGameObject(item))) {
+            return false;
+        }
+
+        int hpRatio = K_CHEM_USE_STIMS_HP_RATIO;
+        int chemUse = aiGetChemUse(critter);
+        if (chemUse == CombatAiDefs.ChemUse.CHEM_USE_CLEAN.id()) {
+            hpRatio = 0;
+        } else if (chemUse == CombatAiDefs.ChemUse.CHEM_USE_STIMS_WHEN_HURT_LITTLE.id()) {
+            hpRatio = K_CHEM_USE_STIMS_WHEN_HURT_LITTLE_HP_RATIO;
+        } else if (chemUse == CombatAiDefs.ChemUse.CHEM_USE_STIMS_WHEN_HURT_LOTS.id()) {
+            hpRatio = K_CHEM_USE_STIMS_WHEN_HURT_LOTS_HP_RATIO;
+        }
+
+        int currentHp = Stat.critterGetStat(critter, StatDefs.Stat.STAT_CURRENT_HIT_POINTS.id());
+        int stimsHp = Stat.critterGetStat(critter, StatDefs.Stat.STAT_MAXIMUM_HIT_POINTS.id())
+                * hpRatio / 100;
+        return currentHp <= stimsHp;
+    }
+
+    /** {@code _ai_pick_hit_mode} (src/combat_ai.cc 0x429DB4). */
+    public static int aiPickHitMode(GameObject attacker, GameObject weapon, GameObject defender) {
+        if (weapon == null) {
+            return CombatDefs.HitMode.HIT_MODE_PUNCH.id();
+        }
+
+        if (Item.itemGetType(weapon) != ProtoTypes.ItemType.ITEM_TYPE_WEAPON) {
+            return CombatDefs.HitMode.HIT_MODE_PUNCH.id();
+        }
+
+        int attackType = Item.weaponGetAttackTypeForHitMode(weapon,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id());
+        int intelligence = Stat.critterGetStat(attacker, StatDefs.Stat.STAT_INTELLIGENCE.id());
+        if (attackType == Item.AttackType.ATTACK_TYPE_NONE.id()
+                || !aiCanUseWeapon(attacker, weapon,
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id())) {
+            return CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+        }
+
+        if (aiIsBurstDisabled(attacker)) {
+            int secondaryAnimation = Item.weaponGetAnimationForHitMode(weapon,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id());
+            if (secondaryAnimation == AnimationDefs.AnimationType.ANIM_FIRE_BURST.id()
+                    || secondaryAnimation == AnimationDefs.AnimationType.ANIM_FIRE_CONTINUOUS.id()) {
+                return CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+            }
+        }
+
+        boolean useSecondaryMode = false;
+
+        AiPacket ai = aiGetPacket(attacker);
+        if (ai == null) {
+            return CombatDefs.HitMode.HIT_MODE_PUNCH.id();
+        }
+
+        if (ai.areaAttackMode != -1) {
+            int mode = ai.areaAttackMode;
+            if (mode == CombatAiDefs.AreaAttackMode.AREA_ATTACK_MODE_ALWAYS.id()) {
+                useSecondaryMode = true;
+            } else if (mode == CombatAiDefs.AreaAttackMode.AREA_ATTACK_MODE_SOMETIMES.id()) {
+                if (GameRandom.randomBetween(1, ai.secondaryFreq) == 1) {
+                    useSecondaryMode = true;
+                }
+            } else if (mode == CombatAiDefs.AreaAttackMode.AREA_ATTACK_MODE_BE_SURE.id()) {
+                if (Combat.determineToHit(attacker, defender,
+                        CombatDefs.HitLocation.HIT_LOCATION_TORSO.id(),
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id()) >= 85
+                        && !Combat.combatSafetyInvalidateWeapon(attacker, weapon,
+                                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id(),
+                                defender, null)) {
+                    useSecondaryMode = true;
+                }
+            } else if (mode == CombatAiDefs.AreaAttackMode.AREA_ATTACK_MODE_BE_CAREFUL.id()) {
+                if (Combat.determineToHit(attacker, defender,
+                        CombatDefs.HitLocation.HIT_LOCATION_TORSO.id(),
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id()) >= 50
+                        && !Combat.combatSafetyInvalidateWeapon(attacker, weapon,
+                                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id(),
+                                defender, null)) {
+                    useSecondaryMode = true;
+                }
+            } else if (mode == CombatAiDefs.AreaAttackMode.AREA_ATTACK_MODE_BE_ABSOLUTELY_SURE.id()) {
+                if (Combat.determineToHit(attacker, defender,
+                        CombatDefs.HitLocation.HIT_LOCATION_TORSO.id(),
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id()) >= 95
+                        && !Combat.combatSafetyInvalidateWeapon(attacker, weapon,
+                                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id(),
+                                defender, null)) {
+                    useSecondaryMode = true;
+                }
+            }
+        } else {
+            if (intelligence < 6 || ObjectSystem.objectGetDistanceBetween(attacker, defender) < 10) {
+                if (GameRandom.randomBetween(1, ai.secondaryFreq) == 1) {
+                    useSecondaryMode = true;
+                }
+            }
+        }
+
+        if (useSecondaryMode) {
+            if (!caiHasWeapPrefType(ai, attackType)) {
+                useSecondaryMode = false;
+            }
+        }
+
+        if (useSecondaryMode) {
+            if (ObjectSystem.objectGetDistanceBetween(attacker, defender)
+                    > Item.weaponGetRange(attacker,
+                            CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id())) {
+                useSecondaryMode = false;
+            }
+        }
+
+        if (useSecondaryMode) {
+            if (attacker.data.critter.combat.ap
+                    < Item.weaponGetActionPointCost(attacker,
+                            CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id(), false)) {
+                useSecondaryMode = false;
+            }
+        }
+
+        if (useSecondaryMode) {
+            if (attackType != Item.AttackType.ATTACK_TYPE_THROW.id()
+                    || aiSearchInvenWeap(attacker, false, defender) != null
+                    || Stat.statRoll(attacker, StatDefs.Stat.STAT_INTELLIGENCE.id(),
+                            0, null).ordinal() <= 1) {
+                return CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id();
+            }
+        }
+
+        return CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+    }
+
+    /** {@code aiIsBurstDisabled} (src/combat_ai.cc). */
+    public static boolean aiIsBurstDisabled(GameObject critter) {
+        if (critter == null) {
+            return false;
+        }
+
+        return burstDisabledCritters.contains(critter);
+    }
+
+    /** {@code aiSetBurstDisabled} (src/combat_ai.cc). */
+    public static void aiSetBurstDisabled(GameObject critter, boolean disable) {
+        if (critter == null
+                || FrmId.ofFid(critter.fid).objectType() != ObjectType.CRITTER
+                || critter == ObjectSystem.getDude()) {
+            return;
+        }
+
+        if (disable) {
+            burstDisabledCritters.add(critter);
+        } else {
+            burstDisabledCritters.remove(critter);
+        }
+    }
+
+    /** {@code aiRemoveBurstDisabled} (src/combat_ai.cc). */
+    public static void aiRemoveBurstDisabled(GameObject critter) {
+        if (critter == null) {
+            return;
+        }
+
+        burstDisabledCritters.remove(critter);
+    }
+
     /** Test seam: fresh-process mirror. */
     static void resetForTests() {
         aiPackets = new AiPacket[0];
         aiInitialized = false;
+        burstDisabledCritters.clear();
+    }
+
+    /** Test seam: direct table access (fresh-process mirror). */
+    static AiPacket aiGetPacketByIndex(int index) {
+        return aiPackets[index];
     }
 
     static int aiPacketsLength() {

@@ -163,4 +163,106 @@ void f2jReferenceAiAssignPacket(Object* obj, AiPacket* ai)
     obj->data.critter.combat.aiPacket = ai->packet_num;
 }
 
+// aiPacketInit leaves hurt_too_much untouched, so packets without the key in
+// ai.txt expose whatever internal_malloc returned (heap-layout dependent).
+void f2jReferenceAiClearHurtTooMuch(int index)
+{
+    gAiPackets[index].hurt_too_much = static_cast<Dam>(0);
+}
+
+bool f2jReferenceWeaponCanBeReloadedWith(Object* weapon, Object* ammo)
+{
+    return weaponCanBeReloadedWith(weapon, ammo);
+}
+
+bool f2jReferenceAiHaveAmmo(Object* critter, Object* weapon, Object** ammoPtr)
+{
+    return aiHaveAmmo(critter, weapon, ammoPtr);
+}
+
+Object* f2jReferenceAiBestWeapon(Object* attacker, Object* weapon1, Object* weapon2, Object* defender)
+{
+    return _ai_best_weapon(attacker, weapon1, weapon2, defender);
+}
+
+Object* f2jReferenceAiSearchInvenWeap(Object* critter, bool checkActionPoints, Object* defender)
+{
+    return _ai_search_inven_weap(critter, checkActionPoints, defender);
+}
+
+Object* f2jReferenceAiSearchInvenArmor(Object* critter)
+{
+    return _ai_search_inven_armor(critter);
+}
+
+bool f2jReferenceAiCanUseItem(Object* critter, Object* item)
+{
+    return aiCanUseItem(critter, item);
+}
+
+HitMode f2jReferenceAiPickHitMode(Object* attacker, Object* weapon, Object* defender)
+{
+    return _ai_pick_hit_mode(attacker, weapon, defender);
+}
+
+int f2jReferenceAiTryAttackSwitchFix(Object* attacker, Object* defender, HitMode* hitMode, Object** weaponPtr)
+{
+    return aiTryAttackSwitchFix(attacker, defender, hitMode, weaponPtr);
+}
+
+bool f2jReferenceCombatSafetyInvalidateWeapon(Object* attacker, Object* weapon, HitMode mode, Object* defender)
+{
+    return _combat_safety_invalidate_weapon(attacker, weapon, mode, defender, nullptr);
+}
+
+void f2jReferenceAiSetAreaAttackMode(AiPacket* ai, AreaAttackMode mode)
+{
+    ai->area_attack_mode = mode;
+}
+
+int f2jReferenceAiAreaAttackMode(AiPacket* ai)
+{
+    return ai->area_attack_mode;
+}
+
+int f2jReferenceAiSecondaryFreq(AiPacket* ai)
+{
+    return ai->secondary_freq;
+}
+
+void f2jReferenceAiSetSecondaryFreq(AiPacket* ai, int frequency)
+{
+    ai->secondary_freq = frequency;
+}
+
+int f2jReferenceAiGetChemUse(AiPacket* ai)
+{
+    return ai->chem_use;
+}
+
+void f2jReferenceAiSetChemUse(AiPacket* ai, ChemUse chemUse)
+{
+    ai->chem_use = chemUse;
+}
+
+int f2jReferenceAiChemPrimaryDesire(AiPacket* ai, int index)
+{
+    return ai->chem_primary_desire[index];
+}
+
+void f2jReferenceAiSetChemPrimaryDesire(AiPacket* ai, int index, int pid)
+{
+    ai->chem_primary_desire[index] = pid;
+}
+
+void f2jReferenceAiSetBurstDisabled(Object* critter, bool disable)
+{
+    aiSetBurstDisabled(critter, disable);
+}
+
+bool f2jReferenceAiIsBurstDisabled(Object* critter)
+{
+    return aiIsBurstDisabled(critter);
+}
+
 } // namespace fallout

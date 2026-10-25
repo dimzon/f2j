@@ -220,6 +220,146 @@ public final class Combat {
     }
 
     /**
+     * Port of {@code _determine_to_hit} (0x42436C): the primary-hit-mode
+     * wrapper around {@link #attackDetermineToHit}.
+     */
+    public static int determineToHit(ObjTypes.GameObject attacker,
+            ObjTypes.GameObject defender, int hitLocation, int hitMode) {
+        return attackDetermineToHit(attacker, attacker.tile, defender, hitLocation,
+                hitMode, true);
+    }
+
+    /**
+     * Port of {@code _combat_safety_invalidate_weapon} (0x4213E8): whether a
+     * weapon is unsafe to fire because it could hit a friendly in the blast or
+     * the burst/continuous spray. {@code safeDistancePtr} (single-element
+     * array) receives the safety distance for explosive weapons when only the
+     * attacker is at risk; a null pointer skips that branch.
+     */
+    public static boolean combatSafetyInvalidateWeapon(ObjTypes.GameObject attacker,
+            ObjTypes.GameObject weapon, int hitMode, ObjTypes.GameObject defender,
+            int[] safeDistancePtr) {
+        return combatSafetyInvalidateWeaponFunc(attacker, weapon, hitMode, defender,
+                safeDistancePtr, null);
+    }
+
+    private static boolean combatSafetyInvalidateWeaponFunc(ObjTypes.GameObject attacker,
+            ObjTypes.GameObject weapon, int hitMode, ObjTypes.GameObject defender,
+            int[] safeDistancePtr, ObjTypes.GameObject attackerFriend) {
+        if (safeDistancePtr != null) {
+            safeDistancePtr[0] = 0;
+        }
+
+        if (ProtoTypes.ProtoId.ofGameObject(attacker)
+                .matchesCritterType(ProtoTypes.CritterProtoTypeId.AutoCannon)) {
+            return false;
+        }
+
+        int intelligence = Stat.critterGetStat(attacker, StatDefs.Stat.STAT_INTELLIGENCE.id());
+        int team = attacker.data.critter.combat.team;
+        int damageRadius = Item.weaponGetDamageRadius(weapon, hitMode);
+        int[] maxDamagePtr = new int[1];
+        Item.weaponGetDamageMinMax(weapon, null, maxDamagePtr);
+        int maxDamage = maxDamagePtr[0];
+        ProtoTypes.DamageType damageType = Item.weaponGetDamageType(attacker, weapon);
+
+        if (damageRadius > 0) {
+            if (intelligence < 5) {
+                damageRadius -= 5 - intelligence;
+                if (damageRadius < 0) {
+                    damageRadius = 0;
+                }
+            }
+
+            if (attackerFriend != null) {
+                if (ObjectSystem.objectGetDistanceBetween(defender, attackerFriend) < damageRadius) {
+                    Debug.print("Friendly was in the way!");
+                    return true;
+                }
+            }
+
+            for (int index = 0; index < listTotal; index++) {
+                GameObject candidate = combatList[index];
+                if (candidate.data.critter.combat.team == team
+                        && candidate != attacker
+                        && candidate != defender
+                        && !Critter.critterIsDead(candidate)) {
+                    if (ObjectSystem.objectGetDistanceBetween(defender, candidate) < damageRadius
+                            && candidate != candidate.data.critter.combat.whoHitMe) {
+                        int damageThreshold = Stat.critterGetStat(candidate,
+                                ProtoTypes.statPlusDamageType(StatDefs.Stat.STAT_DAMAGE_THRESHOLD,
+                                        damageType).id());
+                        int damageResistance = Stat.critterGetStat(candidate,
+                                ProtoTypes.statPlusDamageType(StatDefs.Stat.STAT_DAMAGE_RESISTANCE,
+                                        damageType).id());
+                        if (damageResistance * (maxDamage - damageThreshold) / 100 > 0) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            if (ObjectSystem.objectGetDistanceBetween(defender, attacker) <= damageRadius) {
+                if (safeDistancePtr != null) {
+                    safeDistancePtr[0] = damageRadius
+                            - ObjectSystem.objectGetDistanceBetween(defender, attacker) + 1;
+                    return false;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        int anim = Item.weaponGetAnimationForHitMode(weapon, hitMode);
+        if (anim != AnimationDefs.AnimationType.ANIM_FIRE_BURST.id()
+                && anim != AnimationDefs.AnimationType.ANIM_FIRE_CONTINUOUS.id()) {
+            return false;
+        }
+
+        CombatDefs.Attack attack = new CombatDefs.Attack();
+        attackInit(attack, attacker, defender, hitMode,
+                CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
+
+        int accuracy = attackDetermineToHit(attacker, attacker.tile, defender,
+                CombatDefs.HitLocation.HIT_LOCATION_TORSO.id(), hitMode, true);
+        int[] roundsHitMainTarget = new int[1];
+        int[] roundsFired = new int[1];
+        computeSpray(attack, accuracy, roundsHitMainTarget, roundsFired, anim);
+
+        if (attackerFriend != null) {
+            for (int index = 0; index < attack.extrasLength; index++) {
+                if (attack.extras[index] == attackerFriend) {
+                    Debug.print("Friendly was in the way!");
+                    return true;
+                }
+            }
+        }
+
+        for (int index = 0; index < attack.extrasLength; index++) {
+            GameObject candidate = attack.extras[index];
+            if (candidate.data.critter.combat.team == team
+                    && candidate != attacker
+                    && candidate != defender
+                    && !Critter.critterIsDead(candidate)
+                    && candidate != candidate.data.critter.combat.whoHitMe) {
+                int damageThreshold = Stat.critterGetStat(candidate,
+                        ProtoTypes.statPlusDamageType(StatDefs.Stat.STAT_DAMAGE_THRESHOLD,
+                                damageType).id());
+                int damageResistance = Stat.critterGetStat(candidate,
+                        ProtoTypes.statPlusDamageType(StatDefs.Stat.STAT_DAMAGE_RESISTANCE,
+                                damageType).id());
+                if (damageResistance * (maxDamage - damageThreshold) / 100 > 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Port of {@code attackInit} (0x422E1C): set up an attack record.
      */
     public static void attackInit(CombatDefs.Attack attack, ObjTypes.GameObject attacker,

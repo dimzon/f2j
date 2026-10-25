@@ -7253,6 +7253,7 @@ int f2jReferenceAiInit();
 int f2jReferenceAiCount();
 const char* f2jReferenceAiName(int);
 void f2jReferenceAiPacketDump(int, int*);
+void f2jReferenceAiClearHurtTooMuch(int);
 int f2jReferenceRating(Object*);
 AreaAttackMode f2jReferenceAreaAttackMode(Object*);
 RunAwayMode f2jReferenceRunAwayMode(Object*);
@@ -7273,6 +7274,25 @@ int f2jReferenceAiRunAwayMode(AiPacket*);
 int f2jReferenceAiMinHp(AiPacket*);
 bool f2jReferenceCritterCanUseWeapon(Object*, Object*, HitMode);
 void f2jReferenceAiAssignPacket(Object*, AiPacket*);
+bool f2jReferenceWeaponCanBeReloadedWith(Object*, Object*);
+bool f2jReferenceAiHaveAmmo(Object*, Object*, Object**);
+Object* f2jReferenceAiBestWeapon(Object*, Object*, Object*, Object*);
+Object* f2jReferenceAiSearchInvenWeap(Object*, bool, Object*);
+Object* f2jReferenceAiSearchInvenArmor(Object*);
+bool f2jReferenceAiCanUseItem(Object*, Object*);
+HitMode f2jReferenceAiPickHitMode(Object*, Object*, Object*);
+int f2jReferenceAiTryAttackSwitchFix(Object*, Object*, HitMode*, Object**);
+bool f2jReferenceCombatSafetyInvalidateWeapon(Object*, Object*, HitMode, Object*);
+void f2jReferenceAiSetAreaAttackMode(AiPacket*, AreaAttackMode);
+int f2jReferenceAiAreaAttackMode(AiPacket*);
+int f2jReferenceAiSecondaryFreq(AiPacket*);
+void f2jReferenceAiSetSecondaryFreq(AiPacket*, int);
+int f2jReferenceAiGetChemUse(AiPacket*);
+void f2jReferenceAiSetChemUse(AiPacket*, ChemUse);
+int f2jReferenceAiChemPrimaryDesire(AiPacket*, int);
+void f2jReferenceAiSetChemPrimaryDesire(AiPacket*, int, int);
+void f2jReferenceAiSetBurstDisabled(Object*, bool);
+bool f2jReferenceAiIsBurstDisabled(Object*);
 }
 
 void sectionCombatBadShot()
@@ -7532,6 +7552,9 @@ void sectionAi()
         if (name == nullptr) {
             continue;
         }
+        // Pin the field aiPacketInit leaves uninitialized for packets without
+        // the ai.txt key, otherwise the dump carries heap garbage.
+        fallout::f2jReferenceAiClearHurtTooMuch(index);
         int fields[36];
         fallout::f2jReferenceAiPacketDump(index, fields);
         std::printf("p%d name=%s num=%d maxd=%d minhit=%d minhp=%d aggr=%d hurt=%d sec=%d called=%d font=%d color=%d outline=%d chance=%d\n",
@@ -7834,6 +7857,395 @@ void sectionAiDecisions()
     fallout::f2jReferenceAiSetMinToHit(a0, savedA0MinToHit);
     fallout::f2jReferenceAiSetRunAwayMode(a2, (fallout::RunAwayMode)savedA2Mode);
     fallout::f2jReferenceAiSetMinHp(a2, savedA2MinHp);
+}
+
+void sectionAiInventory()
+{
+    std::puts("[aiinv]");
+    std::printf("statsinit=%d\n", fallout::statsInit());
+    std::printf("init=%d\n", fallout::f2jReferenceAiInit());
+
+    // lightSetAmbientIntensity (solar scorcher gate) dereferences the dude's
+    // perk ranks, so the party/perk tables gameInit normally builds are needed.
+    fallout::messageListRepositoryInit();
+    fallout::partyMembersInit();
+    fallout::perksInit();
+    // itemIsHealing (aiCanUseItem) reads the content-config healing pid table.
+    {
+        char prog[] = "prog";
+        char* sfallArgv[] = { prog };
+        fallout::sfallConfigInit(1, sfallArgv);
+        fallout::itemsInit();
+    }
+
+    int savedLight = fallout::lightGetAmbientIntensity();
+
+    fallout::Object* dog = nullptr;
+    fallout::Object* target = nullptr;
+    fallout::Object* human = nullptr;
+    fallout::Object* pistol = nullptr;
+    fallout::Object* pistol2 = nullptr;
+    fallout::Object* smg = nullptr;
+    fallout::Object* spear = nullptr;
+    fallout::Object* flare = nullptr;
+    fallout::Object* molotov = nullptr;
+    fallout::Object* ammo = nullptr;
+    fallout::Object* cell = nullptr;
+    fallout::Object* nonWeapon = nullptr;
+    fallout::Object* scorcher = nullptr;
+    fallout::Object* stimpak = nullptr;
+    fallout::objectCreateWithProtoId(&dog, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&target, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&human, fallout::ProtoId(16777376)); // MAN, biped, INT 8
+    fallout::objectCreateWithProtoId(&pistol, fallout::ProtoId(8)); // 10mm pistol, ammo pid 29
+    fallout::objectCreateWithProtoId(&pistol2, fallout::ProtoId(8));
+    fallout::objectCreateWithProtoId(&smg, fallout::ProtoId(9)); // ranged primary + burst secondary
+    fallout::objectCreateWithProtoId(&spear, fallout::ProtoId(7)); // melee primary, throw secondary
+    fallout::objectCreateWithProtoId(&flare, fallout::ProtoId(79)); // throw primary
+    fallout::objectCreateWithProtoId(&molotov, fallout::ProtoId(159)); // throw, explosion damage
+    fallout::objectCreateWithProtoId(&ammo, fallout::ProtoId(29)); // 10mm ammo
+    fallout::objectCreateWithProtoId(&cell, fallout::ProtoId(38)); // small energy cell
+    fallout::objectCreateWithProtoId(&nonWeapon, fallout::ProtoId(1));
+    fallout::objectCreateWithProtoId(&scorcher, fallout::ProtoId(390));
+    fallout::objectCreateWithProtoId(&stimpak, fallout::ProtoId(40));
+    if (dog == nullptr || target == nullptr || human == nullptr || pistol == nullptr
+        || pistol2 == nullptr || smg == nullptr || spear == nullptr || flare == nullptr
+        || molotov == nullptr || ammo == nullptr || cell == nullptr || nonWeapon == nullptr
+        || scorcher == nullptr || stimpak == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::objectSetLocation(dog, 20100, 0, nullptr);
+    fallout::objectSetLocation(human, 20100, 0, nullptr);
+    fallout::objectSetLocation(target, 20101, 0, nullptr);
+    fallout::Proto* humanProto = nullptr;
+    fallout::protoGetProto(human, &humanProto);
+    fallout::Proto* pistolProto = nullptr;
+    fallout::protoGetProto(pistol, &pistolProto);
+    fallout::AiPacket* a0 = fallout::f2jReferenceAiPacketRef(0);
+    int savedBest = fallout::f2jReferenceAiBestWeapon(a0);
+    int savedMinToHit = fallout::f2jReferenceAiMinToHit(a0);
+    int savedArea = fallout::f2jReferenceAiAreaAttackMode(a0);
+    int savedFreq = fallout::f2jReferenceAiSecondaryFreq(a0);
+    int savedChemUse = fallout::f2jReferenceAiGetChemUse(a0);
+    constexpr int kChemDesireCount = 3;
+    int savedDesire[kChemDesireCount];
+    for (int i = 0; i < kChemDesireCount; i++) {
+        savedDesire[i] = fallout::f2jReferenceAiChemPrimaryDesire(a0, i);
+    }
+
+    // weaponCanBeReloadedWith: type/caliber/ammo-type gates.
+    std::printf("reload-match=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(pistol, ammo) ? 1 : 0);
+    std::printf("reload-cell=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(pistol, cell) ? 1 : 0);
+    std::printf("reload-null-weapon=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(nullptr, ammo) ? 1 : 0);
+    std::printf("reload-null-ammo=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(pistol, nullptr) ? 1 : 0);
+    std::printf("reload-nonammo=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(pistol, nonWeapon) ? 1 : 0);
+    std::printf("reload-weapon-ammo=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(pistol, pistol2) ? 1 : 0);
+    int savedWeaponAmmoType = pistol->data.item.weapon.ammoTypePid;
+    int savedWeaponAmmoQuantity = pistol->data.item.weapon.ammoQuantity;
+    pistol->data.item.weapon.ammoQuantity = 5;
+    pistol->data.item.weapon.ammoTypePid = cell->pid;
+    std::printf("reload-occupied=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(pistol, ammo) ? 1 : 0);
+    pistol->data.item.weapon.ammoQuantity = 0;
+    std::printf("reload-empty=%d\n", fallout::f2jReferenceWeaponCanBeReloadedWith(pistol, ammo) ? 1 : 0);
+    pistol->data.item.weapon.ammoTypePid = savedWeaponAmmoType;
+    pistol->data.item.weapon.ammoQuantity = savedWeaponAmmoQuantity;
+
+    // aiHaveAmmo: ammo match, solar scorcher light gate, right-hand unequip.
+    {
+        fallout::Object* h1 = nullptr;
+        fallout::Object* h2 = nullptr;
+        fallout::Object* h3 = nullptr;
+        fallout::Object* h4 = nullptr;
+        fallout::Object* h5 = nullptr;
+        fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+        fallout::objectCreateWithProtoId(&h2, fallout::ProtoId(16777376));
+        fallout::objectCreateWithProtoId(&h3, fallout::ProtoId(16777376));
+        fallout::objectCreateWithProtoId(&h4, fallout::ProtoId(16777376));
+        fallout::objectCreateWithProtoId(&h5, fallout::ProtoId(16777376));
+        fallout::itemAdd(h1, ammo, 1);
+        fallout::Object* out = nullptr;
+        bool haveAmmo = fallout::f2jReferenceAiHaveAmmo(h1, pistol, &out);
+        std::printf("haveammo=%d out=%d\n", haveAmmo ? 1 : 0, out == ammo ? 1 : 0);
+        out = nullptr;
+        haveAmmo = fallout::f2jReferenceAiHaveAmmo(h2, pistol, &out);
+        std::printf("haveammo-none=%d out=%d\n", haveAmmo ? 1 : 0, out == nullptr ? 1 : 0);
+        fallout::itemAdd(h3, cell, 1);
+        std::printf("haveammo-cell=%d\n",
+            fallout::f2jReferenceAiHaveAmmo(h3, pistol, nullptr) ? 1 : 0);
+        fallout::lightSetAmbientIntensity(LIGHT_INTENSITY_MAX, false);
+        std::printf("scorcher-bright=%d\n",
+            fallout::f2jReferenceAiHaveAmmo(h2, scorcher, nullptr) ? 1 : 0);
+        fallout::lightSetAmbientIntensity(0, false);
+        std::printf("scorcher-dark=%d\n",
+            fallout::f2jReferenceAiHaveAmmo(h2, scorcher, nullptr) ? 1 : 0);
+        fallout::lightSetAmbientIntensity(savedLight, false);
+        fallout::itemAdd(h4, spear, 1);
+        // Flags only: headless inven_wield/_dude_stand needs critter art.
+        spear->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+        fallout::itemAdd(h4, cell, 1);
+        fallout::f2jReferenceAiHaveAmmo(h4, spear, nullptr);
+        std::printf("unequip-spear=%d\n", (spear->flags & fallout::OBJECT_IN_RIGHT_HAND) == 0 ? 1 : 0);
+        fallout::itemAdd(h5, pistol, 1);
+        pistol->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+        fallout::itemAdd(h5, cell, 1);
+        fallout::f2jReferenceAiHaveAmmo(h5, pistol, nullptr);
+        std::printf("unequip-pistol=%d\n", (pistol->flags & fallout::OBJECT_IN_RIGHT_HAND) != 0 ? 1 : 0);
+        pistol->flags &= ~fallout::OBJECT_IN_ANY_HAND;
+    }
+
+    // _ai_best_weapon: preference order, damage tie-break, hidden/flare
+    // overrides and the random mode.
+    fallout::f2jReferenceAiAssignPacket(dog, a0);
+    fallout::f2jReferenceAiSetMinToHit(a0, 0);
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_RANGED);
+    std::printf("best-ranged=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, pistol, spear, target) == pistol ? 1 : 0);
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_MELEE);
+    std::printf("best-melee=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, pistol, spear, target) == spear ? 1 : 0);
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_NO_PREF);
+    std::printf("best-nopref=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, pistol, spear, target) == pistol ? 1 : 0);
+    std::printf("best-tie=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, pistol, pistol2, target) == pistol ? 1 : 0);
+    std::printf("best-null=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, nullptr, nullptr, target) == nullptr ? 1 : 0);
+    std::printf("best-null-attacker=%d\n",
+        fallout::f2jReferenceAiBestWeapon(nullptr, pistol, spear, target) == nullptr ? 1 : 0);
+    fallout::objectSetLocation(target, 20126, 0, nullptr);
+    std::printf("best-far-null=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, nullptr, nullptr, target) == nullptr ? 1 : 0);
+    fallout::objectSetLocation(target, 20101, 0, nullptr);
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_RANDOM);
+    fallout::randomSeedPrerandom(12345);
+    fallout::Object* randomPick = fallout::f2jReferenceAiBestWeapon(dog, pistol, spear, target);
+    std::printf("best-random=%d\n", randomPick == pistol ? 1 : randomPick == spear ? 2 : 0);
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_RANGED);
+    int savedExtendedFlags = pistolProto->item.extendedFlags;
+    pistolProto->item.extendedFlags = static_cast<fallout::ProtoExtendedFlags>(savedExtendedFlags | fallout::PROTO_EXT_FLAG_HIDDEN);
+    std::printf("best-hidden=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, pistol, spear, target) == pistol ? 1 : 0);
+    pistolProto->item.extendedFlags = static_cast<fallout::ProtoExtendedFlags>(savedExtendedFlags);
+    std::printf("best-flare=%d\n",
+        fallout::f2jReferenceAiBestWeapon(dog, flare, pistol, target) == pistol ? 1 : 0);
+
+    // _ai_search_inven_weap: body/AP/skill/ammo gates, right-hand skip.
+    {
+        int savedFid = human->fid;
+        human->fid = fallout::FrmId(fallout::OBJ_TYPE_CRITTER, 11, fallout::ANIM_STAND,
+            fallout::WeaponAnimation::None, fallout::ROTATION_NE).fid();
+        int savedSkill = humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS];
+        humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 120;
+        fallout::f2jReferenceAiAssignPacket(human, a0);
+        fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_NO_PREF);
+        fallout::f2jReferenceAiSetMinToHit(a0, 0);
+        human->data.critter.combat.ap = 10;
+
+        fallout::Object* h6 = nullptr;
+        fallout::Object* h7 = nullptr;
+        fallout::Object* h8 = nullptr;
+        fallout::Object* h9 = nullptr;
+        fallout::objectCreateWithProtoId(&h6, fallout::ProtoId(16777376));
+        fallout::objectCreateWithProtoId(&h7, fallout::ProtoId(16777376));
+        fallout::objectCreateWithProtoId(&h8, fallout::ProtoId(16777376));
+        fallout::objectCreateWithProtoId(&h9, fallout::ProtoId(16777376));
+        fallout::Object* humans[] = { h6, h7, h8, h9 };
+        for (fallout::Object* h : humans) {
+            if (h != nullptr) {
+                h->fid = human->fid;
+                fallout::f2jReferenceAiAssignPacket(h, a0);
+                h->data.critter.combat.ap = 10;
+            }
+        }
+        if (h6 != nullptr && h7 != nullptr && h8 != nullptr && h9 != nullptr) {
+            std::printf("sweap-empty=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h6, true, target) == nullptr ? 1 : 0);
+            fallout::itemAdd(h7, pistol, 1);
+            std::printf("sweap-noammo=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h7, true, target) == nullptr ? 1 : 0);
+            fallout::itemAdd(h7, ammo, 1);
+            std::printf("sweap-ammo=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h7, true, target) == pistol ? 1 : 0);
+            h7->data.critter.combat.ap = 3;
+            std::printf("sweap-ap-low=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h7, true, target) == nullptr ? 1 : 0);
+            std::printf("sweap-ap-low-ignore=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h7, false, target) == pistol ? 1 : 0);
+            h7->data.critter.combat.ap = 10;
+            fallout::f2jReferenceAiSetMinToHit(a0, 200);
+            std::printf("sweap-skill=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h7, true, target) == nullptr ? 1 : 0);
+            fallout::f2jReferenceAiSetMinToHit(a0, 0);
+            fallout::itemAdd(h8, spear, 1);
+            std::printf("sweap-spear=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h8, true, target) == spear ? 1 : 0);
+            fallout::itemAdd(h9, pistol, 1);
+            pistol->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+            fallout::itemAdd(h9, spear, 1);
+            std::printf("sweap-righthand=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h9, true, target) == spear ? 1 : 0);
+            std::printf("sweap-null-def=%d\n",
+                fallout::f2jReferenceAiSearchInvenWeap(h7, true, nullptr) == pistol ? 1 : 0);
+            pistol->flags &= ~fallout::OBJECT_IN_ANY_HAND;
+        }
+        fallout::itemAdd(dog, pistol, 1);
+        fallout::itemAdd(dog, ammo, 1);
+        std::printf("sweap-dog=%d\n",
+            fallout::f2jReferenceAiSearchInvenWeap(dog, true, target) == nullptr ? 1 : 0);
+
+        std::printf("armor-dog=%d\n",
+            fallout::f2jReferenceAiSearchInvenArmor(dog) == nullptr ? 1 : 0);
+        std::printf("armor-human=%d\n",
+            fallout::f2jReferenceAiSearchInvenArmor(human) == nullptr ? 1 : 0);
+
+        humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = savedSkill;
+        human->fid = savedFid;
+    }
+
+    // aiCanUseItem: chem desire, body/kill/intelligence gates and the
+    // per-chem-use hp thresholds.
+    {
+        fallout::f2jReferenceAiAssignPacket(human, a0);
+        fallout::f2jReferenceAiSetChemPrimaryDesire(a0, 0, 40);
+        fallout::f2jReferenceAiSetChemPrimaryDesire(a0, 1, -1);
+        fallout::f2jReferenceAiSetChemPrimaryDesire(a0, 2, -1);
+        human->data.critter.hp = 1000;
+        std::printf("item-desire=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        for (int i = 0; i < kChemDesireCount; i++) {
+            fallout::f2jReferenceAiSetChemPrimaryDesire(a0, i, savedDesire[i]);
+        }
+        human->data.critter.hp = 0;
+        std::printf("item-stimpak=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        std::printf("item-notheal=%d\n", fallout::f2jReferenceAiCanUseItem(human, nonWeapon) ? 1 : 0);
+        human->data.critter.hp = 1000;
+        std::printf("item-hp=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        human->data.critter.hp = 0;
+        std::printf("item-null=%d,%d\n",
+            fallout::f2jReferenceAiCanUseItem(nullptr, stimpak) ? 1 : 0,
+            fallout::f2jReferenceAiCanUseItem(human, nullptr) ? 1 : 0);
+
+        int savedInt = humanProto->critter.data.baseStats[fallout::STAT_INTELLIGENCE];
+        humanProto->critter.data.baseStats[fallout::STAT_INTELLIGENCE] = 2;
+        std::printf("item-int=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        humanProto->critter.data.baseStats[fallout::STAT_INTELLIGENCE] = savedInt;
+
+        fallout::KillType savedKill = humanProto->critter.data.killType;
+        humanProto->critter.data.killType = fallout::KILL_TYPE_DOG;
+        std::printf("item-kill=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        humanProto->critter.data.killType = savedKill;
+
+        fallout::BodyType savedBody = humanProto->critter.data.bodyType;
+        humanProto->critter.data.bodyType = fallout::BODY_TYPE_QUADRUPED;
+        std::printf("item-body=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        humanProto->critter.data.bodyType = savedBody;
+
+        int savedMaxHp = humanProto->critter.data.baseStats[fallout::STAT_MAXIMUM_HIT_POINTS];
+        int savedBonusMaxHp = humanProto->critter.data.bonusStats[fallout::STAT_MAXIMUM_HIT_POINTS];
+        humanProto->critter.data.baseStats[fallout::STAT_MAXIMUM_HIT_POINTS] = 100;
+        humanProto->critter.data.bonusStats[fallout::STAT_MAXIMUM_HIT_POINTS] = 0;
+        human->data.critter.hp = 40;
+        fallout::f2jReferenceAiSetChemUse(a0, fallout::CHEM_USE_CLEAN);
+        std::printf("item-chem-clean=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        fallout::f2jReferenceAiSetChemUse(a0, fallout::CHEM_USE_STIMS_WHEN_HURT_LITTLE);
+        std::printf("item-chem-little=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        fallout::f2jReferenceAiSetChemUse(a0, fallout::CHEM_USE_STIMS_WHEN_HURT_LOTS);
+        std::printf("item-chem-lots=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        fallout::f2jReferenceAiSetChemUse(a0, fallout::CHEM_USE_ALWAYS);
+        std::printf("item-chem-always=%d\n", fallout::f2jReferenceAiCanUseItem(human, stimpak) ? 1 : 0);
+        humanProto->critter.data.baseStats[fallout::STAT_MAXIMUM_HIT_POINTS] = savedMaxHp;
+        humanProto->critter.data.bonusStats[fallout::STAT_MAXIMUM_HIT_POINTS] = savedBonusMaxHp;
+        human->data.critter.hp = 0;
+    }
+
+    // _combat_safety_invalidate_weapon: non-explosive weapons and the
+    // explosion radius vs attacker intelligence/distance.
+    std::printf("safety-pistol=%d\n",
+        fallout::f2jReferenceCombatSafetyInvalidateWeapon(human, pistol,
+            fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, target) ? 1 : 0);
+    std::printf("safety-smg=%d\n",
+        fallout::f2jReferenceCombatSafetyInvalidateWeapon(human, smg,
+            fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY, target) ? 1 : 0);
+    fallout::explosionSetRadius(3);
+    std::printf("safety-grenade-int=%d\n",
+        fallout::f2jReferenceCombatSafetyInvalidateWeapon(human, molotov,
+            fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, target) ? 1 : 0);
+    std::printf("safety-grenade-dog=%d\n",
+        fallout::f2jReferenceCombatSafetyInvalidateWeapon(dog, molotov,
+            fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, target) ? 1 : 0);
+    fallout::objectSetLocation(target, 20126, 0, nullptr);
+    std::printf("safety-grenade-far=%d\n",
+        fallout::f2jReferenceCombatSafetyInvalidateWeapon(human, molotov,
+            fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, target) ? 1 : 0);
+    fallout::objectSetLocation(target, 20101, 0, nullptr);
+    fallout::explosionSetRadius(-1);
+
+    // _ai_pick_hit_mode: secondary mode by area-attack policy, preference,
+    // burst disable, distance and the random frequency path.
+    {
+        int savedFid = human->fid;
+        human->fid = fallout::FrmId(fallout::OBJ_TYPE_CRITTER, 11, fallout::ANIM_STAND,
+            fallout::WeaponAnimation::None, fallout::ROTATION_NE).fid();
+        int savedSkill = humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS];
+        humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 120;
+        fallout::f2jReferenceAiAssignPacket(human, a0);
+        fallout::f2jReferenceAiSetMinToHit(a0, 0);
+        fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_NO_PREF);
+        human->data.critter.combat.ap = 10;
+
+        std::printf("pick-null=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, nullptr, target) == fallout::HIT_MODE_PUNCH ? 1 : 0);
+        std::printf("pick-nonweapon=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, nonWeapon, target) == fallout::HIT_MODE_PUNCH ? 1 : 0);
+        std::printf("pick-pistol=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, pistol, target) == fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY ? 1 : 0);
+        fallout::f2jReferenceAiSetAreaAttackMode(a0, fallout::AREA_ATTACK_MODE_ALWAYS);
+        fallout::f2jReferenceAiSetBurstDisabled(human, true);
+        std::printf("pick-burst-disabled=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, smg, target) == fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY ? 1 : 0);
+        fallout::f2jReferenceAiSetBurstDisabled(human, false);
+        std::printf("pick-always=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, smg, target) == fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY ? 1 : 0);
+        fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_MELEE);
+        std::printf("pick-melee-pref=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, smg, target) == fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY ? 1 : 0);
+        fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_NO_PREF);
+        fallout::f2jReferenceAiSetAreaAttackMode(a0, fallout::AREA_ATTACK_MODE_SOMETIMES);
+        fallout::f2jReferenceAiSetSecondaryFreq(a0, 1);
+        fallout::randomSeedPrerandom(1);
+        std::printf("pick-sometimes=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, smg, target) == fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY ? 1 : 0);
+        fallout::f2jReferenceAiSetAreaAttackMode(a0, fallout::AREA_ATTACK_MODE_INVALID);
+        fallout::randomSeedPrerandom(1);
+        std::printf("pick-default=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, smg, target) == fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY ? 1 : 0);
+        fallout::objectSetLocation(target, 20126, 0, nullptr);
+        fallout::randomSeedPrerandom(1);
+        std::printf("pick-far=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, smg, target) == fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY ? 1 : 0);
+        fallout::objectSetLocation(target, 20101, 0, nullptr);
+        fallout::f2jReferenceAiSetAreaAttackMode(a0, fallout::AREA_ATTACK_MODE_BE_SURE);
+        std::printf("pick-tohit=%d\n",
+            fallout::_determine_to_hit(human, target, fallout::HIT_LOCATION_TORSO,
+                fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY));
+        fallout::randomSeedPrerandom(1);
+        std::printf("pick-besure=%d\n",
+            fallout::f2jReferenceAiPickHitMode(human, smg, target) == fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY ? 1 : 0);
+
+        humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = savedSkill;
+        human->fid = savedFid;
+    }
+
+    // Restore the shared packet table and light level.
+    fallout::f2jReferenceAiSetBestWeapon(a0, (fallout::BestWeapon)savedBest);
+    fallout::f2jReferenceAiSetMinToHit(a0, savedMinToHit);
+    fallout::f2jReferenceAiSetAreaAttackMode(a0, (fallout::AreaAttackMode)savedArea);
+    fallout::f2jReferenceAiSetSecondaryFreq(a0, savedFreq);
+    fallout::f2jReferenceAiSetChemUse(a0, (fallout::ChemUse)savedChemUse);
+    for (int i = 0; i < kChemDesireCount; i++) {
+        fallout::f2jReferenceAiSetChemPrimaryDesire(a0, i, savedDesire[i]);
+    }
+    fallout::lightSetAmbientIntensity(savedLight, false);
 }
 
 void sectionCriticalHit()
@@ -11538,6 +11950,7 @@ int main()
     RUN_SECTION(CriticalHit);
     RUN_SECTION(Ai);
     RUN_SECTION(AiDecisions);
+    RUN_SECTION(AiInventory);
     RUN_SECTION(CombatEnd);
     RUN_SECTION(RangedMiss);
     RUN_SECTION(ExplosionExtras);

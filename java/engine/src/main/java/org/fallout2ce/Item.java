@@ -432,6 +432,60 @@ public final class Item {
         return ProtoId.ofPid(weapon.data.item.weapon.ammoTypePid);
     }
 
+    // weaponCanBeReloadedWithInternal (src/item.cc 0x478874) + the public
+    // wrappers. A solar scorcher recharges when the ambient light is bright;
+    // otherwise the weapon must be a weapon, the ammo an ammo, the calibers
+    // must match, and when not replacing ammo an empty weapon only accepts the
+    // same ammo pid.
+    public static boolean weaponCanBeReloadedWith(GameObject weapon, GameObject ammo) {
+        return weaponCanBeReloadedWithInternal(weapon, ammo, false);
+    }
+
+    public static boolean weaponCanBeReloadedWithReplacingAmmo(GameObject weapon, GameObject ammo) {
+        return weaponCanBeReloadedWithInternal(weapon, ammo, true);
+    }
+
+    private static boolean weaponCanBeReloadedWithInternal(GameObject weapon, GameObject ammo,
+            boolean allowReplacingAmmo) {
+        if (weapon == null) {
+            return false;
+        }
+
+        if (ProtoId.ofGameObject(weapon).matchesItemType(ItemProtoTypeId.SolarScorcher)) {
+            if (Light.lightGetAmbientIntensity() > Light.LIGHT_INTENSITY_MAX * 0.95) {
+                return true;
+            }
+            DisplayMonitor.addMessage(Message.getmsg(gItemsMessageList, new Message.Item(), 500));
+            return false;
+        }
+
+        if (ammo == null) {
+            return false;
+        }
+
+        Proto[] weaponSlot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), weaponSlot);
+        Proto[] ammoSlot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(ammo), ammoSlot);
+
+        if (weaponSlot[0].item.type != ItemType.ITEM_TYPE_WEAPON) {
+            return false;
+        }
+        if (ammoSlot[0].item.type != ItemType.ITEM_TYPE_AMMO) {
+            return false;
+        }
+        if (weaponSlot[0].item.data.weapon.caliber != ammoSlot[0].item.data.ammo.caliber) {
+            return false;
+        }
+        if (!allowReplacingAmmo && ammoGetQuantity(weapon) != 0) {
+            if (weapon.data.item.weapon.ammoTypePid != ammo.pid) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // 0x477B88 item_get_weight: null -> 0, proto weight, hidden -> 0,
     // power-armor halving, container recursion, weapon ammo weight.
     public static int itemGetWeight(GameObject item) {
