@@ -7248,6 +7248,13 @@ void f2jReferenceExplosionExtras(Object*, Object*, Object*, HitMode, int, Attack
 void f2jReferenceRangedMiss(Object*, Object*, Object*, HitMode, int, bool, Attack*);
 int f2jReferencePlayerKnockedOutBy(int);
 void f2jReferenceSetEndingGuy(Object*);
+int f2jReferenceAiInit();
+int f2jReferenceAiCount();
+const char* f2jReferenceAiName(int);
+void f2jReferenceAiPacketDump(int, int*);
+int f2jReferenceRating(Object*);
+AreaAttackMode f2jReferenceAreaAttackMode(Object*);
+RunAwayMode f2jReferenceRunAwayMode(Object*);
 }
 
 void sectionCombatBadShot()
@@ -7490,6 +7497,73 @@ void sectionCombatEnd()
     fallout::f2jReferenceSetEndingGuy(nullptr);
     std::printf("team-null=%d\n", fallout::f2jReferencePlayerKnockedOutBy(0));
     std::printf("dead-team=%d\n", fallout::f2jReferencePlayerKnockedOutBy(1));
+}
+
+void sectionAi()
+{
+    std::puts("[ai]");
+    // stat bounds + stat/ai messages (gameInit wires statsInit).
+    std::printf("statsinit=%d\n", fallout::statsInit());
+    int rc = fallout::f2jReferenceAiInit();
+    std::printf("init=%d\n", rc);
+    int count = fallout::f2jReferenceAiCount();
+    std::printf("count=%d\n", count);
+
+    for (int index : { 0, 1, 2 }) {
+        const char* name = fallout::f2jReferenceAiName(index);
+        if (name == nullptr) {
+            continue;
+        }
+        int fields[36];
+        fallout::f2jReferenceAiPacketDump(index, fields);
+        std::printf("p%d name=%s num=%d maxd=%d minhit=%d minhp=%d aggr=%d hurt=%d sec=%d called=%d font=%d color=%d outline=%d chance=%d\n",
+            index, name, fields[0], fields[1], fields[2], fields[3],
+            fields[4], fields[5], fields[6], fields[7], fields[8],
+            fields[9], fields[10], fields[11]);
+        std::printf("p%d run=%d,%d move=%d,%d attack=%d,%d miss=%d,%d head=%d,%d torso=%d,%d groin=%d,%d area=%d runaway=%d best=%d dist=%d who=%d chem=%d desire=%d,%d,%d disp=%d\n",
+            index, fields[12], fields[13], fields[14], fields[15],
+            fields[16], fields[17], fields[18], fields[19],
+            fields[20], fields[21], fields[22], fields[23],
+            fields[24], fields[25], fields[26], fields[27], fields[28],
+            fields[29], fields[30], fields[31], fields[32], fields[33],
+            fields[34], fields[35]);
+    }
+
+    fallout::Object* critter = nullptr;
+    fallout::objectCreateWithProtoId(&critter, fallout::ProtoId(16777558));
+    if (critter == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    // Normalize the AC bonus (the proto's own bonus differs per loader), so
+    // the vector pins only the deterministic arrangement.
+    fallout::critterSetBonusStat(critter, fallout::STAT_ARMOR_CLASS, 50);
+    std::printf("rate-bare=%d\n", fallout::f2jReferenceRating(critter));
+
+    fallout::Object* wpn = nullptr;
+    fallout::objectCreateWithProtoId(&wpn, fallout::ProtoId(8));
+    if (wpn != nullptr) {
+        fallout::itemAdd(critter, wpn, 1);
+        wpn->flags |= fallout::OBJECT_IN_LEFT_HAND;
+        critter->data.critter.combat.aiPacket = 179;
+        std::printf("rate-wpn=%d\n", fallout::f2jReferenceRating(critter));
+        std::printf("area=%d runaway=%d\n",
+            (int)fallout::f2jReferenceAreaAttackMode(critter),
+            (int)fallout::f2jReferenceRunAwayMode(critter));
+    }
+
+    // A packet without an explicit run-away mode picks one from min_hp vs
+    // max hit points. Arrange primary stats and derive max HP.
+    fallout::Object* critter2 = nullptr;
+    fallout::objectCreateWithProtoId(&critter2, fallout::ProtoId(16777558));
+    if (critter2 != nullptr) {
+        fallout::critterSetBaseStat(critter2, fallout::STAT_STRENGTH, 5);
+        fallout::critterSetBaseStat(critter2, fallout::STAT_ENDURANCE, 5);
+        fallout::critterUpdateDerivedStats(critter2);
+        critter2->data.critter.combat.aiPacket = 130;
+        std::printf("runaway2=%d\n",
+            (int)fallout::f2jReferenceRunAwayMode(critter2));
+    }
 }
 
 void sectionCriticalHit()
@@ -11192,6 +11266,7 @@ int main()
     RUN_SECTION(ScriptAttach);
     RUN_SECTION(CombatBadShot);
     RUN_SECTION(CriticalHit);
+    RUN_SECTION(Ai);
     RUN_SECTION(CombatEnd);
     RUN_SECTION(RangedMiss);
     RUN_SECTION(ExplosionExtras);
