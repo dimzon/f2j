@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-25) | **766 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-25) | **767 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v156.txt`; новый `[combatattack]` вызывает настоящий C++ `_combat_attack` и callback завершения | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки и её завершение проверены C++-векторами; дальше — `_combat_attack_this` (выбор hit mode/прицела, проверка выстрела), критические таблицы, баллистика и AI | `Combat.combatAttack`, `GameCombatAttackTest` |
+| Эталон харнеса | `golden/v157.txt`; `[combatattack]` и `[combatbadshot]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished` и `_combat_check_bad_shot` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение и bad-shot проверены C++-векторами; дальше — критические таблицы, баллистика, `_combat_attack_this` с полноценным интерфейсом и AI | `Combat.combatAttack`, `Combat.combatCheckBadShot`, `GameCombatAttackTest` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -128,6 +128,15 @@ translation unit, включающий неизменённый `combat.cc`; п�
 `_action_attack`, чтобы контролировать успех/отказ планирования без кадров.
 Это позволяет проверять и private `_gcsd`: объявление функции `static`
 не делает инструментирование исходника невозможным.
+
+Следующий слайс (2026-10-25): `_combat_check_bad_shot` и `_combat_attack_this`.
+Векторы `[combatbadshot]` (`v157`) снимают все ветви guard'а: OK, dead,
+low-AP, no-ammo, out-of-range, обе руки искалечены, одна рука (пистолет не
+двуручный → OK). В порт добавлены `combatCheckBadShot`, `combatAttackThis`
+(с seam'ами: выбор hit mode/прицела интерфейсом и окно прицела — игровая
+фаза), а также первые читалки линии огня `objShootBlockingAt`,
+`makeStraightPath` и дистанций `objectGetDistanceBetween[Tiles]`,
+`weaponHasAmmoForAttack`, `weaponGetBurstRounds`.
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar

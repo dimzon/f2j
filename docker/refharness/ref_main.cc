@@ -7241,6 +7241,48 @@ void sectionWeaponData()
 namespace fallout {
 int f2jReferenceCombatAttack(Object*, Object*, HitMode, HitLocation,
     CombatStartData*, int, bool, Attack*);
+int f2jReferenceCheckBadShot(Object*, Object*, HitMode, bool, int, int, int);
+}
+
+void sectionCombatBadShot()
+{
+    std::puts("[combatbadshot]");
+    fallout::Object* attacker = nullptr;
+    fallout::Object* defender = nullptr;
+    fallout::Object* weapon = nullptr;
+    fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&defender, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8)); // 10mm pistol
+    if (attacker == nullptr || defender == nullptr || weapon == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::objectSetLocation(attacker, 20100, 0, nullptr);
+    fallout::objectSetLocation(defender, 20101, 0, nullptr);
+    fallout::itemAdd(attacker, weapon, 1);
+    weapon->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+    int mode = fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY;
+    std::printf("ok=%d\n",
+        fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 10, -1));
+    defender->data.critter.combat.results = fallout::DAM_DEAD;
+    std::printf("dead=%d\n",
+        fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 10, -1));
+    defender->data.critter.combat.results = fallout::DAM_NONE;
+    std::printf("low-ap=%d\n",
+        fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 2, 10, -1));
+    std::printf("noammo=%d\n",
+        fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 0, -1));
+    fallout::objectSetLocation(defender, 23000, 0, nullptr);
+    std::printf("range=%d\n",
+        fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 10, -1));
+    fallout::objectSetLocation(defender, 20101, 0, nullptr);
+    std::printf("crippled=%d\n",
+        fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 10,
+            fallout::DAM_CRIP_ARM_LEFT | fallout::DAM_CRIP_ARM_RIGHT));
+    std::printf("bothcrippled=%d\n",
+        fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 10,
+            fallout::DAM_CRIP_ARM_LEFT));
 }
 
 void sectionCombatAttack()
@@ -10913,6 +10955,7 @@ int main()
     RUN_SECTION(ObjPlaceOnTile);
     RUN_SECTION(MapStart);
     RUN_SECTION(ScriptAttach);
+    RUN_SECTION(CombatBadShot);
     RUN_SECTION(CombatAttack);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object

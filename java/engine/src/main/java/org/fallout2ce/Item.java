@@ -1658,6 +1658,54 @@ public final class Item {
         return 0;
     }
 
+    // 0x478D80 weaponGetBurstRounds.
+    public static int weaponGetBurstRounds(GameObject weapon) {
+        if (weapon == null) {
+            return -1;
+        }
+        Proto[] slot = new Proto[1];
+        ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot);
+        return slot[0].item.data.weapon.rounds;
+    }
+
+    // 0x478E18 weaponHasAmmoForAttack.
+    public static boolean weaponHasAmmoForAttack(GameObject weapon, int hitMode) {
+        if (weapon == null) {
+            return false;
+        }
+        if (ammoGetCapacity(weapon) <= 0) {
+            return true;
+        }
+        int currentAmmo = ammoGetQuantity(weapon);
+        if (currentAmmo <= 0) {
+            return false;
+        }
+        // check_weapon_ammo_cost config: default 1, headless unchanged.
+        int rounds = 1;
+        int anim = weaponGetAnimationForHitMode(weapon, hitMode);
+        if (anim == AnimationType.FIRE_BURST.value()
+                || anim == AnimationType.FIRE_CONTINUOUS.value()) {
+            rounds = weaponGetBurstRounds(weapon);
+        }
+        int ammoCost = rounds;
+        int[] cost = { rounds };
+        if (rounds == 1 && weaponComputeAmmoCost(weapon, cost) == -1) {
+            return false;
+        }
+        if (rounds == 1) {
+            ammoCost = cost[0];
+        }
+        int ammoCostPerRound = ammoCost;
+        if (rounds > 1) {
+            if (ammoCost == 0) {
+                ammoCostPerRound = 0;
+            } else {
+                ammoCostPerRound = (ammoCost + rounds - 1) / rounds;
+            }
+        }
+        return ammoCostPerRound <= currentAmmo;
+    }
+
     // gUnarmedHitDescriptions bonus-critical-chance column (src/combat.cc):
     // BSS mirror, like the action-point-cost column. unarmedInit fills the
     // table from combatInit, which never runs headless, so the vectors

@@ -238,4 +238,39 @@ class GameCombatAttackTest {
         assertEquals(10, Item.ammoGetQuantity(weapon));
         assertEquals(50, defender.data.critter.hp);
     }
+
+    @Test
+    void badShotVectors() {
+        int rightPrimary = HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+        assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK,
+                Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
+
+        defender.data.critter.combat.results = Dam.DEAD;
+        assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_ALREADY_DEAD,
+                Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
+        defender.data.critter.combat.results = Dam.NONE;
+
+        attacker.data.critter.combat.ap = 2;
+        assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_NOT_ENOUGH_AP,
+                Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
+        attacker.data.critter.combat.ap = 10;
+
+        Item.ammoSetQuantity(weapon, 0);
+        assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_NO_AMMO,
+                Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
+        Item.ammoSetQuantity(weapon, 10);
+
+        assertEquals(0, ObjectSystem.objectSetLocation(defender, 23000, 0));
+        assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OUT_OF_RANGE,
+                Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
+        assertEquals(0, ObjectSystem.objectSetLocation(defender, 20101, 0));
+
+        attacker.data.critter.combat.results = Dam.CRIP_ARM_LEFT.or(Dam.CRIP_ARM_RIGHT);
+        assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_BOTH_ARMS_CRIPPLED,
+                Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
+        attacker.data.critter.combat.results = Dam.CRIP_ARM_LEFT;
+        assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK,
+                Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
+        attacker.data.critter.combat.results = Dam.NONE;
+    }
 }

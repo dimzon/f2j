@@ -713,6 +713,104 @@ public final class Combat {
         combatTurnRun();
     }
 
+    /**
+     * {@code _combat_check_bad_shot} (src/combat.cc:5823). The aim-blocked
+     * check is a seam: the headless tile has no scenery to block lines.
+     */
+    public static CombatDefs.CombatBadShot combatCheckBadShot(GameObject attacker,
+            GameObject defender, int hitMode, boolean aiming) {
+        int range = 1;
+        if (defender != null) {
+            range = ObjectSystem.objectGetDistanceBetween(attacker, defender);
+            if ((defender.data.critter.combat.results.bits()
+                    & ObjTypes.Dam.DEAD.bits()) != ObjTypes.Dam.NONE.bits()) {
+                return CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_ALREADY_DEAD;
+            }
+        }
+
+        GameObject weapon = Item.getWeaponForHitMode(attacker, hitMode);
+        if (weapon != null) {
+            int results = attacker.data.critter.combat.results.bits();
+            if ((results & (ObjTypes.Dam.CRIP_ARM_LEFT.bits()
+                    | ObjTypes.Dam.CRIP_ARM_RIGHT.bits())) == (ObjTypes.Dam.CRIP_ARM_LEFT.bits()
+                    | ObjTypes.Dam.CRIP_ARM_RIGHT.bits())) {
+                return CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_BOTH_ARMS_CRIPPLED;
+            }
+            if ((results & ObjTypes.Dam.CRIP_ARM_ANY.bits()) != 0) {
+                if (Item.weaponIsTwoHanded(weapon)) {
+                    return CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_ARM_CRIPPLED;
+                }
+            }
+        }
+
+        if (Item.weaponGetActionPointCost(attacker, hitMode, aiming) > attacker.data.critter.combat.ap) {
+            return CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_NOT_ENOUGH_AP;
+        }
+        if (Item.weaponGetRange(attacker, hitMode) < range) {
+            return CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OUT_OF_RANGE;
+        }
+
+        int attackType = Item.weaponGetAttackTypeForHitMode(weapon, hitMode);
+        if (Item.ammoGetCapacity(weapon) > 0) {
+            if (!Item.weaponHasAmmoForAttack(weapon, hitMode)) {
+                return CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_NO_AMMO;
+            }
+        }
+        if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
+                || attackType == Item.AttackType.ATTACK_TYPE_THROW.id()
+                || Item.weaponGetRange(attacker, hitMode) > 1) {
+            // _combat_is_shot_blocked: headless seam, clear line of fire.
+        }
+
+        return CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK;
+    }
+
+    /**
+     * {@code _combat_attack_this} (src/combat.cc:5895): the player's chosen
+     * attack. The interface-driven hit-mode/aiming selection and the called
+     * shot window are seams; an armed primary attack with the current hand
+     * runs through the request/attack path.
+     */
+    public static void combatAttackThis(GameObject target) {
+        if (target == null) {
+            return;
+        }
+        if ((combatState & COMBAT_STATE_PLAYER_TURN) == 0) {
+            return;
+        }
+
+        GameObject dude = ObjectSystem.getDude();
+        // interfaceGetCurrentHitMode: default primary action, not aiming.
+        int hitMode = CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+        boolean aiming = false;
+        if (Interface.interfaceGetCurrentHand() == Inventory.Hand.HAND_LEFT) {
+            hitMode = CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id();
+        }
+
+        CombatDefs.CombatBadShot rc = combatCheckBadShot(dude, target, hitMode, aiming);
+        if (rc != CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK) {
+            // The message/UI reactions of the bad-shot cases are game-phase
+            // seams; the request is not issued.
+            return;
+        }
+
+        if (!isInCombat()) {
+            ScriptsState.CombatStartData combat = new ScriptsState.CombatStartData();
+            combat.attacker = dude;
+            combat.defender = target;
+            combat.actionPointsBonus = 0;
+            combat.accuracyBonus = 0;
+            combat.damageBonus = 0;
+            combat.minDamage = 0;
+            combat.maxDamage = Integer.MAX_VALUE;
+            combat.overrideAttackResults = 0;
+            ScriptsState.scriptsRequestCombat(combat);
+            return;
+        }
+
+        combatAttack(dude, target, hitMode, CombatDefs.HitLocation.HIT_LOCATION_UNCALLED.id());
+    }
+
     /** Seam for {@code _combat_input} (player turn loop, game phase). */
     static int combatInput() {
         return 0;
@@ -766,8 +864,7 @@ public final class Combat {
                 if (obj == ObjectSystem.getDude()) {
                     // gameUiEnable/_gmouse_3d_refresh/outlines: seams.
                     if (gcsd != null) {
-                        // _combat_attack_this(gcsd.defender): needs the
-                        // attack computation (attackCompute), deferred.
+                        combatAttackThis(gcsd.defender);
                     }
 
                     if (!reloadedDuringCombat) {

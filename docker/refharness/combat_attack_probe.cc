@@ -47,4 +47,35 @@ int f2jReferenceCombatAttack(Object* attacker, Object* defender, HitMode mode,
     return rc;
 }
 
+// _combat_check_bad_shot is a stat of combat.cc, but this TU includes that
+// file, so it is observable here. A bare headless _combat_attack_this call
+// would be a no-op (the interface window is not initialized), so the vector
+// pins the guard logic itself: dead opponent, crippled arms, AP, range and
+// ammo.
+int f2jReferenceCheckBadShot(Object* attacker, Object* defender, HitMode mode,
+    bool aiming, int ap, int ammo, int results)
+{
+    int savedAp = attacker->data.critter.combat.ap;
+    Dam savedResults = attacker->data.critter.combat.results;
+    attacker->data.critter.combat.ap = ap;
+    if (results >= 0) {
+        attacker->data.critter.combat.results = static_cast<Dam>(results);
+    }
+    Object* weapon = critterGetWeaponForHitMode(attacker, mode);
+    int savedAmmo = -1;
+    if (weapon != nullptr && ammo >= 0) {
+        savedAmmo = ammoGetQuantity(weapon);
+        ammoSetQuantity(weapon, ammo);
+    }
+
+    CombatBadShot rc = _combat_check_bad_shot(attacker, defender, mode, aiming);
+
+    attacker->data.critter.combat.ap = savedAp;
+    attacker->data.critter.combat.results = savedResults;
+    if (weapon != nullptr && savedAmmo >= 0) {
+        ammoSetQuantity(weapon, savedAmmo);
+    }
+    return static_cast<int>(rc);
+}
+
 } // namespace fallout

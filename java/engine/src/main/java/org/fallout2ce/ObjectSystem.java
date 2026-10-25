@@ -690,6 +690,171 @@ public final class ObjectSystem {
         return out.toArray(new GameObject[0]);
     }
 
+    // 0x48B930 obj_shoot_blocking_at: like objBlockingAt, but dead critters
+    // never block and shoot-thru objects pass.
+    static GameObject objShootBlockingAt(GameObject exclude, int tile, int elevation) {
+        if (!MapDefs.hexGridTileIsValid(tile)) {
+            return null;
+        }
+
+        GameObjectListNode node = tileHeads[tile];
+        while (node != null) {
+            GameObject obj = node.obj;
+            if (obj.elevation == elevation && isShootBlocking(obj, exclude)) {
+                return obj;
+            }
+            node = node.next;
+        }
+
+        for (int rotation = org.fallout2ce.Rotation.FIRST;
+                rotation < org.fallout2ce.Rotation.COUNT;
+                rotation++) {
+            int neighbour = TileMath.tileGetTileInDirection(tile,
+                    org.fallout2ce.Rotation.fromInt(rotation), 1);
+            if (!MapDefs.hexGridTileIsValid(neighbour)) {
+                continue;
+            }
+            node = tileHeads[neighbour];
+            while (node != null) {
+                GameObject obj = node.obj;
+                if ((obj.flags.bits() & ObjectFlags.MULTIHEX.bits()) != 0
+                        && obj.elevation == elevation
+                        && isShootBlocking(obj, exclude)) {
+                    return obj;
+                }
+                node = node.next;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isShootBlocking(GameObject obj, GameObject exclude) {
+        int flags = obj.flags.bits();
+        if ((flags & (ObjectFlags.HIDDEN.bits() | ObjectFlags.NO_BLOCK.bits())) != 0
+                && (flags & ObjectFlags.SHOOT_THRU.bits()) != 0) {
+            return false;
+        }
+        if ((flags & (ObjectFlags.HIDDEN.bits() | ObjectFlags.NO_BLOCK.bits())) != 0
+                || obj == exclude) {
+            return false;
+        }
+        ObjectType type = FrmId.ofFid(obj.fid).objectType();
+        if (type == ObjectType.CRITTER && Critter.critterIsDead(obj)) {
+            return false;
+        }
+        return type == ObjectType.CRITTER || type == ObjectType.SCENERY || type == ObjectType.WALL;
+    }
+
+    // _make_straight_path_func (src/animation.cc), obstacle-test mode: walks
+    // the tile line and returns the first obstacle found. a6 fixes the walk
+    // granularity in the other mode; the obstacle test treats a6==32 as
+    // blocking everything (this is the only use the combat slice needs).
+    static GameObject makeStraightPath(GameObject obj, int from, int to) {
+        int[] sx = new int[1];
+        int[] sy = new int[1];
+        if (TileMath.tileToScreenXY(from, sx, sy) == -1) {
+            return null;
+        }
+        int fromX = sx[0] + 16;
+        int fromY = sy[0] + 8;
+        int[] tx = new int[1];
+        int[] ty = new int[1];
+        if (TileMath.tileToScreenXY(to, tx, ty) == -1) {
+            return null;
+        }
+        int toX = tx[0] + 16;
+        int toY = ty[0] + 8;
+
+        int stepX = Integer.compare(toX, fromX);
+        int stepY = Integer.compare(toY, fromY);
+        int ddx = 2 * Math.abs(toX - fromX);
+        int ddy = 2 * Math.abs(toY - fromY);
+        int tileX = fromX;
+        int tileY = fromY;
+        int prevTile = from;
+
+        if (ddx <= ddy) {
+            int middle = ddx - ddy / 2;
+            while (true) {
+                int tile = TileMath.tileFromScreenXY(tileX, tileY);
+                if (tileY == toY) {
+                    return null;
+                }
+                if (middle >= 0) {
+                    tileX += stepX;
+                    middle -= ddy;
+                }
+                tileY += stepY;
+                middle += ddx;
+                if (tile != prevTile) {
+                    GameObject obstacle = objShootBlockingAt(obj, tile, obj.elevation);
+                    if (obstacle != null) {
+                        return obstacle;
+                    }
+                    prevTile = tile;
+                }
+            }
+        } else {
+            int middle = ddy - ddx / 2;
+            while (true) {
+                int tile = TileMath.tileFromScreenXY(tileX, tileY);
+                if (tileX == toX) {
+                    return null;
+                }
+                if (middle >= 0) {
+                    tileY += stepY;
+                    middle -= ddx;
+                }
+                tileX += stepX;
+                middle += ddy;
+                if (tile != prevTile) {
+                    GameObject obstacle = objShootBlockingAt(obj, tile, obj.elevation);
+                    if (obstacle != null) {
+                        return obstacle;
+                    }
+                    prevTile = tile;
+                }
+            }
+        }
+    }
+
+    // 0x48BBF4 objectGetDistanceBetween.
+    public static int objectGetDistanceBetween(GameObject object1, GameObject object2) {
+        if (object1 == null || object2 == null) {
+            return 0;
+        }
+        int distance = TileMath.tileDistanceBetween(object1.tile, object2.tile);
+        if ((object1.flags.bits() & ObjectFlags.MULTIHEX.bits()) != 0) {
+            distance -= 1;
+        }
+        if ((object2.flags.bits() & ObjectFlags.MULTIHEX.bits()) != 0) {
+            distance -= 1;
+        }
+        if (distance < 0) {
+            distance = 0;
+        }
+        return distance;
+    }
+
+    // 0x48BC08 objectGetDistanceBetweenTiles.
+    public static int objectGetDistanceBetweenTiles(GameObject object1, int tile1,
+            GameObject object2, int tile2) {
+        if (object1 == null || object2 == null) {
+            return 0;
+        }
+        int distance = TileMath.tileDistanceBetween(tile1, tile2);
+        if ((object1.flags.bits() & ObjectFlags.MULTIHEX.bits()) != 0) {
+            distance -= 1;
+        }
+        if ((object2.flags.bits() & ObjectFlags.MULTIHEX.bits()) != 0) {
+            distance -= 1;
+        }
+        if (distance < 0) {
+            distance = 0;
+        }
+        return distance;
+    }
+
     // 0x489C9C obj_pid_new.
     public static int objectCreateWithProtoId(GameObject[] objectPtr, ProtoId protoId) {
         objectPtr[0] = null;
