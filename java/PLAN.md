@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-25) | **771 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-25) | **773 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v160.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, взрывные-эффекты и spray проверены C++-векторами; дальше — случайные траектории, `_combat_attack_this` с интерфейсом и AI | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
+| Эталон харнеса | `golden/v161.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[rangedmiss]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, ветку случайной траектории/гранаты, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, случайные траектории, взрывные-эффекты и spray проверены C++-векторами; дальше — `_combat_attack_this` с интерфейсом и AI | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.applyRangedMissTrajectory`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -167,6 +167,16 @@ C++-данных: `gCriticalHitTables[38][9][6]` и `gPlayerCriticalHitTable[9][
 `maxTargets=0` (как и в C++ без `explosionsInit`), поэтому секция перед
 съёмкой вызывает `explosionSettingsReset()`. `noDamage`/`isFromAttacker`
 (`DAM_EXPLODE`) и взрыв-анимации остаются швами.
+
+Следующий слайс (2026-10-25): случайные траектории и гранатный лендинг.
+Векторы `[rangedmiss]` (`v161`) снимают блок `attackCompute` после промаха:
+гранатная ветка (случайный поворот и дистанция броска от цели; три сида дают
+tile 2301/2102/1902, без попаданий) и дальнобойная (tile через
+`_tile_num_beyond`; 1825 для всех трёх сидов). Портированы
+`applyRangedMissTrajectory` (использует `tileNumBeyond`, случайный бросок и
+полный `_make_straight_path_func`-обход с возможным случайным попаданием в
+стороннюю цель). Остаются швами: `noDamage`/`isFromAttacker` и взрывной
+рендеринг.
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar

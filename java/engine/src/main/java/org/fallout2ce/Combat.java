@@ -1467,6 +1467,42 @@ public final class Combat {
         return false;
     }
 
+    static void applyRangedMissTrajectory(CombatDefs.Attack attack,
+            int distance, int range, boolean isGrenade) {
+        int tile;
+        if (isGrenade) {
+            int throwDistance = GameRandom.randomBetween(1, distance / 2);
+            if (throwDistance == 0) {
+                throwDistance = 1;
+            }
+            int rotation = GameRandom.randomBetween(Rotation.FIRST, Rotation.LAST);
+            tile = TileMath.tileGetTileInDirection(attack.defender.tile,
+                Rotation.fromInt(rotation), throwDistance);
+        } else {
+            tile = TileMath.tileNumBeyond(attack.attacker.tile,
+                attack.defender.tile, range);
+        }
+
+        attack.tile = tile;
+
+        GameObject accidentalTarget = attack.defender;
+        accidentalTarget = ObjectSystem.makeStraightPath(accidentalTarget,
+            attack.defender.tile, attack.tile);
+        if (accidentalTarget != null && accidentalTarget != attack.defender) {
+            attack.tile = accidentalTarget.tile;
+        } else {
+            accidentalTarget = ObjectSystem.objBlockingAt(null, attack.tile,
+                attack.defender.elevation);
+        }
+
+        if (accidentalTarget != null
+                && (accidentalTarget.flags.bits() & ObjTypes.ObjectFlags.SHOOT_THRU.bits()) == 0) {
+            attack.attackerFlags = attack.attackerFlags.or(ObjTypes.Dam.HIT);
+            attack.defender = accidentalTarget;
+            attackComputeDamage(attack, 1, 2);
+        }
+    }
+
     // 0x423C10 _compute_explosion_on_extras.
     static void computeExplosionOnExtras(CombatDefs.Attack attack,
             boolean isFromAttacker, boolean isGrenade, boolean noDamage) {
@@ -1819,7 +1855,7 @@ public final class Combat {
                 || attackType == Item.AttackType.ATTACK_TYPE_THROW.id()) {
             if ((attack.attackerFlags.bits()
                     & (ObjTypes.Dam.HIT.bits() | ObjTypes.Dam.CRITICAL.bits())) == 0) {
-                // Random trajectory and grenade landing: seams.
+                applyRangedMissTrajectory(attack, distance, range, isGrenade);
             }
         }
 

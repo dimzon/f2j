@@ -7245,6 +7245,7 @@ int f2jReferenceCheckBadShot(Object*, Object*, HitMode, bool, int, int, int);
 int f2jReferenceCriticalHit(Object*, Object*, HitMode, HitLocation, int, Attack*);
 int f2jReferenceSpray(Object*, Object*, Object*, HitMode, int, int, int*, Attack*);
 void f2jReferenceExplosionExtras(Object*, Object*, Object*, HitMode, int, Attack*);
+void f2jReferenceRangedMiss(Object*, Object*, Object*, HitMode, int, bool, Attack*);
 }
 
 void sectionCombatBadShot()
@@ -7392,6 +7393,75 @@ void sectionExplosionExtras()
             std::printf("backwash seed=%d aFlags=%x dmg=%d extras=%d\n",
                 seed, (int)snapshot.attackerFlags, snapshot.defenderDamage,
                 snapshot.extrasLength);
+        }
+    }
+}
+
+void sectionRangedMiss()
+{
+    std::puts("[rangedmiss]");
+    {
+        fallout::Object* attacker = nullptr;
+        fallout::Object* defender = nullptr;
+        fallout::Object* weapon = nullptr;
+        fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+        fallout::objectCreateWithProtoId(&defender, fallout::ProtoId(16777558));
+        fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8));
+        if (attacker == nullptr || defender == nullptr || weapon == nullptr) {
+            std::puts("create-failed");
+            return;
+        }
+        fallout::objectSetLocation(attacker, 2100, 0, nullptr);
+        fallout::objectSetLocation(defender, 2101, 0, nullptr);
+        fallout::itemAdd(attacker, weapon, 1);
+        weapon->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+        fallout::Proto* wproto = nullptr;
+        fallout::protoGetProto(weapon, &wproto);
+        int savedDamageType = wproto->item.data.weapon.damageType;
+        int savedFlags = wproto->item.extendedFlags;
+        wproto->item.data.weapon.damageType = fallout::DAMAGE_TYPE_EXPLOSION;
+        wproto->item.extendedFlags = static_cast<fallout::ProtoExtendedFlags>(
+            (savedFlags & ~0xF) | 5); // ANIM_THROW_ANIM
+
+        for (int seed : { 3, 9, 17 }) {
+            fallout::Attack snapshot;
+            fallout::f2jReferenceRangedMiss(attacker, defender, weapon,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY,
+                seed, true, &snapshot);
+            std::printf("gr seed=%d tile=%d flags=%x dmg=%d targetpid=%d\n",
+                seed, snapshot.tile, (int)snapshot.attackerFlags,
+                snapshot.defenderDamage, snapshot.defender->pid);
+        }
+
+        wproto->item.data.weapon.damageType = static_cast<fallout::DamageType>(savedDamageType);
+        wproto->item.extendedFlags = static_cast<fallout::ProtoExtendedFlags>(savedFlags);
+    }
+
+    {
+        fallout::Object* attacker = nullptr;
+        fallout::Object* defender = nullptr;
+        fallout::Object* weapon = nullptr;
+        fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+        fallout::objectCreateWithProtoId(&defender, fallout::ProtoId(16777558));
+        fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8));
+        if (attacker == nullptr || defender == nullptr || weapon == nullptr) {
+            std::puts("create-failed");
+            return;
+        }
+        fallout::objectSetLocation(attacker, 2200, 0, nullptr);
+        fallout::objectSetLocation(defender, 2205, 0, nullptr);
+        fallout::itemAdd(attacker, weapon, 1);
+        weapon->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+        for (int seed : { 5, 11, 23 }) {
+            fallout::Attack snapshot;
+            fallout::f2jReferenceRangedMiss(attacker, defender, weapon,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY,
+                seed, false, &snapshot);
+            std::printf("rg seed=%d tile=%d flags=%x dmg=%d targetpid=%d\n",
+                seed, snapshot.tile, (int)snapshot.attackerFlags,
+                snapshot.defenderDamage, snapshot.defender->pid);
         }
     }
 }
@@ -11096,6 +11166,7 @@ int main()
     RUN_SECTION(ScriptAttach);
     RUN_SECTION(CombatBadShot);
     RUN_SECTION(CriticalHit);
+    RUN_SECTION(RangedMiss);
     RUN_SECTION(ExplosionExtras);
     RUN_SECTION(Spray);
     RUN_SECTION(CombatAttack);

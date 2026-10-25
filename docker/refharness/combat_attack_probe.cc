@@ -123,4 +123,50 @@ void f2jReferenceExplosionExtras(Object* attacker, Object* defender,
     *snapshot = attack;
 }
 
+// Real random-trajectory / grenade-landing block of attackCompute (the part
+// that runs after a miss: neither HIT nor CRITICAL). The caller sets up the
+// weapon so the branch is reachable; the snapshot shows where the shot lands
+// and whether it clips someone.
+void f2jReferenceRangedMiss(Object* attacker, Object* defender, Object* weapon,
+    HitMode mode, int seed, bool isGrenade, Attack* snapshot)
+{
+    Attack attack;
+    attackInit(&attack, attacker, defender, mode, HIT_LOCATION_TORSO);
+    randomSeedPrerandom(seed);
+
+    int distance = objectGetDistanceBetweenTiles(attacker, attacker->tile,
+        defender, defender->tile);
+    int range = weaponGetRange(attacker, mode);
+
+    int tile;
+    if (isGrenade) {
+        int throwDistance = randomBetween(1, distance / 2);
+        if (throwDistance == 0) {
+            throwDistance = 1;
+        }
+        Rotation rotation = static_cast<Rotation>(randomBetween(ROTATION_FIRST, ROTATION_LAST));
+        tile = tileGetTileInDirection(defender->tile, rotation, throwDistance);
+    } else {
+        tile = _tile_num_beyond(attacker->tile, defender->tile, range);
+    }
+
+    attack.tile = tile;
+
+    Object* accidentalTarget = defender;
+    _make_straight_path_func(accidentalTarget, defender->tile, attack.tile, nullptr, &accidentalTarget, 32, _obj_shoot_blocking_at);
+    if (accidentalTarget != nullptr && accidentalTarget != defender) {
+        attack.tile = accidentalTarget->tile;
+    } else {
+        accidentalTarget = _obj_blocking_at(nullptr, attack.tile, defender->elevation);
+    }
+
+    if (accidentalTarget != nullptr && (accidentalTarget->flags & OBJECT_SHOOT_THRU) == OBJECT_NONE) {
+        attack.attackerFlags |= DAM_HIT;
+        attack.defender = accidentalTarget;
+        attackComputeDamage(&attack, 1, 2);
+    }
+
+    *snapshot = attack;
+}
+
 } // namespace fallout
