@@ -7244,6 +7244,7 @@ int f2jReferenceCombatAttack(Object*, Object*, HitMode, HitLocation,
 int f2jReferenceCheckBadShot(Object*, Object*, HitMode, bool, int, int, int);
 int f2jReferenceCriticalHit(Object*, Object*, HitMode, HitLocation, int, Attack*);
 int f2jReferenceSpray(Object*, Object*, Object*, HitMode, int, int, int*, Attack*);
+void f2jReferenceExplosionExtras(Object*, Object*, Object*, HitMode, int, Attack*);
 }
 
 void sectionCombatBadShot()
@@ -7328,6 +7329,71 @@ void sectionSpray()
 
     wproto->item.data.weapon.rounds = savedRounds;
     wproto->item.extendedFlags = static_cast<fallout::ProtoExtendedFlags>(savedFlags);
+}
+
+void sectionExplosionExtras()
+{
+    std::puts("[explosionextras]");
+    fallout::Object* attacker = nullptr;
+    fallout::Object* defender = nullptr;
+    fallout::Object* weapon = nullptr;
+    fallout::Object* extraA = nullptr;
+    fallout::Object* extraB = nullptr;
+    fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&defender, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8));
+    fallout::objectCreateWithProtoId(&extraA, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&extraB, fallout::ProtoId(16777558));
+    if (attacker == nullptr || defender == nullptr || weapon == nullptr
+        || extraA == nullptr || extraB == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::objectSetLocation(attacker, 1100, 0, nullptr);
+    fallout::objectSetLocation(defender, 1101, 0, nullptr);
+    int tileNE = fallout::tileGetTileInDirection(1101, fallout::ROTATION_NE, 1);
+    int tileSW = fallout::tileGetTileInDirection(1101, fallout::ROTATION_SW, 1);
+    fallout::objectSetLocation(extraA, tileNE, 0, nullptr);
+    fallout::objectSetLocation(extraB, tileSW, 0, nullptr);
+    fallout::itemAdd(attacker, weapon, 1);
+    weapon->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+    for (int seed : { 1, 7 }) {
+        fallout::Attack snapshot;
+        fallout::f2jReferenceExplosionExtras(attacker, defender, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, seed, &snapshot);
+        std::printf("seed=%d aFlags=%x extras=%d", seed,
+            (int)snapshot.attackerFlags, snapshot.extrasLength);
+        for (int i = 0; i < snapshot.extrasLength; i += 1) {
+            std::printf(" tile=%d loc=%d pid=%d dmg=%d flags=%d kb=%d",
+                snapshot.extras[i]->tile, (int)snapshot.extrasHitLocation[i],
+                snapshot.extras[i]->pid, snapshot.extrasDamage[i],
+                (int)snapshot.extrasFlags[i], snapshot.extrasKnockback[i]);
+        }
+        std::putchar('\n');
+    }
+
+    fallout::Object* attacker2 = nullptr;
+    fallout::Object* defender2 = nullptr;
+    fallout::Object* weapon2 = nullptr;
+    fallout::objectCreateWithProtoId(&attacker2, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&defender2, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&weapon2, fallout::ProtoId(8));
+    if (attacker2 != nullptr && defender2 != nullptr && weapon2 != nullptr) {
+        int neighborTile = fallout::tileGetTileInDirection(1201, fallout::ROTATION_NE, 1);
+        fallout::objectSetLocation(defender2, 1201, 0, nullptr);
+        fallout::objectSetLocation(attacker2, neighborTile, 0, nullptr);
+        fallout::itemAdd(attacker2, weapon2, 1);
+        weapon2->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+        for (int seed : { 3 }) {
+            fallout::Attack snapshot;
+            fallout::f2jReferenceExplosionExtras(attacker2, defender2, weapon2,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, seed, &snapshot);
+            std::printf("backwash seed=%d aFlags=%x dmg=%d extras=%d\n",
+                seed, (int)snapshot.attackerFlags, snapshot.defenderDamage,
+                snapshot.extrasLength);
+        }
+    }
 }
 
 void sectionCriticalHit()
@@ -11030,6 +11096,7 @@ int main()
     RUN_SECTION(ScriptAttach);
     RUN_SECTION(CombatBadShot);
     RUN_SECTION(CriticalHit);
+    RUN_SECTION(ExplosionExtras);
     RUN_SECTION(Spray);
     RUN_SECTION(CombatAttack);
 

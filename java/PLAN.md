@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-25) | **769 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-25) | **771 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v159.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы и spray проверены C++-векторами; дальше — взрывы/случайные траектории, `_combat_attack_this` с интерфейсом и AI | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.computeSpray` |
+| Эталон харнеса | `golden/v160.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, взрывные-эффекты и spray проверены C++-векторами; дальше — случайные траектории, `_combat_attack_this` с интерфейсом и AI | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -150,11 +150,23 @@ C++-данных: `gCriticalHitTables[38][9][6]` и `gPlayerCriticalHitTable[9][
 Следующий слайс (2026-10-25): баллистика.
 Векторы `[spray]` (`v159`) снимают `_compute_spray` с настоящего C++-кода на
 модифицированном прото пистолета (4 патрона, FIRE_BURST): все четыре сида
-дают roll=2, fired=4. Портированы `_check_ranged_miss` и `_shoot_along_path`
+даютют=2, fired=4. Портированы `_check_ranged_miss` и `_shoot_along_path`
 (с `extras`/`extrasDamage`/`extrasFlags`/`extrasKnockback`), и `attackCompute`
 теперь использует `computeSpray` для burst/continuous и `checkRangedMiss` при
-промахе. Случайные траектории/гранаты и `_compute_explosion_on_extras`
-остаются швами.
+промахе. Случайные траектории/гранаты остаются швами.
+
+Следующий слайс (2026-10-25): взрывные-эффекты.
+Векторы `[explosionextras]` (`v160`) снимают `_compute_explosion_on_extras`
+с настоящего C++-кода: два критера на первом кольце взрыва (seed 1/7, урон
+7/8/8/7) и ветка backwash, когда атакующий сам стоит на соседнем тайле
+(`aFlags=0x400100`, `extras=0`). Портированы `combatIsShotBlocked`
+(`_combat_is_shot_blocked`), `computeExplosionOnExtras` (кольцевой обход с
+поворотами, `MAX_TARGETS=6` после `explosionSettingsReset`), globals
+`explosionRadius`/`explosionMaxTargets` и вызовы из `attackCompute` (ветки
+`isGrenade`/`DAM_EXPLODE`). Важно: BSS-состояние взрывов в харнесе даёт
+`maxTargets=0` (как и в C++ без `explosionsInit`), поэтому секция перед
+съёмкой вызывает `explosionSettingsReset()`. `noDamage`/`isFromAttacker`
+(`DAM_EXPLODE`) и взрыв-анимации остаются швами.
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar
@@ -167,7 +179,8 @@ C++-данных: `gCriticalHitTables[38][9][6]` и `gPlayerCriticalHitTable[9][
   визуальных кадров. Отдельный тест подтверждает отсутствие двойного урона
   и расхода патронов при повторном ожидании.
 - `_combat_attack_this`, выбор прицела интерфейсом, AI lastTarget,
-  `_scr_end_combat`, реальные анимации и баллистика ещё требуют порта.
+  `_scr_end_combat`, реальные анимации и случайные траектории ещё требуют
+  порта.
 
 История предыдущих слайсов (формулировки «дальше» в ней относятся к тому
 снимку; актуальная очередь — `_combat_attack_this`, затем критические таблицы,

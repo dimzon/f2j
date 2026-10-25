@@ -1973,22 +1973,24 @@ public final class Item {
     }
 
     // 0x479180 weapon_get_grenade_explosion_radius: the sfall override wins
-    // unless reset to -1; otherwise the post-explosionsReset default (2).
+    // unless reset to -1; otherwise the BSS default (0 headless, 2 after
+    // explosionsInit).
     public static int weaponGetGrenadeExplosionRadius(GameObject weapon) {
         if (gExplosionRadius != -1) {
             return gExplosionRadius;
         }
 
-        return 2;
+        return 0;
     }
 
-    // 0x479188 weapon_get_rocket_explosion_radius (same shape, default 3).
+    // 0x479188 weapon_get_rocket_explosion_radius (same shape, default 3
+    // after explosionsInit).
     public static int weaponGetRocketExplosionRadius(GameObject weapon) {
         if (gExplosionRadius != -1) {
             return gExplosionRadius;
         }
 
-        return 3;
+        return 0;
     }
 
     // 0x4792F8 armor_get_armor_class (null -> 0).
@@ -2134,6 +2136,31 @@ public final class Item {
     // The harness never touches it (explosionsReset is game phase), so no
     // resetForTests entry is needed.
     private static int gExplosionRadius = -1;
+
+    /** Port of {@code explosionSetRadius}. */
+    public static void explosionSetRadius(int radius) {
+        gExplosionRadius = radius;
+    }
+
+    /** Port of {@code gExplosionMaxTargets} (src/item.cc): BSS mirror, so the
+     *  headless harness sees 0 until explosionSettingsReset runs. */
+    private static int explosionMaxTargets = 0;
+
+    /** Port of {@code explosionGetMaxTargets}. */
+    public static int explosionGetMaxTargets() {
+        return explosionMaxTargets;
+    }
+
+    /** Port of {@code explosionSetMaxTargets}. */
+    public static void explosionSetMaxTargets(int maxTargets) {
+        explosionMaxTargets = maxTargets;
+    }
+
+    /** Port of {@code explosionSettingsReset}. */
+    public static void explosionSettingsReset() {
+        gExplosionRadius = -1;
+        explosionMaxTargets = 6;
+    }
 
     // is_unarmed_hit_mode (src/combat.h): PUNCH/KICK plus the advanced
     // unarmed range.

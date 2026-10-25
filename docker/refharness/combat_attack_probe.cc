@@ -108,4 +108,19 @@ int f2jReferenceSpray(Object* attacker, Object* defender, Object* weapon,
     return roll;
 }
 
+// Real explosion-extras computation. The caller places critters around the
+// defender and sets the explosion radius; the snapshot exposes the extras.
+void f2jReferenceExplosionExtras(Object* attacker, Object* defender,
+    Object* weapon, HitMode mode, int seed, Attack* snapshot)
+{
+    Attack attack;
+    attackInit(&attack, attacker, defender, mode, HIT_LOCATION_TORSO);
+    attack.attackerFlags |= DAM_HIT;
+    randomSeedPrerandom(seed);
+    explosionSettingsReset();
+    explosionSetRadius(1);
+    _compute_explosion_on_extras(&attack, 0, 1, 0);
+    *snapshot = attack;
+}
+
 } // namespace fallout

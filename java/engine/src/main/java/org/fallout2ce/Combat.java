@@ -1439,6 +1439,134 @@ public final class Combat {
         return roundsHitMainTarget;
     }
 
+    private static final CombatDefs.Attack explosionCtd = new CombatDefs.Attack();
+
+    // 0x426CC4 _combat_is_shot_blocked.
+    static boolean combatIsShotBlocked(GameObject sourceObj, int from, int to,
+            GameObject targetObj) {
+        GameObject obstacle = sourceObj;
+        int current = from;
+        while (obstacle != null && current != to) {
+            obstacle = ObjectSystem.makeStraightPath(sourceObj, current, to);
+            if (obstacle != null) {
+                if (FrmId.ofFid(obstacle.fid).objectType() != ObjectType.CRITTER
+                        && obstacle != targetObj) {
+                    return true;
+                }
+                if ((obstacle.flags.bits() & ObjTypes.ObjectFlags.MULTIHEX.bits()) != 0) {
+                    current = obstacle.tile;
+                    if (current != to) {
+                        Rotation rotation = TileMath.tileGetRotationTo(current, to);
+                        current = TileMath.tileGetTileInDirection(current, rotation, 1);
+                    }
+                } else {
+                    current = obstacle.tile;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 0x423C10 _compute_explosion_on_extras.
+    static void computeExplosionOnExtras(CombatDefs.Attack attack,
+            boolean isFromAttacker, boolean isGrenade, boolean noDamage) {
+        GameObject targetObj;
+        if (isFromAttacker) {
+            targetObj = attack.attacker;
+        } else {
+            if ((attack.attackerFlags.bits() & ObjTypes.Dam.HIT.bits()) != 0) {
+                targetObj = attack.defender;
+            } else {
+                targetObj = null;
+            }
+        }
+
+        int explosionTile;
+        if (targetObj != null) {
+            explosionTile = targetObj.tile;
+        } else {
+            explosionTile = attack.tile;
+        }
+
+        if (explosionTile == -1) {
+            return;
+        }
+
+        int ringTileIdx = 0;
+        int radius = 0;
+        Rotation rotation = Rotation.NE;
+        int tile = -1;
+        int ringFirstTile = explosionTile;
+        int maxTargets = Item.explosionGetMaxTargets();
+
+        while (attack.extrasLength < maxTargets) {
+            if (radius != 0
+                    && (tile == -1
+                        || (tile = TileMath.tileGetTileInDirection(tile, rotation, 1)) != ringFirstTile)) {
+                ringTileIdx++;
+                if (ringTileIdx % radius == 0) {
+                    rotation = Rotation.fromInt((rotation.value() + 1) % Rotation.COUNT);
+                }
+            } else {
+                radius++;
+                if (isGrenade && Item.weaponGetGrenadeExplosionRadius(attack.weapon) < radius) {
+                    tile = -1;
+                } else if (isGrenade
+                        || Item.weaponGetRocketExplosionRadius(attack.weapon) >= radius) {
+                    tile = TileMath.tileGetTileInDirection(ringFirstTile, Rotation.NE, 1);
+                } else {
+                    tile = -1;
+                }
+
+                ringFirstTile = tile;
+                rotation = Rotation.SE;
+                ringTileIdx = 0;
+            }
+
+            if (tile == -1) {
+                break;
+            }
+
+            GameObject obstacle = ObjectSystem.objBlockingAt(targetObj, tile,
+                attack.attacker.elevation);
+            if (obstacle != null
+                    && FrmId.ofFid(obstacle.fid).objectType() == ObjectType.CRITTER
+                    && (obstacle.data.critter.combat.results.bits()
+                        & ObjTypes.Dam.DEAD.bits()) == ObjTypes.Dam.NONE.bits()
+                    && (obstacle.flags.bits() & ObjTypes.ObjectFlags.SHOOT_THRU.bits()) == 0
+                    && !combatIsShotBlocked(obstacle, obstacle.tile, explosionTile, null)) {
+                if (obstacle == attack.attacker) {
+                    attack.attackerFlags = attack.attackerFlags.and(ObjTypes.Dam.HIT.not());
+                    attackComputeDamage(attack, 1, 2);
+                    attack.attackerFlags = attack.attackerFlags.or(ObjTypes.Dam.HIT);
+                    attack.attackerFlags = attack.attackerFlags.or(ObjTypes.Dam.BACKWASH);
+                } else {
+                    int index = 0;
+                    while (index < attack.extrasLength && attack.extras[index] != obstacle) {
+                        index++;
+                    }
+
+                    if (index == attack.extrasLength) {
+                        attack.extrasHitLocation[index] = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+                        attack.extras[index] = obstacle;
+                        attackInit(explosionCtd, attack.attacker, obstacle,
+                            attack.hitMode,
+                            CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
+                        if (!noDamage) {
+                            explosionCtd.attackerFlags = explosionCtd.attackerFlags.or(ObjTypes.Dam.HIT);
+                            attackComputeDamage(explosionCtd, 1, 2);
+                        }
+
+                        attack.extrasDamage[index] = explosionCtd.defenderDamage;
+                        attack.extrasFlags[index] = explosionCtd.defenderFlags;
+                        attack.extrasKnockback[index] = explosionCtd.defenderKnockback;
+                        attack.extrasLength++;
+                    }
+                }
+            }
+        }
+    }
+
     // 0x4235C0 _compute_spray: burst and continuous fire.
     static int computeSpray(CombatDefs.Attack attack, int accuracy,
             int[] roundsHitMainTargetPtr, int[] roundsFiredPtr, int anim) {
@@ -1695,7 +1823,16 @@ public final class Combat {
             }
         }
 
-        // _compute_explosion_on_extras: explosion seam.
+        if (damageType.id() == explosionGetDamageType() || isGrenade) {
+            if ((attack.attackerFlags.bits() & ObjTypes.Dam.HIT.bits()) != 0
+                    || (attack.attackerFlags.bits() & ObjTypes.Dam.CRITICAL.bits()) == 0) {
+                computeExplosionOnExtras(attack, false, isGrenade, false);
+            } else {
+                if ((attack.attackerFlags.bits() & ObjTypes.Dam.EXPLODE.bits()) != 0) {
+                    computeExplosionOnExtras(attack, true, isGrenade, false);
+                }
+            }
+        }
 
         attackComputeDeathFlags(attack);
 
