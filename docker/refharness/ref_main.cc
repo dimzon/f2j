@@ -7239,6 +7239,7 @@ void sectionWeaponData()
 }
 
 namespace fallout {
+struct AiPacket;
 int f2jReferenceCombatAttack(Object*, Object*, HitMode, HitLocation,
     CombatStartData*, int, bool, Attack*);
 int f2jReferenceCheckBadShot(Object*, Object*, HitMode, bool, int, int, int);
@@ -7255,6 +7256,23 @@ void f2jReferenceAiPacketDump(int, int*);
 int f2jReferenceRating(Object*);
 AreaAttackMode f2jReferenceAreaAttackMode(Object*);
 RunAwayMode f2jReferenceRunAwayMode(Object*);
+AiPacket* f2jReferenceAiPacketRef(int);
+int f2jReferenceAiRangeForHitMode(Object*, Object*, HitMode);
+bool f2jReferenceAiWeaponAttackInRange(Object*, Object*, Object*);
+int f2jReferenceCaiGetMinHp(AiPacket*);
+bool f2jReferenceCaiHasWeapPrefType(AiPacket*, AttackType);
+bool f2jReferenceAiCanUseWeapon(Object*, Object*, HitMode);
+void f2jReferenceCheckRetaliation(Object*, Object*);
+void f2jReferenceAiSetBestWeapon(AiPacket*, BestWeapon);
+void f2jReferenceAiSetRunAwayMode(AiPacket*, RunAwayMode);
+void f2jReferenceAiSetMinHp(AiPacket*, int);
+void f2jReferenceAiSetMinToHit(AiPacket*, int);
+int f2jReferenceAiMinToHit(AiPacket*);
+int f2jReferenceAiBestWeapon(AiPacket*);
+int f2jReferenceAiRunAwayMode(AiPacket*);
+int f2jReferenceAiMinHp(AiPacket*);
+bool f2jReferenceCritterCanUseWeapon(Object*, Object*, HitMode);
+void f2jReferenceAiAssignPacket(Object*, AiPacket*);
 }
 
 void sectionCombatBadShot()
@@ -7564,6 +7582,258 @@ void sectionAi()
         std::printf("runaway2=%d\n",
             (int)fallout::f2jReferenceRunAwayMode(critter2));
     }
+}
+
+void sectionAiDecisions()
+{
+    std::puts("[aidec]");
+    std::printf("statsinit=%d\n", fallout::statsInit());
+    std::printf("init=%d\n", fallout::f2jReferenceAiInit());
+
+    fallout::Object* critter = nullptr;
+    fallout::objectCreateWithProtoId(&critter, fallout::ProtoId(16777558));
+    fallout::Object* weapon = nullptr;
+    fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8));
+    if (critter == nullptr || weapon == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::Proto* cproto = nullptr;
+    fallout::protoGetProto(critter, &cproto);
+
+    // aiGetWeaponRangeForHitMode: weapon ranges, unarmed (long limbs), and
+    // the thrown-weapon strength clamp.
+    std::printf("range-p=%d range-s=%d\n",
+        fallout::f2jReferenceAiRangeForHitMode(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY),
+        fallout::f2jReferenceAiRangeForHitMode(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY));
+    std::printf("range-null=%d\n",
+        fallout::f2jReferenceAiRangeForHitMode(critter, nullptr,
+            (fallout::HitMode)fallout::HIT_MODE_PUNCH));
+    cproto->critter.data.flags |= fallout::CRITTER_LONG_LIMBS;
+    std::printf("range-null-long=%d\n",
+        fallout::f2jReferenceAiRangeForHitMode(critter, nullptr,
+            (fallout::HitMode)fallout::HIT_MODE_PUNCH));
+    cproto->critter.data.flags &= ~fallout::CRITTER_LONG_LIMBS;
+
+    fallout::Object* spear = nullptr;
+    fallout::objectCreateWithProtoId(&spear, fallout::ProtoId(7));
+    if (spear != nullptr) {
+        fallout::Proto* sproto = nullptr;
+        fallout::protoGetProto(spear, &sproto);
+        int maxRange2 = sproto->item.data.weapon.maxRange2;
+        std::printf("range-throw=%d cap=%d\n",
+            fallout::f2jReferenceAiRangeForHitMode(critter, spear,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY),
+            fallout::f2jReferenceAiRangeForHitMode(critter, spear,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY));
+        sproto->item.data.weapon.maxRange2 = 40;
+        int str = fallout::critterGetStat(critter, fallout::STAT_STRENGTH);
+        std::printf("range-throw-40=%d str=%d\n",
+            fallout::f2jReferenceAiRangeForHitMode(critter, spear,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_SECONDARY),
+            str);
+        sproto->item.data.weapon.maxRange2 = maxRange2;
+    }
+
+    // aiWeaponAttackInRange: pistol (primary only) at 2/26 tiles; spear
+    // (short melee primary, longer thrown secondary) at 1/3/9 tiles.
+    fallout::Object* target = nullptr;
+    fallout::objectCreateWithProtoId(&target, fallout::ProtoId(16777558));
+    if (target != nullptr) {
+        fallout::objectSetLocation(critter, 20100, 0, nullptr);
+        fallout::objectSetLocation(target, 20102, 0, nullptr);
+        std::printf("inrange-pistol-2=%d\n",
+            fallout::f2jReferenceAiWeaponAttackInRange(critter, weapon, target) ? 1 : 0);
+        fallout::objectSetLocation(target, 20126, 0, nullptr);
+        std::printf("inrange-pistol-26=%d\n",
+            fallout::f2jReferenceAiWeaponAttackInRange(critter, weapon, target) ? 1 : 0);
+        if (spear != nullptr) {
+            fallout::objectSetLocation(target, 20101, 0, nullptr);
+            std::printf("inrange-spear-1=%d\n",
+                fallout::f2jReferenceAiWeaponAttackInRange(critter, spear, target) ? 1 : 0);
+            fallout::objectSetLocation(target, 20103, 0, nullptr);
+            std::printf("inrange-spear-3=%d\n",
+                fallout::f2jReferenceAiWeaponAttackInRange(critter, spear, target) ? 1 : 0);
+            fallout::objectSetLocation(target, 20109, 0, nullptr);
+            std::printf("inrange-spear-9=%d\n",
+                fallout::f2jReferenceAiWeaponAttackInRange(critter, spear, target) ? 1 : 0);
+        }
+    }
+
+    // _cai_get_min_hp: null, explicit modes (incl. LAST), derived min_hp
+    // (INVALID), and an out-of-range mode.
+    fallout::AiPacket* a0 = fallout::f2jReferenceAiPacketRef(0);
+    fallout::AiPacket* a2 = fallout::f2jReferenceAiPacketRef(2);
+    int savedA0Best = fallout::f2jReferenceAiBestWeapon(a0);
+    int savedA0MinToHit = fallout::f2jReferenceAiMinToHit(a0);
+    int savedA2Mode = fallout::f2jReferenceAiRunAwayMode(a2);
+    int savedA2MinHp = fallout::f2jReferenceAiMinHp(a2);
+    std::printf("minhp-null=%d\n", fallout::f2jReferenceCaiGetMinHp(nullptr));
+    fallout::f2jReferenceAiSetRunAwayMode(a2, fallout::RUN_AWAY_MODE_NONE);
+    std::printf("minhp-none=%d\n", fallout::f2jReferenceCaiGetMinHp(a2));
+    fallout::f2jReferenceAiSetRunAwayMode(a2, fallout::RUN_AWAY_MODE_COWARD);
+    std::printf("minhp-coward=%d\n", fallout::f2jReferenceCaiGetMinHp(a2));
+    fallout::f2jReferenceAiSetRunAwayMode(a2, fallout::RUN_AWAY_MODE_NEVER);
+    std::printf("minhp-never=%d\n", fallout::f2jReferenceCaiGetMinHp(a2));
+    fallout::f2jReferenceAiSetRunAwayMode(a2, fallout::RUN_AWAY_MODE_INVALID);
+    fallout::f2jReferenceAiSetMinHp(a2, 37);
+    std::printf("minhp-invalid=%d\n", fallout::f2jReferenceCaiGetMinHp(a2));
+    fallout::f2jReferenceAiSetRunAwayMode(a2, (fallout::RunAwayMode)-2);
+    std::printf("minhp-bad=%d\n", fallout::f2jReferenceCaiGetMinHp(a2));
+
+    // _caiHasWeapPrefType: one bit mask per best_weapon row, ordered
+    // NONE, UNARMED, MELEE, THROW, RANGED.
+    {
+        int types[5] = {
+            fallout::ATTACK_TYPE_NONE,
+            fallout::ATTACK_TYPE_UNARMED,
+            fallout::ATTACK_TYPE_MELEE,
+            fallout::ATTACK_TYPE_THROW,
+            fallout::ATTACK_TYPE_RANGED,
+        };
+        for (int best = -1; best < fallout::BEST_WEAPON_COUNT; best++) {
+            fallout::f2jReferenceAiSetBestWeapon(a0, (fallout::BestWeapon)best);
+            int mask = 0;
+            for (int i = 0; i < 5; i++) {
+                if (fallout::f2jReferenceCaiHasWeapPrefType(
+                        a0, (fallout::AttackType)types[i])) {
+                    mask |= 1 << i;
+                }
+            }
+            std::printf("pref-%d=%d\n", best, mask);
+        }
+    }
+
+    // _ai_can_use_weapon: art gate, skill vs min_to_hit, weapon preference.
+    // Frame 11 is hmjmps, whose pistol fire-single art exists; the maddog
+    // object's own frame 16 has no such art.
+    int maddogFid = critter->fid;
+    critter->fid = fallout::FrmId(fallout::OBJ_TYPE_CRITTER, 11,
+        fallout::ANIM_STAND, fallout::WeaponAnimation::None,
+        fallout::ROTATION_NE).fid();
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_RANGED);
+    fallout::f2jReferenceAiSetMinToHit(a0, 90);
+    fallout::f2jReferenceAiAssignPacket(critter, a0);
+    int savedSkill = cproto->critter.data.skills[fallout::SKILL_SMALL_GUNS];
+    std::printf("canuse-skill=%d\n",
+        fallout::f2jReferenceAiCanUseWeapon(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    cproto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 120;
+    std::printf("canuse-true=%d\n",
+        fallout::f2jReferenceAiCanUseWeapon(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_MELEE);
+    std::printf("canuse-pref=%d\n",
+        fallout::f2jReferenceAiCanUseWeapon(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    fallout::f2jReferenceAiSetBestWeapon(a0, fallout::BEST_WEAPON_RANGED);
+    critter->fid = maddogFid;
+    std::printf("canuse-art=%d\n",
+        fallout::f2jReferenceAiCanUseWeapon(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    critter->fid = fallout::FrmId(fallout::OBJ_TYPE_CRITTER, 11,
+        fallout::ANIM_STAND, fallout::WeaponAnimation::None,
+        fallout::ROTATION_NE).fid();
+    cproto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = savedSkill;
+
+    // critterCanUseWeapon: type gates, crippled arms, two-handed weapons.
+    fallout::Object* rifle = nullptr;
+    fallout::objectCreateWithProtoId(&rifle, fallout::ProtoId(10));
+    fallout::Object* nonWeapon = nullptr;
+    fallout::objectCreateWithProtoId(&nonWeapon, fallout::ProtoId(1));
+    auto savedResults = critter->data.critter.combat.results;
+    std::printf("cuw-null-critter=%d\n",
+        fallout::f2jReferenceCritterCanUseWeapon(nullptr, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    std::printf("cuw-null-weapon=%d\n",
+        fallout::f2jReferenceCritterCanUseWeapon(critter, nullptr,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    if (nonWeapon != nullptr) {
+        std::printf("cuw-nonweapon=%d\n",
+            fallout::f2jReferenceCritterCanUseWeapon(critter, nonWeapon,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    }
+    std::printf("cuw-art=%d\n",
+        fallout::f2jReferenceCritterCanUseWeapon(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    if (rifle != nullptr) {
+        std::printf("cuw-twohand=%d\n",
+            fallout::f2jReferenceCritterCanUseWeapon(critter, rifle,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+        critter->data.critter.combat.results |= fallout::DAM_CRIP_ARM_RIGHT;
+        std::printf("cuw-twohand-crip=%d\n",
+            fallout::f2jReferenceCritterCanUseWeapon(critter, rifle,
+                (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    }
+    std::printf("cuw-onehand-crip=%d\n",
+        fallout::f2jReferenceCritterCanUseWeapon(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    critter->data.critter.combat.results |= fallout::DAM_CRIP_ARM_ANY;
+    std::printf("cuw-bothcrip=%d\n",
+        fallout::f2jReferenceCritterCanUseWeapon(critter, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0);
+    critter->data.critter.combat.results = savedResults;
+    critter->fid = maddogFid;
+
+    // _combatai_check_retaliation: no target, weaker/stronger/equal ratings.
+    // The rating adds the best held weapon's max damage, so the armed
+    // critters outrank the bare one without touching the shared proto.
+    fallout::Object* attacker = nullptr;
+    fallout::Object* weak = nullptr;
+    fallout::Object* dead = nullptr;
+    fallout::Object* strong = nullptr;
+    fallout::Object* equal = nullptr;
+    fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&weak, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&dead, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&strong, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&equal, fallout::ProtoId(16777558));
+    fallout::Object* armed1 = nullptr;
+    fallout::Object* armed2 = nullptr;
+    fallout::objectCreateWithProtoId(&armed1, fallout::ProtoId(10));
+    fallout::objectCreateWithProtoId(&armed2, fallout::ProtoId(10));
+    if (attacker != nullptr && weak != nullptr && dead != nullptr
+        && strong != nullptr && equal != nullptr
+        && armed1 != nullptr && armed2 != nullptr) {
+        attacker->data.critter.combat.team = 1;
+        weak->data.critter.combat.team = 2;
+        dead->data.critter.combat.team = 2;
+        strong->data.critter.combat.team = 3;
+        equal->data.critter.combat.team = 3;
+        fallout::itemAdd(strong, armed1, 1);
+        armed1->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+        fallout::itemAdd(equal, armed2, 1);
+        armed2->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+        dead->data.critter.combat.results |= fallout::DAM_DEAD;
+
+        attacker->data.critter.combat.whoHitMe = nullptr;
+        fallout::f2jReferenceCheckRetaliation(attacker, weak);
+        std::printf("retaliate-null=%d\n",
+            attacker->data.critter.combat.whoHitMe == weak ? 1 : 0);
+
+        attacker->data.critter.combat.whoHitMe = strong;
+        fallout::f2jReferenceCheckRetaliation(attacker, dead);
+        std::printf("retaliate-dead=%d\n",
+            attacker->data.critter.combat.whoHitMe == strong ? 1 : 0);
+
+        attacker->data.critter.combat.whoHitMe = weak;
+        fallout::f2jReferenceCheckRetaliation(attacker, strong);
+        std::printf("retaliate-strong=%d\n",
+            attacker->data.critter.combat.whoHitMe == strong ? 1 : 0);
+
+        attacker->data.critter.combat.whoHitMe = strong;
+        fallout::f2jReferenceCheckRetaliation(attacker, equal);
+        std::printf("retaliate-equal=%d\n",
+            attacker->data.critter.combat.whoHitMe == strong ? 1 : 0);
+    }
+
+    // Leave the shared packet table as the later sections expect it.
+    fallout::f2jReferenceAiSetBestWeapon(a0, (fallout::BestWeapon)savedA0Best);
+    fallout::f2jReferenceAiSetMinToHit(a0, savedA0MinToHit);
+    fallout::f2jReferenceAiSetRunAwayMode(a2, (fallout::RunAwayMode)savedA2Mode);
+    fallout::f2jReferenceAiSetMinHp(a2, savedA2MinHp);
 }
 
 void sectionCriticalHit()
@@ -11267,6 +11537,7 @@ int main()
     RUN_SECTION(CombatBadShot);
     RUN_SECTION(CriticalHit);
     RUN_SECTION(Ai);
+    RUN_SECTION(AiDecisions);
     RUN_SECTION(CombatEnd);
     RUN_SECTION(RangedMiss);
     RUN_SECTION(ExplosionExtras);

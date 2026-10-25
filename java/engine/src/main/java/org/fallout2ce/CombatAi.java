@@ -8,9 +8,17 @@ import org.fallout2ce.ObjTypes.GameObject;
 /**
  * Combat AI: port of {@code src/combat_ai.cc} slices. This covers the AI
  * packet table ({@code aiInit} parsing {@code data/ai.txt} + {@code aiGetPacketByNum}),
- * the packet reader helpers ({@code aiGetAreaAttackMode}, {@code aiGetRunAwayMode})
- * and the threat rating ({@code _combatai_rating}). The movement/attack/chem
- * decision tree stays with the turn/AI slice.
+ * the packet reader helpers ({@code aiGetAreaAttackMode}, {@code aiGetRunAwayMode}),
+ * the threat rating ({@code _combatai_rating}), and the weapon-decision
+ * helpers used by the turn/AI slice: {@code _cai_get_min_hp},
+ * {@code _caiHasWeapPrefType}, {@code aiGetWeaponRangeForHitMode},
+ * {@code aiWeaponAttackInRange}, {@code _ai_can_use_weapon} and
+ * {@code _combatai_check_retaliation}. The movement/attack/chem decision
+ * tree itself stays with the turn/AI slice.
+ *
+ * <p>Vectors: {@code [aidec]} in {@code docker/refharness/golden/v164.txt}
+ * (produced by {@code sectionAiDecisions} in
+ * {@code docker/refharness/ref_main.cc}).
  */
 public final class CombatAi {
 
@@ -82,6 +90,25 @@ public final class CombatAi {
     // _hp_run_away_value (src/combat_ai.cc 0x518138).
     private static final int[] HP_RUN_AWAY_VALUE = {
         0, 25, 40, 60, 75, 100,
+    };
+
+    // _weapPrefOrderings (src/combat_ai.cc 0x518158): rows are indexed by
+    // best_weapon + 1, columns ordered like the value is scanned in C++.
+    private static final int AT_NONE = Item.AttackType.ATTACK_TYPE_NONE.id();
+    private static final int AT_UNARMED = Item.AttackType.ATTACK_TYPE_UNARMED.id();
+    private static final int AT_MELEE = Item.AttackType.ATTACK_TYPE_MELEE.id();
+    private static final int AT_THROW = Item.AttackType.ATTACK_TYPE_THROW.id();
+    private static final int AT_RANGED = Item.AttackType.ATTACK_TYPE_RANGED.id();
+    private static final int[][] WEAP_PREF_ORDERINGS = {
+        { AT_RANGED, AT_THROW, AT_MELEE, AT_UNARMED, AT_NONE },
+        { AT_RANGED, AT_THROW, AT_MELEE, AT_UNARMED, AT_NONE }, // BEST_WEAPON_NO_PREF
+        { AT_MELEE, AT_NONE, AT_NONE, AT_NONE, AT_NONE }, // BEST_WEAPON_MELEE
+        { AT_MELEE, AT_RANGED, AT_NONE, AT_NONE, AT_NONE }, // BEST_WEAPON_MELEE_OVER_RANGED
+        { AT_RANGED, AT_MELEE, AT_NONE, AT_NONE, AT_NONE }, // BEST_WEAPON_RANGED_OVER_MELEE
+        { AT_RANGED, AT_NONE, AT_NONE, AT_NONE, AT_NONE }, // BEST_WEAPON_RANGED
+        { AT_UNARMED, AT_NONE, AT_NONE, AT_NONE, AT_NONE }, // BEST_WEAPON_UNARMED
+        { AT_UNARMED, AT_THROW, AT_NONE, AT_NONE, AT_NONE }, // BEST_WEAPON_UNARMED_OVER_THROW
+        { AT_NONE, AT_NONE, AT_NONE, AT_NONE, AT_NONE }, // BEST_WEAPON_RANDOM
     };
 
     private static AiPacket[] aiPackets = new AiPacket[0];
@@ -364,24 +391,166 @@ public final class CombatAi {
 
         GameObject item = Inventory.critterGetItem2(obj);
         if (item != null && Item.itemGetType(item) == ProtoTypes.ItemType.ITEM_TYPE_WEAPON) {
-            int[] minMax = new int[2];
-            if (Item.weaponGetDamageMinMax(item, minMax, minMax) != -1
-                    && meleeDamage < minMax[1]) {
-                meleeDamage = minMax[1];
+            int[] minDamage = new int[1];
+            int[] maxDamage = new int[1];
+            if (Item.weaponGetDamageMinMax(item, minDamage, maxDamage) != -1
+                    && meleeDamage < maxDamage[0]) {
+                meleeDamage = maxDamage[0];
             }
         }
 
         item = Inventory.critterGetItem1(obj);
         if (item != null && Item.itemGetType(item) == ProtoTypes.ItemType.ITEM_TYPE_WEAPON) {
-            int[] minMax = new int[2];
-            if (Item.weaponGetDamageMinMax(item, minMax, minMax) != -1
-                    && meleeDamage < minMax[1]) {
-                meleeDamage = minMax[1];
+            int[] minDamage = new int[1];
+            int[] maxDamage = new int[1];
+            if (Item.weaponGetDamageMinMax(item, minDamage, maxDamage) != -1
+                    && meleeDamage < maxDamage[0]) {
+                meleeDamage = maxDamage[0];
             }
         }
 
         return meleeDamage + Stat.critterGetStat(obj,
                 StatDefs.Stat.STAT_ARMOR_CLASS.id());
+    }
+
+    /** {@code _cai_get_min_hp} (src/combat_ai.cc 0x42B100). */
+    public static int caiGetMinHp(AiPacket ai) {
+        if (ai == null) {
+            return 0;
+        }
+
+        int runAwayMode = ai.runAwayMode;
+        if (CombatAiDefs.runAwayModeIsValid(runAwayMode)
+                && runAwayMode != CombatAiDefs.RUN_AWAY_MODE_LAST) {
+            return HP_RUN_AWAY_VALUE[runAwayMode];
+        } else if (runAwayMode == CombatAiDefs.RunAwayMode.RUN_AWAY_MODE_INVALID.id()) {
+            return ai.minHp;
+        }
+
+        return 0;
+    }
+
+    /** {@code _caiHasWeapPrefType} (src/combat_ai.cc 0x42938C). */
+    public static boolean caiHasWeapPrefType(AiPacket ai, int attackType) {
+        int bestWeapon = ai.bestWeapon + 1;
+
+        for (int index = 0; index < Item.ATTACK_TYPE_COUNT; index++) {
+            if (attackType == WEAP_PREF_ORDERINGS[bestWeapon][index]) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * {@code aiGetWeaponRangeForHitMode} (src/combat_ai.cc): unarmed reach,
+     * the weapon's primary/secondary proto range, and the thrown-weapon
+     * 3 x effective-strength clamp (with the Heave Ho! party bonus).
+     */
+    public static int aiGetWeaponRangeForHitMode(GameObject critter, GameObject weapon, int hitMode) {
+        if (weapon == null) {
+            if (Critter.critterFlagCheck(critter, ObjTypes.CritterFlags.LONG_LIMBS)) {
+                return 2;
+            }
+
+            return 1;
+        }
+
+        ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+        ProtoDb.protoGetProto(ProtoTypes.ProtoId.ofGameObject(weapon), slot);
+
+        int range;
+        if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
+                || hitMode == CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) {
+            range = slot[0].item.data.weapon.maxRange1;
+        } else {
+            range = slot[0].item.data.weapon.maxRange2;
+        }
+
+        if (Item.weaponGetAttackTypeForHitMode(weapon, hitMode)
+                == Item.AttackType.ATTACK_TYPE_THROW.id()) {
+            int effectiveStrength = Stat.critterGetStat(critter,
+                    StatDefs.Stat.STAT_STRENGTH.id());
+            if (critter == ObjectSystem.getDude() || PartyMembers.objectIsPartyMember(critter)) {
+                if (effectiveStrength < StatDefs.PRIMARY_STAT_MAX) {
+                    effectiveStrength += 2 * Perk.perkGetRank(critter,
+                            PerkDefs.Perk.PERK_HEAVE_HO.id());
+                    if (effectiveStrength > StatDefs.PRIMARY_STAT_MAX) {
+                        effectiveStrength = StatDefs.PRIMARY_STAT_MAX;
+                    }
+                }
+            }
+
+            int maxRange = 3 * effectiveStrength;
+            if (range >= maxRange) {
+                range = maxRange;
+            }
+        }
+
+        return range;
+    }
+
+    /** {@code aiWeaponAttackInRange} (src/combat_ai.cc). */
+    public static boolean aiWeaponAttackInRange(GameObject critter, GameObject weapon,
+            GameObject target) {
+        int distance = ObjectSystem.objectGetDistanceBetween(critter, target);
+        if (aiGetWeaponRangeForHitMode(critter, weapon,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id()) >= distance) {
+            return true;
+        }
+
+        if (Item.weaponGetAttackTypeForHitMode(weapon,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id())
+                == Item.AttackType.ATTACK_TYPE_NONE.id()) {
+            return false;
+        }
+
+        return aiGetWeaponRangeForHitMode(critter, weapon,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_SECONDARY.id()) >= distance;
+    }
+
+    /** {@code _ai_can_use_weapon} (src/combat_ai.cc 0x4298EC). */
+    public static boolean aiCanUseWeapon(GameObject critter, GameObject weapon, int hitMode) {
+        boolean result = Critter.critterCanUseWeapon(critter, weapon, hitMode);
+
+        AiPacket ai = aiGetPacket(critter);
+        if (result) {
+            int skill = Item.weaponGetSkillForHitMode(weapon, hitMode);
+            if (Skill.skillGetValue(critter, skill) < ai.minToHit) {
+                result = false;
+            }
+        }
+
+        if (result) {
+            int attackType = Item.weaponGetAttackTypeForHitMode(weapon,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
+            result = caiHasWeapPrefType(ai, attackType);
+        }
+
+        return scriptHooksCanUseWeapon(result, critter, weapon, hitMode);
+    }
+
+    // Seam for scriptHooks_CanUseWeapon (src/sfall_script_hooks.cc): with no
+    // hooks registered the C++ call returns the input unchanged, so the
+    // headless default is identity.
+    private static boolean scriptHooksCanUseWeapon(boolean result, GameObject critter,
+            GameObject weapon, int hitMode) {
+        return result;
+    }
+
+    /** {@code _combatai_check_retaliation} (src/combat_ai.cc 0x42B9D4). */
+    public static void combataiCheckRetaliation(GameObject a1, GameObject a2) {
+        GameObject whoHitMe = a1.data.critter.combat.whoHitMe;
+        if (whoHitMe != null) {
+            int candidateRating = combataiRating(a2);
+            int whoHitMeRating = combataiRating(whoHitMe);
+            if (candidateRating > whoHitMeRating) {
+                Critter.critterSetWhoHitMe(a1, a2);
+            }
+        } else {
+            Critter.critterSetWhoHitMe(a1, a2);
+        }
     }
 
     /** Test seam: fresh-process mirror. */

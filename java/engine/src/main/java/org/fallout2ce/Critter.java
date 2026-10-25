@@ -17,7 +17,8 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * {@code critterAdjustPoison}, {@code critterGetRadiation},
  * {@code critterAdjustRadiation}, and the movement slice:
  * {@code critterGetMovementPointCostAdjustedForCrippledLegs} and
- * {@code critterIsEncumbered}.
+ * {@code critterIsEncumbered}, plus the weapon-use gate
+ * {@code critterCanUseWeapon}.
  *
  * <p>BodyType/KillType enums live in {@link ProtoTypes} (reused, not
  * duplicated). The live hp/poison/radiation reads duplicate the
@@ -34,7 +35,9 @@ import org.fallout2ce.ProtoTypes.ProtoId;
  * (produced by {@code sectionVitals} in
  * {@code docker/refharness/ref_main.cc}), and {@code [miscgetters]} in
  * {@code docker/refharness/golden/v81.txt} (produced by
- * {@code sectionMiscGetters} in {@code docker/refharness/ref_main.cc}).
+ * {@code sectionMiscGetters} in {@code docker/refharness/ref_main.cc}),
+ * and {@code [aidec]} in {@code docker/refharness/golden/v164.txt} for
+ * {@code critterCanUseWeapon} / {@code critterSetWhoHitMe}.
  *
  * <p>See {@link StatDefs} for the {@code operator++} iteration note.
  *
@@ -184,14 +187,12 @@ public final class Critter {
             return -1;
         }
         if (ProtoId.ofGameObject(critter).objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
-            boolean sameTeam = hitMe != null
-                    && critter.data.critter.combat.team == hitMe.data.critter.combat.team;
-            int[] howMuch = new int[1];
-            boolean rollFailed = Stat.statRoll(critter,
-                    StatDefs.Stat.STAT_INTELLIGENCE.id(), -1, howMuch).ordinal() < 2;
-            boolean bothPartyMembers = PartyMembers.objectIsPartyMember(critter)
-                    && (hitMe == null || PartyMembers.objectIsPartyMember(hitMe));
-            if (!sameTeam || rollFailed || !bothPartyMembers) {
+            if (hitMe == null
+                    || critter.data.critter.combat.team != hitMe.data.critter.combat.team
+                    || (Stat.statRoll(critter, StatDefs.Stat.STAT_INTELLIGENCE.id(), -1,
+                            null).ordinal() < 2
+                        && (!PartyMembers.objectIsPartyMember(critter)
+                            || !PartyMembers.objectIsPartyMember(hitMe)))) {
                 critter.data.critter.combat.whoHitMe = hitMe;
                 if (hitMe == ObjectSystem.getDude()) {
                     // reactionSetValue(critter, -3): game-phase seam.
@@ -199,6 +200,34 @@ public final class Critter {
             }
         }
         return 0;
+    }
+
+    // critterCanUseWeapon (src/critter.cc): null/non-weapon false, both
+    // arms crippled false, one arm crippled plus a two-handed weapon
+    // false, otherwise the critter's fire animation art must exist.
+    public static boolean critterCanUseWeapon(GameObject critter, GameObject weapon, int hitMode) {
+        if (critter == null || weapon == null
+                || Item.itemGetType(weapon) != ProtoTypes.ItemType.ITEM_TYPE_WEAPON) {
+            return false;
+        }
+
+        int damageFlags = critter.data.critter.combat.results.bits();
+        if ((damageFlags & Dam.CRIP_ARM_ANY.bits()) == Dam.CRIP_ARM_ANY.bits()) {
+            return false;
+        }
+
+        if ((damageFlags & Dam.CRIP_ARM_ANY.bits()) != Dam.NONE.bits()
+                && Item.weaponIsTwoHanded(weapon)) {
+            return false;
+        }
+
+        int rotation = critter.rotation.id() + 1;
+        int animationCode = Item.weaponGetAnimationCode(weapon);
+        int weaponAnimationCode = Item.weaponGetAnimationForHitMode(weapon, hitMode);
+        FrmId base = FrmId.ofFid(critter.fid);
+        FrmId frmId = FrmId.ofObject(base.objectType().value(), base.frameId(),
+                weaponAnimationCode, animationCode, rotation);
+        return frmId.exist();
     }
 
     // KNOCKDOWN_AND_DEATH / SF_DEATH anim ranges (src/animation_defs.h).

@@ -78,4 +78,89 @@ RunAwayMode f2jReferenceRunAwayMode(Object* obj)
     return aiGetRunAwayMode(obj);
 }
 
+AiPacket* f2jReferenceAiPacketRef(int index)
+{
+    return index >= 0 && index < gAiPacketsLength ? &(gAiPackets[index]) : nullptr;
+}
+
+int f2jReferenceAiRangeForHitMode(Object* critter, Object* weapon, HitMode mode)
+{
+    return aiGetWeaponRangeForHitMode(critter, weapon, mode);
+}
+
+bool f2jReferenceAiWeaponAttackInRange(Object* critter, Object* weapon, Object* target)
+{
+    return aiWeaponAttackInRange(critter, weapon, target);
+}
+
+int f2jReferenceCaiGetMinHp(AiPacket* ai)
+{
+    return _cai_get_min_hp(ai);
+}
+
+bool f2jReferenceCaiHasWeapPrefType(AiPacket* ai, AttackType type)
+{
+    return _caiHasWeapPrefType(ai, type);
+}
+
+bool f2jReferenceAiCanUseWeapon(Object* critter, Object* weapon, HitMode mode)
+{
+    return _ai_can_use_weapon(critter, weapon, mode);
+}
+
+void f2jReferenceCheckRetaliation(Object* a1, Object* a2)
+{
+    _combatai_check_retaliation(a1, a2);
+}
+
+void f2jReferenceAiSetBestWeapon(AiPacket* ai, BestWeapon bestWeapon)
+{
+    ai->best_weapon = bestWeapon;
+}
+
+void f2jReferenceAiSetRunAwayMode(AiPacket* ai, RunAwayMode mode)
+{
+    ai->run_away_mode = mode;
+}
+
+void f2jReferenceAiSetMinHp(AiPacket* ai, int minHp)
+{
+    ai->min_hp = minHp;
+}
+
+void f2jReferenceAiSetMinToHit(AiPacket* ai, int minToHit)
+{
+    ai->min_to_hit = minToHit;
+}
+
+int f2jReferenceAiMinToHit(AiPacket* ai)
+{
+    return ai->min_to_hit;
+}
+
+int f2jReferenceAiBestWeapon(AiPacket* ai)
+{
+    return ai->best_weapon;
+}
+
+int f2jReferenceAiRunAwayMode(AiPacket* ai)
+{
+    return ai->run_away_mode;
+}
+
+int f2jReferenceAiMinHp(AiPacket* ai)
+{
+    return ai->min_hp;
+}
+
+bool f2jReferenceCritterCanUseWeapon(Object* critter, Object* weapon, HitMode mode)
+{
+    return critterCanUseWeapon(critter, weapon, mode);
+}
+
+void f2jReferenceAiAssignPacket(Object* obj, AiPacket* ai)
+{
+    obj->data.critter.combat.aiPacket = ai->packet_num;
+}
+
 } // namespace fallout
