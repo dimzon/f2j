@@ -78,4 +78,17 @@ int f2jReferenceCheckBadShot(Object* attacker, Object* defender, HitMode mode,
     return static_cast<int>(rc);
 }
 
+// Real critical-hit computation with a seeded effect roll. Returns the
+// multiplier and the final attack snapshot.
+int f2jReferenceCriticalHit(Object* attacker, Object* defender, HitMode mode,
+    HitLocation location, int seed, Attack* snapshot)
+{
+    Attack attack;
+    attackInit(&attack, attacker, defender, mode, location);
+    randomSeedPrerandom(seed);
+    int multiplier = attackComputeCriticalHit(&attack);
+    *snapshot = attack;
+    return multiplier;
+}
+
 } // namespace fallout

@@ -7242,6 +7242,7 @@ namespace fallout {
 int f2jReferenceCombatAttack(Object*, Object*, HitMode, HitLocation,
     CombatStartData*, int, bool, Attack*);
 int f2jReferenceCheckBadShot(Object*, Object*, HitMode, bool, int, int, int);
+int f2jReferenceCriticalHit(Object*, Object*, HitMode, HitLocation, int, Attack*);
 }
 
 void sectionCombatBadShot()
@@ -7283,6 +7284,34 @@ void sectionCombatBadShot()
     std::printf("bothcrippled=%d\n",
         fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 10,
             fallout::DAM_CRIP_ARM_LEFT));
+}
+
+void sectionCriticalHit()
+{
+    std::puts("[criticalhit]");
+    fallout::Object* attacker = nullptr;
+    fallout::Object* defender = nullptr;
+    fallout::Object* weapon = nullptr;
+    fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&defender, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8)); // 10mm pistol
+    if (attacker == nullptr || defender == nullptr || weapon == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::objectSetLocation(attacker, 20100, 0, nullptr);
+    fallout::objectSetLocation(defender, 20101, 0, nullptr);
+    fallout::itemAdd(attacker, weapon, 1);
+    weapon->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+    for (int seed : { 1, 21, 46, 71, 91, 101 }) {
+        fallout::Attack attack;
+        int multiplier = fallout::f2jReferenceCriticalHit(attacker, defender,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY,
+            (fallout::HitLocation)fallout::HIT_LOCATION_TORSO, seed, &attack);
+        std::printf("seed=%d mult=%d flags=%d msg=%d\n",
+            seed, multiplier, (int)attack.defenderFlags, attack.criticalMessageId);
+    }
 }
 
 void sectionCombatAttack()
@@ -10956,6 +10985,7 @@ int main()
     RUN_SECTION(MapStart);
     RUN_SECTION(ScriptAttach);
     RUN_SECTION(CombatBadShot);
+    RUN_SECTION(CriticalHit);
     RUN_SECTION(CombatAttack);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object

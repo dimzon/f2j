@@ -1199,10 +1199,7 @@ public final class Combat {
         return 0;
     }
 
-    // 0x42402C attackComputeCriticalHit. The critical-hit tables
-    // (gPlayerCriticalHitTable/gCriticalHitTables) are thousands of data
-    // lines not ported yet; the structure runs, and a critical hit without
-    // the tables is a vanilla x2 damage with no effects.
+    // 0x42402C attackComputeCriticalHit.
     static int attackComputeCriticalHit(CombatDefs.Attack attack) {
         GameObject defender = attack.defender;
         if (defender != null
@@ -1219,8 +1216,70 @@ public final class Combat {
         int chance = GameRandom.randomBetween(1, 100)
             + Stat.critterGetStat(attack.attacker, StatDefs.Stat.STAT_BETTER_CRITICALS.id());
 
-        // effect roll and the tables: deferred (data slice).
-        return 2;
+        int effect;
+        if (chance <= 20) {
+            effect = 0;
+        } else if (chance <= 45) {
+            effect = 1;
+        } else if (chance <= 70) {
+            effect = 2;
+        } else if (chance <= 90) {
+            effect = 3;
+        } else if (chance <= 100) {
+            effect = 4;
+        } else {
+            effect = 5;
+        }
+
+        int[] table;
+        if (defender == ObjectSystem.getDude()) {
+            table = CriticalHitTables.CRITICAL_HIT_TABLE_PLAYER
+                    [attack.defenderHitLocation][effect];
+        } else {
+            int killType = Critter.critterGetKillType(defender).id();
+            table = CriticalHitTables.CRITICAL_HIT_TABLES
+                    [killType][attack.defenderHitLocation][effect];
+        }
+
+        int damageMultiplier = table[0];
+        int flags = table[1];
+        int massiveStat = table[2];
+        int massiveModifier = table[3];
+        int massiveFlags = table[4];
+        int messageId = table[5];
+        int massiveMessageId = table[6];
+
+        attack.defenderFlags = attack.defenderFlags.or(new ObjTypes.Dam(flags));
+        attack.criticalMessageId = messageId;
+
+        if (massiveStat != -1) {
+            if (Stat.statRoll(defender, massiveStat, massiveModifier, null).ordinal()
+                    <= GameRandom.Roll.FAILURE.ordinal()) {
+                attack.defenderFlags = attack.defenderFlags.or(new ObjTypes.Dam(massiveFlags));
+                attack.criticalMessageId = massiveMessageId;
+            }
+        }
+
+        if ((attack.defenderFlags.bits() & ObjTypes.Dam.CRIP_RANDOM.bits()) != 0) {
+            ObjTypes.Dam[] flagsPtr = { attack.defenderFlags };
+            doRandomCripple(flagsPtr);
+            attack.defenderFlags = flagsPtr[0];
+        }
+
+        if (Item.weaponGetPerk(attack.weapon)
+                == PerkDefs.Perk.PERK_WEAPON_ENHANCED_KNOCKOUT) {
+            attack.defenderFlags = attack.defenderFlags.or(ObjTypes.Dam.KNOCKED_OUT);
+        }
+
+        GameObject weapon = null;
+        if (defender != ObjectSystem.getDude()) {
+            weapon = Item.getWeaponForHitMode(defender,
+                CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id());
+        }
+        ObjTypes.Dam invalidFlags = attackFindInvalidFlags(defender, weapon);
+        attack.defenderFlags = attack.defenderFlags.and(invalidFlags.not());
+
+        return damageMultiplier;
     }
 
     // 0x42346C attackComputeEnhancedKnockout.

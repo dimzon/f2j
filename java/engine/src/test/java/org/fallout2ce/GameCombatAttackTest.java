@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.fallout2ce.CombatDefs.Attack;
 import org.fallout2ce.CombatDefs.HitLocation;
 import org.fallout2ce.CombatDefs.HitMode;
 import org.fallout2ce.ObjTypes.Dam;
@@ -272,5 +273,28 @@ class GameCombatAttackTest {
         assertEquals(CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK,
                 Combat.combatCheckBadShot(attacker, defender, rightPrimary, false));
         attacker.data.critter.combat.results = Dam.NONE;
+    }
+
+    @Test
+    void criticalHitVectors() {
+        int rightPrimary = HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+        int torso = HitLocation.HIT_LOCATION_TORSO.id();
+        int[][] expectations = {
+            { 1, 3, 0, 5001 },
+            { 21, 3, 0, 5001 },
+            { 46, 3, 2, 6100 },
+            { 71, 3, 2, 6100 },
+            { 91, 3, 2, 6100 },
+            { 101, 4, 0, 5016 },
+        };
+        for (int[] exp : expectations) {
+            GameRandom.randomSeedPrerandom(exp[0]);
+            Attack attack = new Attack();
+            Combat.attackInit(attack, attacker, defender, rightPrimary, torso);
+            int multiplier = Combat.attackComputeCriticalHit(attack);
+            assertEquals(exp[1], multiplier, "mult seed " + exp[0]);
+            assertEquals(exp[2], attack.defenderFlags.bits(), "flags seed " + exp[0]);
+            assertEquals(exp[3], attack.criticalMessageId, "msg seed " + exp[0]);
+        }
     }
 }
