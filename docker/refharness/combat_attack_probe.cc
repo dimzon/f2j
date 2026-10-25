@@ -91,4 +91,21 @@ int f2jReferenceCriticalHit(Object* attacker, Object* defender, HitMode mode,
     return multiplier;
 }
 
+// Real spray computation. The weapon (as set up by the caller) defines the
+// burst mode; returns roll, rounds fired and the attack snapshot.
+int f2jReferenceSpray(Object* attacker, Object* defender, Object* weapon,
+    HitMode mode, int accuracy, int seed, int* roundsFired, Attack* snapshot)
+{
+    Attack attack;
+    attackInit(&attack, attacker, defender, mode, HIT_LOCATION_TORSO);
+    int roundsHit = 0;
+    int fired = 0;
+    randomSeedPrerandom(seed);
+    AnimationType anim = critterGetAnimationForHitMode(attacker, mode);
+    int roll = _compute_spray(&attack, accuracy, &roundsHit, &fired, anim);
+    *roundsFired = fired;
+    *snapshot = attack;
+    return roll;
+}
+
 } // namespace fallout

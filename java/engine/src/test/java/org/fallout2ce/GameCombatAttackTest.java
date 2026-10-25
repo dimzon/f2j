@@ -297,4 +297,33 @@ class GameCombatAttackTest {
             assertEquals(exp[3], attack.criticalMessageId, "msg seed " + exp[0]);
         }
     }
+
+    @Test
+    void sprayVectors() {
+        Proto[] slot = new Proto[1];
+        assertEquals(0, ProtoDb.protoGetProto(ProtoId.ofGameObject(weapon), slot));
+        int savedRounds = slot[0].item.data.weapon.rounds;
+        int savedFlags = slot[0].item.extendedFlags.bits();
+        slot[0].item.data.weapon.rounds = 4;
+        slot[0].item.extendedFlags = new ProtoTypes.ProtoExtendedFlags((savedFlags & ~0xF) | 7);
+        Item.ammoSetQuantity(weapon, 10);
+        try {
+            for (int seed : new int[] { 1, 46, 90, 200 }) {
+                GameRandom.randomSeedPrerandom(seed);
+                int[] mainHit = { 0 };
+                int[] fired = { 0 };
+                Attack attack = new Attack();
+                Combat.attackInit(attack, attacker, defender,
+                        HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(),
+                        HitLocation.HIT_LOCATION_TORSO.id());
+                int roll = Combat.computeSpray(attack, 95, mainHit, fired,
+                        AnimationType.FIRE_BURST.value());
+                assertEquals(2, roll, "roll seed " + seed);
+                assertEquals(4, fired[0], "fired seed " + seed);
+            }
+        } finally {
+            slot[0].item.data.weapon.rounds = savedRounds;
+            slot[0].item.extendedFlags = new ProtoTypes.ProtoExtendedFlags(savedFlags);
+        }
+    }
 }

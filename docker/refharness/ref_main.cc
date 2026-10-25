@@ -7243,6 +7243,7 @@ int f2jReferenceCombatAttack(Object*, Object*, HitMode, HitLocation,
     CombatStartData*, int, bool, Attack*);
 int f2jReferenceCheckBadShot(Object*, Object*, HitMode, bool, int, int, int);
 int f2jReferenceCriticalHit(Object*, Object*, HitMode, HitLocation, int, Attack*);
+int f2jReferenceSpray(Object*, Object*, Object*, HitMode, int, int, int*, Attack*);
 }
 
 void sectionCombatBadShot()
@@ -7284,6 +7285,49 @@ void sectionCombatBadShot()
     std::printf("bothcrippled=%d\n",
         fallout::f2jReferenceCheckBadShot(attacker, defender, (fallout::HitMode)mode, false, 10, 10,
             fallout::DAM_CRIP_ARM_LEFT));
+}
+
+void sectionSpray()
+{
+    std::puts("[spray]");
+    fallout::Object* attacker = nullptr;
+    fallout::Object* defender = nullptr;
+    fallout::Object* weapon = nullptr;
+    fallout::objectCreateWithProtoId(&attacker, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&defender, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&weapon, fallout::ProtoId(8)); // 10mm pistol
+    if (attacker == nullptr || defender == nullptr || weapon == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::objectSetLocation(attacker, 20100, 0, nullptr);
+    fallout::objectSetLocation(defender, 20101, 0, nullptr);
+    fallout::itemAdd(attacker, weapon, 1);
+    weapon->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+    fallout::Proto* wproto = nullptr;
+    fallout::protoGetProto(weapon, &wproto);
+    int savedRounds = wproto->item.data.weapon.rounds;
+    int savedFlags = wproto->item.extendedFlags;
+    wproto->item.data.weapon.rounds = 4;
+    wproto->item.extendedFlags = static_cast<fallout::ProtoExtendedFlags>(
+        (savedFlags & ~0xF) | 7); // FIRE_BURST anim
+    fallout::ammoSetQuantity(weapon, 10);
+
+    for (int seed : { 1, 46, 90, 200 }) {
+        fallout::Attack attack;
+        int fired = 0;
+        int roll = fallout::f2jReferenceSpray(attacker, defender, weapon,
+            (fallout::HitMode)fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY,
+            95, seed, &fired, &attack);
+        std::printf("seed=%d roll=%d fired=%d extras=%d hit=%d dmg=%d flags=%d\n",
+            seed, roll, fired, attack.extrasLength,
+            (attack.attackerFlags & fallout::DAM_HIT) != fallout::DAM_NONE ? 1 : 0,
+            attack.defenderDamage, (int)attack.defenderFlags);
+    }
+
+    wproto->item.data.weapon.rounds = savedRounds;
+    wproto->item.extendedFlags = static_cast<fallout::ProtoExtendedFlags>(savedFlags);
 }
 
 void sectionCriticalHit()
@@ -10986,6 +11030,7 @@ int main()
     RUN_SECTION(ScriptAttach);
     RUN_SECTION(CombatBadShot);
     RUN_SECTION(CriticalHit);
+    RUN_SECTION(Spray);
     RUN_SECTION(CombatAttack);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object

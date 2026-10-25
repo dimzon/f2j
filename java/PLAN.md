@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-25) | **768 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-25) | **769 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v158.txt`; `[combatattack]`, `[combatbadshot]` и `[criticalhit]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot` и `attackComputeCriticalHit` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot и критические таблицы проверены C++-векторами; дальше — баллистика (spray/промахи), `_combat_attack_this` с интерфейсом и AI | `Combat.combatAttack`, `Combat.combatCheckBadShot`, `Combat.attackComputeCriticalHit`, `GameCombatAttackTest` |
+| Эталон харнеса | `golden/v159.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы и spray проверены C++-векторами; дальше — взрывы/случайные траектории, `_combat_attack_this` с интерфейсом и AI | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.computeSpray` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -146,6 +146,15 @@ C++-данных: `gCriticalHitTables[38][9][6]` и `gPlayerCriticalHitTable[9][
 инициализатор превышал лимит размера метода JVM). `attackComputeCriticalHit`
 теперь полностью воспроизводит эффект, флаги, massive-ролл, random-калечение
 и фильтр invalid-флагов; `criticalHitVectors` проверяет 6 сидов против C++.
+
+Следующий слайс (2026-10-25): баллистика.
+Векторы `[spray]` (`v159`) снимают `_compute_spray` с настоящего C++-кода на
+модифицированном прото пистолета (4 патрона, FIRE_BURST): все четыре сида
+дают roll=2, fired=4. Портированы `_check_ranged_miss` и `_shoot_along_path`
+(с `extras`/`extrasDamage`/`extrasFlags`/`extrasKnockback`), и `attackCompute`
+теперь использует `computeSpray` для burst/continuous и `checkRangedMiss` при
+промахе. Случайные траектории/гранаты и `_compute_explosion_on_extras`
+остаются швами.
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar

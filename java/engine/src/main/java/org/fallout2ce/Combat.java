@@ -240,6 +240,11 @@ public final class Combat {
         attack.defenderKnockback = 0;
         attack.extrasLength = 0;
         attack.intendedTarget = defender;
+        attack.extras = new ObjTypes.GameObject[6];
+        attack.extrasHitLocation = new int[6];
+        attack.extrasDamage = new int[6];
+        attack.extrasFlags = new ObjTypes.Dam[6];
+        attack.extrasKnockback = new int[6];
     }
 
     /**
@@ -1304,11 +1309,247 @@ public final class Combat {
         return 0;
     }
 
+    private static final CombatDefs.Attack shootCtd = new CombatDefs.Attack();
+
+    // 0x423128 _check_ranged_miss: a missed shot may still hit whoever stands
+    // beyond/along the line, through the shoot-blocking walk.
+    static boolean checkRangedMiss(CombatDefs.Attack attack) {
+        int range = Item.weaponGetRange(attack.attacker, attack.hitMode);
+        int to = TileMath.tileNumBeyond(attack.attacker.tile, attack.defender.tile, range);
+
+        int roll = GameRandom.Roll.FAILURE.ordinal();
+        GameObject critter = attack.attacker;
+        if (critter != null) {
+            int curr = attack.attacker.tile;
+            while (curr != to) {
+                critter = ObjectSystem.makeStraightPath(attack.attacker, curr, to);
+                if (critter != null) {
+                    if ((critter.flags.bits() & ObjTypes.ObjectFlags.SHOOT_THRU.bits()) == 0) {
+                        if (FrmId.ofFid(critter.fid).objectType() != ObjectType.CRITTER) {
+                            roll = GameRandom.Roll.SUCCESS.ordinal();
+                            break;
+                        }
+                        if (critter != attack.defender) {
+                            int v6 = attackDetermineToHit(attack.attacker, attack.attacker.tile,
+                                critter, attack.defenderHitLocation, attack.hitMode, true) / 3;
+                            if (Critter.critterIsDead(critter)) {
+                                v6 = 5;
+                            }
+                            if (GameRandom.randomBetween(1, 100) <= v6) {
+                                roll = GameRandom.Roll.SUCCESS.ordinal();
+                                break;
+                            }
+                        }
+                        curr = critter.tile;
+                    }
+                }
+                if (critter == null) {
+                    break;
+                }
+            }
+        }
+
+        attack.defenderHitLocation = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+        if (roll < GameRandom.Roll.SUCCESS.ordinal() || critter == null
+                || (critter.flags.bits() & ObjTypes.ObjectFlags.SHOOT_THRU.bits()) != 0) {
+            return false;
+        }
+
+        attack.defender = critter;
+        attack.tile = critter.tile;
+        attack.attackerFlags = attack.attackerFlags.or(ObjTypes.Dam.HIT);
+        attack.defenderHitLocation = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+        attackComputeDamage(attack, 1, 2);
+        return true;
+    }
+
+    // 0x423284 _shoot_along_path: walks the burst path, scoring hits on the
+    // main target and collecting extras.
+    static int shootAlongPath(CombatDefs.Attack attack, int endTile, int rounds, int anim) {
+        int remainingRounds = rounds;
+        int roundsHitMainTarget = 0;
+        int currentTile = attack.attacker.tile;
+
+        GameObject critter = attack.attacker;
+        while (critter != null) {
+            if ((remainingRounds <= 0 && anim != AnimationType.FIRE_CONTINUOUS.value())
+                    || currentTile == endTile || attack.extrasLength >= 6) {
+                break;
+            }
+
+            critter = ObjectSystem.makeStraightPath(attack.attacker, currentTile, endTile);
+
+            if (critter != null) {
+                if (FrmId.ofFid(critter.fid).objectType() != ObjectType.CRITTER) {
+                    break;
+                }
+
+                int accuracy = attackDetermineToHit(attack.attacker, attack.attacker.tile,
+                    critter, CombatDefs.HitLocation.HIT_LOCATION_TORSO.id(),
+                    attack.hitMode, true);
+                if (anim == AnimationType.FIRE_CONTINUOUS.value()) {
+                    remainingRounds = 1;
+                }
+
+                int roundsHit = 0;
+                while (GameRandom.randomBetween(1, 100) <= accuracy && remainingRounds > 0) {
+                    remainingRounds -= 1;
+                    roundsHit += 1;
+                }
+
+                if (roundsHit != 0) {
+                    if (critter == attack.defender) {
+                        roundsHitMainTarget += roundsHit;
+                    } else {
+                        int index = 0;
+                        while (index < attack.extrasLength && critter != attack.extras[index]) {
+                            index++;
+                        }
+
+                        attack.extrasHitLocation[index] = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+                        attack.extras[index] = critter;
+                        attackInit(shootCtd, attack.attacker, critter, attack.hitMode,
+                            CombatDefs.HitLocation.HIT_LOCATION_TORSO.id());
+                        shootCtd.attackerFlags = shootCtd.attackerFlags.or(ObjTypes.Dam.HIT);
+                        attackComputeDamage(shootCtd, roundsHit, 2);
+
+                        if (index == attack.extrasLength) {
+                            attack.extrasDamage[index] = shootCtd.defenderDamage;
+                            attack.extrasFlags[index] = shootCtd.defenderFlags;
+                            attack.extrasKnockback[index] = shootCtd.defenderKnockback;
+                            attack.extrasLength++;
+                        } else {
+                            if (anim == AnimationType.FIRE_BURST.value()) {
+                                attack.extrasDamage[index] += shootCtd.defenderDamage;
+                                attack.extrasFlags[index] = attack.extrasFlags[index].or(shootCtd.defenderFlags);
+                                attack.extrasKnockback[index] += shootCtd.defenderKnockback;
+                            }
+                        }
+                    }
+                }
+
+                currentTile = critter.tile;
+            }
+        }
+
+        if (anim == AnimationType.FIRE_CONTINUOUS.value()) {
+            roundsHitMainTarget = 0;
+        }
+
+        return roundsHitMainTarget;
+    }
+
+    // 0x4235C0 _compute_spray: burst and continuous fire.
+    static int computeSpray(CombatDefs.Attack attack, int accuracy,
+            int[] roundsHitMainTargetPtr, int[] roundsFiredPtr, int anim) {
+        roundsHitMainTargetPtr[0] = 0;
+
+        int currentAmmo = Item.ammoGetQuantity(attack.weapon);
+        int burstRounds = Item.weaponGetBurstRounds(attack.weapon);
+        int ammoCostPerRound = 1; // scriptHooks_AmmoCost: identity.
+
+        if (ammoCostPerRound == 0) {
+            roundsFiredPtr[0] = currentAmmo > 0 ? burstRounds : 0;
+        } else {
+            int roundsFired = currentAmmo / ammoCostPerRound;
+            if (roundsFired > burstRounds) {
+                roundsFired = burstRounds;
+            }
+            if (roundsFired == 0 && currentAmmo > 0) {
+                roundsFired = 1;
+            }
+            roundsFiredPtr[0] = roundsFired;
+        }
+
+        int ammoQuantity = roundsFiredPtr[0];
+        int criticalChance = Stat.critterGetStat(attack.attacker,
+            StatDefs.Stat.STAT_CRITICAL_CHANCE.id());
+        int roll = GameRandom.randomRoll(accuracy, criticalChance, null).ordinal();
+        if (roll == GameRandom.Roll.CRITICAL_FAILURE.ordinal()) {
+            return roll;
+        }
+        if (roll == GameRandom.Roll.CRITICAL_SUCCESS.ordinal()) {
+            accuracy += 20;
+        }
+
+        int leftRounds;
+        int mainTargetRounds;
+        int centerRounds;
+        int rightRounds;
+        if (anim == AnimationType.FIRE_BURST.value()) {
+            // gBurstModEnabled: sfall toggle, off.
+            centerRounds = ammoQuantity / 3;
+            if (centerRounds == 0) {
+                centerRounds = 1;
+            }
+            leftRounds = ammoQuantity / 3;
+            rightRounds = ammoQuantity - centerRounds - leftRounds;
+            mainTargetRounds = centerRounds / 2;
+            if (mainTargetRounds == 0) {
+                mainTargetRounds = 1;
+                centerRounds -= 1;
+            }
+        } else {
+            leftRounds = 1;
+            mainTargetRounds = 1;
+            centerRounds = 1;
+            rightRounds = 1;
+        }
+
+        for (int index = 0; index < mainTargetRounds; index++) {
+            if (GameRandom.randomRoll(accuracy, 0, null).ordinal()
+                    >= GameRandom.Roll.SUCCESS.ordinal()) {
+                roundsHitMainTargetPtr[0] += 1;
+            }
+        }
+
+        if (roundsHitMainTargetPtr[0] == 0 && checkRangedMiss(attack)) {
+            roundsHitMainTargetPtr[0] = 1;
+        }
+
+        int range = Item.weaponGetRange(attack.attacker, attack.hitMode);
+        int mainTargetEndTile = TileMath.tileNumBeyond(
+            attack.attacker.tile, attack.defender.tile, range);
+        roundsHitMainTargetPtr[0] += shootAlongPath(attack, mainTargetEndTile,
+            centerRounds - roundsHitMainTargetPtr[0], anim);
+
+        int centerTile;
+        if (ObjectSystem.objectGetDistanceBetween(attack.attacker, attack.defender) <= 3) {
+            centerTile = TileMath.tileNumBeyond(
+                attack.attacker.tile, attack.defender.tile, 3);
+        } else {
+            centerTile = attack.defender.tile;
+        }
+
+        Rotation rotation = TileMath.tileGetRotationTo(centerTile, attack.attacker.tile);
+
+        int leftTile = TileMath.tileGetTileInDirection(centerTile,
+            Rotation.fromInt((rotation.value() + 1) % Rotation.COUNT), 1);
+        int leftEndTile = TileMath.tileNumBeyond(attack.attacker.tile, leftTile, range);
+        roundsHitMainTargetPtr[0] += shootAlongPath(attack, leftEndTile, leftRounds, anim);
+
+        int rightTile = TileMath.tileGetTileInDirection(centerTile,
+            Rotation.fromInt((rotation.value() + 5) % Rotation.COUNT), 1);
+        int rightEndTile = TileMath.tileNumBeyond(attack.attacker.tile, rightTile, range);
+        roundsHitMainTargetPtr[0] += shootAlongPath(attack, rightEndTile, rightRounds, anim);
+
+        if (roll != GameRandom.Roll.FAILURE.ordinal()
+                || (roundsHitMainTargetPtr[0] <= 0 && attack.extrasLength <= 0)) {
+            if (roll >= GameRandom.Roll.SUCCESS.ordinal()
+                    && roundsHitMainTargetPtr[0] == 0 && attack.extrasLength == 0) {
+                roll = GameRandom.Roll.FAILURE.ordinal();
+            }
+        } else {
+            roll = GameRandom.Roll.SUCCESS.ordinal();
+        }
+
+        return roll;
+    }
+
     /**
-     * Port of {@code attackCompute} (0x42378C). The burst spray, the ranged
-     * miss interception and the explosion extras are seams (single-shot
-     * roll, no interception, no extras); the critical-hit tables are
-     * deferred (see attackComputeCriticalHit).
+     * Port of {@code attackCompute} (0x42378C). Burst/continuous fire and
+     * the missed-shot interception are implemented; accidental trajectory
+     * hits and explosion extras remain seams.
      */
     static int attackCompute(CombatDefs.Attack attack) {
         int range = Item.weaponGetRange(attack.attacker, attack.hitMode);
@@ -1343,11 +1584,11 @@ public final class Combat {
         int roll;
         if (anim == AnimationType.FIRE_BURST.value()
                 || anim == AnimationType.FIRE_CONTINUOUS.value()) {
-            // _compute_spray: burst ballistics seam, single-shot roll.
-            int chance = Stat.critterGetStat(attack.attacker,
-                StatDefs.Stat.STAT_CRITICAL_CHANCE.id());
-            roll = GameRandom.randomRoll(accuracy,
-                chance - Combat.getHitLocationPenalty(attack.defenderHitLocation), null).ordinal();
+            int[] mainHit = { 0 };
+            int[] fired = { 0 };
+            roll = computeSpray(attack, accuracy, mainHit, fired, anim);
+            roundsHitMainTarget = mainHit[0];
+            roundsFired = fired[0];
         } else {
             int chance = Stat.critterGetStat(attack.attacker,
                 StatDefs.Stat.STAT_CRITICAL_CHANCE.id());
@@ -1438,7 +1679,7 @@ public final class Combat {
         case 1: // FAILURE
             if (attackType == Item.AttackType.ATTACK_TYPE_RANGED.id()
                     || attackType == Item.AttackType.ATTACK_TYPE_THROW.id()) {
-                // _check_ranged_miss: interception seam, no miss int.
+                checkRangedMiss(attack);
             }
             break;
         case 0: // CRITICAL_FAILURE
