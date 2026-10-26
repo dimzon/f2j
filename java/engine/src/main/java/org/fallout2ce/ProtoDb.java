@@ -51,6 +51,15 @@ public final class ProtoDb {
             18, 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 23, 0,
         };
         System.arraycopy(stats, 0, dudeProto.critter.data.baseStats, 0, stats.length);
+        // The remaining gDudeProto initializer fields (src/proto.cc:92):
+        // bonusStats/skills stay zero, and the enum-typed data members must
+        // mirror the C table instead of Java defaults (null).
+        dudeProto.critter.data.bodyType = ProtoTypes.BodyType.BODY_TYPE_BIPED;
+        dudeProto.critter.data.killType = ProtoTypes.KillType.KILL_TYPE_MAN;
+        dudeProto.critter.data.damageType = ProtoTypes.DamageType.DAMAGE_TYPE_NORMAL;
+        dudeProto.critter.headFid = -1;
+        dudeProto.critter.aiPacket = 0;
+        dudeProto.critter.team = 0;
     }
 
     static {

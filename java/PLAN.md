@@ -1,6 +1,6 @@
 # PLAN.md — план доведения порта до играбельного состояния
 
-Дата снимка: 2026-10-24, `HEAD = 79a27e18` (`main`, чисто, в sync с `origin`).
+Дата снимка: 2026-10-26, `HEAD = 44f26b6d` (`main`, чисто, впереди `origin`).
 Правила не меняются: сначала векторы в `docker/refharness` (`ref_main.cc` + новый
 `golden/vN.txt`, старые immutable), потом Java-класс; перед каждым коммитом
 `mvn -B test` из `java/` + `check-refharness.ps1` → `VECTORS_MATCH`;
@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-26) | **788 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-26) | **789 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v165.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]` и `[spray]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras` и `_compute_spray` | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия и баллистика проверены C++-векторами; дальше — остаток дерева AI-решений (движение/атака/химия) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray` |
+| Эталон харнеса | `golden/v166.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]` и `[path]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray` и `pathfinderFindPath` | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика и pathfinder проверены C++-векторами; дальше — остаток дерева AI-решений (выбор цели, движение, химия) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -252,6 +252,28 @@ BE_SURE остаётся закрытым, что и проверяется.
 Отложено: само дерево решений `_combat_ai`/`_ai_*` (движение, атака, химия),
 `_ai_search_environ`, `_ai_retrieve_object`, `_ai_switch_weapons`,
 `aiLoad/aiSave`.
+
+Следующий слайс (2026-10-26): pathfinder.
+Векторы `[path]` (`v166`) снимают `pathfinderFindPath` (`_make_path`,
+`animation.cc`) с настоящим `_obj_blocking_at`: прямые/заблокированные/замурованные
+поиски, гард `requireEmptyDest`, SFALL-quirk ретаргета на соседний тайл для
+multihex-блокера, гейт `canUseDoor` (тип двери, замок, biped, гекон,
+dude-only walk-through флаг прoto) и надбавка стоимости за радиоактивную гgoo
+(400, у гекона 100). Секция стоит последней в parent-процессе. Найдено по ходу:
+`objectSetLocation(gDude)` сегфолтится в конце прогона (как и в `[combatend]`),
+поэтому dude-сценарий указывает тайл прямым полем (`dude->tile = A`), dude в
+tile-списках и так не участвует; у dude-прото в харнессе тайл -1. Портированы
+`Animation.pathfinderFindPath`/`makePath`/`canUseDoor` (+ `_idist`,
+`_tile_idistance`, BSS-списки узлов), `ObjectSystem.objPortalIsWalkThru` и
+`ProtoInstance.objectIsLocked`. Найдено и исправлено расхождение: зеркало
+`gDudeProto` в `ProtoDb` не заполняло поля из C-инициализатора
+(`bodyType=BIPED`, `killType=MAN`, `damageType=NORMAL`, `headFid=-1`,
+`aiPacket=0`, `team=0`) — Java-enum'ы оставались null, из-за чего
+`canUseDoor(dude, …)` не пропускал игрока через дверь. Сценарии двери/гgoo
+управляют флагами объекта напрямую (NO_BLOCK/DOOR_FLAG_LOCKED) и мутациями
+прото (тип двери, generic-флаг), как прежние слайсы. Отложено: вызовы
+`_make_path` из движения (reg-anim), `canUseDoor` для roboti body (ветка
+есть, вектором не зацеплена).
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar

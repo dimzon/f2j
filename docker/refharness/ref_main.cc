@@ -8356,6 +8356,214 @@ void sectionCombatAttack()
     fallout::gameTimeSetTime(savedTime);
 }
 
+void sectionPath()
+{
+    std::puts("[path]");
+
+    // pathfinderFindPath (src/animation.cc): A* over the object grid with
+    // _obj_blocking_at, including the SFALL multihex retarget quirk, the
+    // canUseDoor gate and the radioactive-goo cost surcharge. The section
+    // lays dogs/door/goo on an empty stretch of the elevation-0 grid; no
+    // parent-process section runs after this one.
+    fallout::Object* dude = fallout::gDude;
+
+    fallout::Object* mover = nullptr;
+    fallout::Object* human = nullptr;
+    fallout::Object* door = nullptr;
+    fallout::Object* goo = nullptr;
+    fallout::Object* dogs[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+    fallout::objectCreateWithProtoId(&mover, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&human, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&door, fallout::ProtoId(33554585)); // scenery 153
+    fallout::objectCreateWithProtoId(&goo, fallout::ProtoId(33555417)); // scenery 985
+    for (int index = 0; index < 6; index++) {
+        fallout::objectCreateWithProtoId(&dogs[index], fallout::ProtoId(16777558));
+    }
+    if (mover == nullptr || human == nullptr || door == nullptr || goo == nullptr) {
+        std::printf("create-failed mover=%d human=%d door=%d goo=%d\n",
+            mover != nullptr ? 1 : 0,
+            human != nullptr ? 1 : 0,
+            door != nullptr ? 1 : 0,
+            goo != nullptr ? 1 : 0);
+        return;
+    }
+    for (int index = 0; index < 6; index++) {
+        if (dogs[index] == nullptr) {
+            std::puts("create-failed");
+            return;
+        }
+    }
+
+    auto park = [](fallout::Object* obj) {
+        fallout::objectSetLocation(obj, 199, 0, nullptr);
+    };
+    auto runPath = [](fallout::Object* obj, int to, int requireEmpty, const char* tag) {
+        unsigned char rotations[800];
+        memset(rotations, 0xAA, sizeof(rotations));
+        int rc = fallout::pathfinderFindPath(obj, obj->tile, to, rotations,
+            requireEmpty, fallout::_obj_blocking_at);
+        std::printf("%s=%d", tag, rc);
+        if (rc > 0) {
+            std::printf(" rot=");
+            for (int index = 0; index < rc; index++) {
+                std::printf("%s%d", index != 0 ? "," : "", (int)rotations[index]);
+            }
+        }
+        std::printf("\n");
+    };
+
+    const int a = 24101;
+    const int b = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, 4);
+    const int l1 = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, 1);
+    const int l2 = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, 2);
+    const int l3 = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, 3);
+    std::printf("tiles A=%d L1=%d L2=%d L3=%d B=%d\n", a, l1, l2, l3, b);
+
+    for (int index = 0; index < 6; index++) {
+        park(dogs[index]);
+    }
+    park(human);
+    park(door);
+    park(goo);
+    fallout::objectSetLocation(mover, a, 0, nullptr);
+
+    // Trivial and straight-line cases, with and without the empty-destination
+    // guard.
+    runPath(mover, a, 0, "same");
+    runPath(mover, b, 0, "straight");
+    runPath(mover, b, 1, "straight-empty");
+
+    // Destination occupied by a plain dog: requireEmptyDest gates upfront,
+    // otherwise the path ends on the occupied tile itself.
+    park(dogs[0]);
+    fallout::objectSetLocation(dogs[0], b, 0, nullptr);
+    runPath(mover, b, 0, "dest-blocked");
+    runPath(mover, b, 1, "dest-blocked-empty");
+
+    // Multihex blocker on the destination retargets the search to the first
+    // reachable neighbour (SFALL center-tile fix).
+    dogs[0]->flags |= fallout::OBJECT_MULTIHEX;
+    runPath(mover, b, 0, "dest-multihex");
+    dogs[0]->flags &= ~fallout::OBJECT_MULTIHEX;
+
+    // A wall of dogs across the straight line: detour around the flank.
+    fallout::objectSetLocation(dogs[0], l1, 0, nullptr);
+    fallout::objectSetLocation(dogs[1], l2, 0, nullptr);
+    fallout::objectSetLocation(dogs[2], l3, 0, nullptr);
+    runPath(mover, b, 0, "wall");
+    for (int index = 0; index < 3; index++) {
+        park(dogs[index]);
+    }
+
+    // Enclosed destination: five dogs seal every approach except l3.
+    int neighbours[6];
+    for (int index = 0; index < 6; index++) {
+        neighbours[index] = fallout::tileGetTileInDirection(b, (fallout::Rotation)index, 1);
+    }
+    int l3Slot = 0;
+    for (int index = 0; index < 6; index++) {
+        if (neighbours[index] == l3) {
+            l3Slot = index;
+            continue;
+        }
+        fallout::objectSetLocation(dogs[index], neighbours[index], 0, nullptr);
+    }
+    runPath(mover, b, 0, "open-approach");
+    fallout::objectSetLocation(dogs[l3Slot], l3, 0, nullptr);
+    runPath(mover, b, 0, "unreachable");
+    park(dogs[l3Slot]);
+
+    // Door scenarios: five dogs seal the destination except l3, where the
+    // door object stands. canUseDoor consults the proto door type, the
+    // object lock flag, the biped body type, the gecko kill type and (for
+    // the dude only) the proto walk-through flag. The door object must
+    // block (no NO_BLOCK) for the gate to be consulted at all.
+    fallout::Proto* doorProto = nullptr;
+    fallout::protoGetProto(door, &doorProto);
+    fallout::SceneryType savedDoorType = doorProto->scenery.type;
+    int savedDoorGenericFlags = doorProto->scenery.data.generic.genericFlags;
+    doorProto->scenery.type = fallout::SCENERY_TYPE_DOOR;
+    doorProto->scenery.data.generic.genericFlags &= ~0x04;
+    door->flags &= ~fallout::OBJECT_NO_BLOCK;
+
+    int savedDoorOpenFlags = door->data.scenery.door.openFlags;
+    door->data.scenery.door.openFlags &= ~DOOR_FLAG_LOCKED;
+    fallout::objectSetLocation(door, l3, 0, nullptr);
+    for (int index = 0; index < 6; index++) {
+        if (index != l3Slot) {
+            fallout::objectSetLocation(dogs[index], neighbours[index], 0, nullptr);
+        }
+    }
+
+    fallout::objectSetLocation(human, a, 0, nullptr);
+    park(mover);
+    runPath(human, b, 0, "door-human");
+    door->data.scenery.door.openFlags |= DOOR_FLAG_LOCKED;
+    runPath(human, b, 0, "door-human-locked");
+    door->data.scenery.door.openFlags &= ~DOOR_FLAG_LOCKED;
+
+    fallout::Proto* humanProto = nullptr;
+    fallout::protoGetProto(human, &humanProto);
+    fallout::KillType savedHumanKillType = humanProto->critter.data.killType;
+    humanProto->critter.data.killType = fallout::KILL_TYPE_GECKO;
+    runPath(human, b, 0, "door-gecko");
+    humanProto->critter.data.killType = savedHumanKillType;
+    park(human);
+
+    if (dude != nullptr) {
+        // objectSetLocation(gDude) segfaults headless this late in the run,
+        // so the dude stays in place (tile -1 in this process) and only its
+        // tile field is pointed at the scenario, which is all the pathfinder
+        // reads; the dude is absent from the tile lists either way.
+        int savedDudeTile = dude->tile;
+        dude->tile = a;
+        runPath(dude, b, 0, "door-dude");
+        doorProto->scenery.data.generic.genericFlags |= 0x04;
+        runPath(dude, b, 0, "door-dude-walkthru");
+        doorProto->scenery.data.generic.genericFlags &= ~0x04;
+        dude->tile = savedDudeTile;
+        std::printf("dude-restore=%d\n", dude->tile);
+    }
+
+    doorProto->scenery.type = savedDoorType;
+    doorProto->scenery.data.generic.genericFlags = savedDoorGenericFlags;
+    park(door);
+    for (int index = 0; index < 6; index++) {
+        park(dogs[index]);
+    }
+
+    // Goo scenarios: radioactive goo scenery. Without NO_BLOCK the tile is
+    // skipped like any blocker; with it the tile is walkable and the A*
+    // node cost surcharge applies (400, or 100 for a gecko).
+    fallout::objectSetLocation(mover, a, 0, nullptr);
+    fallout::objectSetLocation(goo, l2, 0, nullptr);
+    int savedGooFlags = goo->flags;
+    goo->flags &= ~fallout::OBJECT_NO_BLOCK;
+    runPath(mover, b, 0, "goo-block");
+    goo->flags |= fallout::OBJECT_NO_BLOCK;
+    runPath(mover, b, 0, "goo-detour");
+    fallout::Proto* moverProto = nullptr;
+    fallout::protoGetProto(mover, &moverProto);
+    fallout::KillType savedMoverKillType = moverProto->critter.data.killType;
+    moverProto->critter.data.killType = fallout::KILL_TYPE_GECKO;
+    runPath(mover, b, 0, "goo-gecko");
+    moverProto->critter.data.killType = savedMoverKillType;
+
+    // Forced crossing: the goo tile is the only approach left to the
+    // destination, so the surcharge is paid either way.
+    for (int index = 0; index < 6; index++) {
+        if (index != l3Slot) {
+            fallout::objectSetLocation(dogs[index], neighbours[index], 0, nullptr);
+        }
+    }
+    fallout::objectSetLocation(goo, l3, 0, nullptr);
+    runPath(mover, b, 0, "goo-forced");
+    moverProto->critter.data.killType = fallout::KILL_TYPE_GECKO;
+    runPath(mover, b, 0, "goo-forced-gecko");
+    moverProto->critter.data.killType = savedMoverKillType;
+    goo->flags = static_cast<fallout::ObjectFlags>(savedGooFlags);
+}
+
 void sectionIsoRest()
 {
     std::puts("[isorest]");
@@ -11956,6 +12164,7 @@ int main()
     RUN_SECTION(ExplosionExtras);
     RUN_SECTION(Spray);
     RUN_SECTION(CombatAttack);
+    RUN_SECTION(Path);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

@@ -41,4 +41,22 @@ public final class ProtoInstance {
     public static UseItemResultCode ofUseItemResultCode(int id) {
         return USEITEM_BY_ID.get(id);
     }
+
+    // 0x49D1C8 objectIsLocked (src/proto_instance.cc): items read the
+    // container locked flag, scenery doors the door open-flags lock bit.
+    public static boolean objectIsLocked(ObjTypes.GameObject obj) {
+        if (obj == null) {
+            return false;
+        }
+
+        ObjTypes.ObjectType type = ProtoTypes.ProtoId.ofPid(obj.pid).objectType();
+        switch (type) {
+        case OBJ_TYPE_ITEM:
+            return (obj.data.flags & ObjTypes.CONTAINER_FLAG_LOCKED) != 0;
+        case OBJ_TYPE_SCENERY:
+            return (obj.data.scenery.door.openFlags & ObjTypes.DOOR_FLAG_LOCKED) != 0;
+        default:
+            return false;
+        }
+    }
 }

@@ -728,6 +728,34 @@ public final class ObjectSystem {
         return null;
     }
 
+    // _obj_portal_is_walk_thru (src/object.cc:2113): a scenery counts as
+    // walk-through when its proto carries the walk-through generic flag; the
+    // CE auto-open QOL additionally treats plain unlocked scriptless doors
+    // as walk-through outside combat.
+    public static boolean objPortalIsWalkThru(GameObject obj) {
+        if (ProtoId.ofPid(obj.pid).objectType() != ObjTypes.ObjectType.OBJ_TYPE_SCENERY) {
+            return false;
+        }
+
+        ProtoTypes.Proto[] proto = new ProtoTypes.Proto[1];
+        if (ProtoDb.protoGetProto(ProtoId.ofPid(obj.pid), proto) == -1) {
+            return false;
+        }
+
+        if (Settings.settings.qol.auto_open_doors) {
+            if (!Combat.isInCombat()) {
+                if (proto[0].scenery.type == ProtoTypes.SceneryType.SCENERY_TYPE_DOOR) {
+                    // Unlocked, and has no script ID
+                    if (proto[0].scenery.data.door.openFlags == 0 && obj.sid == -1) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return (proto[0].scenery.data.generic.genericFlags & 0x04) != 0;
+    }
+
     private static boolean isShootBlocking(GameObject obj, GameObject exclude) {
         int flags = obj.flags.bits();
         if ((flags & (ObjectFlags.HIDDEN.bits() | ObjectFlags.NO_BLOCK.bits())) != 0
