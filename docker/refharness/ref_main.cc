@@ -7258,6 +7258,7 @@ int f2jReferenceRating(Object*);
 AreaAttackMode f2jReferenceAreaAttackMode(Object*);
 RunAwayMode f2jReferenceRunAwayMode(Object*);
 AiPacket* f2jReferenceAiPacketRef(int);
+AiPacket* f2jReferenceAiPacketByNum(int);
 int f2jReferenceAiRangeForHitMode(Object*, Object*, HitMode);
 bool f2jReferenceAiWeaponAttackInRange(Object*, Object*, Object*);
 int f2jReferenceCaiGetMinHp(AiPacket*);
@@ -7293,6 +7294,32 @@ int f2jReferenceAiChemPrimaryDesire(AiPacket*, int);
 void f2jReferenceAiSetChemPrimaryDesire(AiPacket*, int, int);
 void f2jReferenceAiSetBurstDisabled(Object*, bool);
 bool f2jReferenceAiIsBurstDisabled(Object*);
+void f2jReferenceAiBeginCritters(int, Object**);
+void f2jReferenceAiOverCritters();
+int f2jReferenceAiCurrCritNum();
+void f2jReferenceAiSortListDistance(Object**, int, Object*);
+void f2jReferenceAiSortListStrength(Object**, int);
+void f2jReferenceAiSortListWeakness(Object**, int);
+Object* f2jReferenceAiFindNearestTeam(Object*, Object*, int);
+Object* f2jReferenceAiFindNearestTeamInCombat(Object*, Object*, int);
+void f2jReferenceAiFindAttackers(Object*, Object**);
+Object* f2jReferenceAiDangerSource(Object*);
+int f2jReferenceAiIsWithinPerception(Object*, Object*, int);
+bool f2jReferenceCritterIsFleeing(Object*);
+int f2jReferenceAiRating(Object*);
+void f2jReferenceAiSetPacketAttackWho(AiPacket*, int);
+void f2jReferenceAiSetPacketDisposition(AiPacket*, int);
+void f2jReferenceAiSetPacketDistance(AiPacket*, int);
+int f2jReferenceAiAttackWho(AiPacket*);
+int f2jReferenceAiDisposition(AiPacket*);
+int f2jReferenceAiDistance(AiPacket*);
+int f2jReferenceAiGetDisposition(Object*);
+int f2jReferenceAiGetDistance(Object*);
+int f2jReferenceAiGetAttackWho(Object*);
+int f2jReferenceAiGetBestWeapon(Object*);
+void f2jReferenceAiInfoInit(int);
+Object* f2jReferenceAiInfoGetLastTarget(Object*);
+int f2jReferenceAiInfoSetLastTarget(Object*, Object*);
 }
 
 void sectionCombatBadShot()
@@ -8563,6 +8590,260 @@ void sectionPath()
     moverProto->critter.data.killType = savedMoverKillType;
     goo->flags = static_cast<fallout::ObjectFlags>(savedGooFlags);
 }
+
+void sectionAiTarget()
+{
+    std::puts("[aitarget]");
+
+    // Target selection: the _curr_crit_list roster helpers (sorts, nearest
+    // team, find attackers, danger source) plus perception. Boot
+    // inheritance: [ai] ran aiInit, [aiinv] booted party/perks/items, tile
+    // grid and object lists come from earlier sections. The section builds
+    // its own roster, feeds it through _combat_ai_begin and drives
+    // isInCombat through gCombatState.
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // human, team 1
+    fallout::Object* d1 = nullptr; // dog, team 1, the non-party actor
+    fallout::Object* d2 = nullptr; // dog, team 1 (team 2 in danger scenarios)
+    fallout::Object* d3 = nullptr; // species 16777249, team 2
+    fallout::Object* d4 = nullptr; // species 16777252, team 2
+    fallout::Object* d5 = nullptr; // dog, team 2, far away
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&d2, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&d3, fallout::ProtoId(16777249));
+    fallout::objectCreateWithProtoId(&d4, fallout::ProtoId(16777252));
+    fallout::objectCreateWithProtoId(&d5, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr || d2 == nullptr || d3 == nullptr
+        || d4 == nullptr || d5 == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    // One axis south-east of a, distinct distances for the sorts. d5 looks
+    // away so the far perception cases fall to hearing.
+    const int a = 24101;
+    const int rosterDistances[7] = { 10, 2, 0, 1, 3, 4, 30 };
+    fallout::Object* roster[7] = { dude, h1, d1, d2, d3, d4, d5 };
+    // The dude cannot go through objectSetLocation (known headless
+    // segfault), so its tile is pointed at the axis directly; the dude is
+    // absent from the tile lists either way.
+    for (int index = 0; index < 7; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = index == 0 ? 0 : index <= 3 ? 1 : 2;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        // critterIsDead reads current hit points: fresh objects sit at 0
+        // and would read as dead for the AI info guards.
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        if (index != 0) {
+            fallout::objectSetLocation(roster[index],
+                fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
+                0, nullptr);
+        }
+    }
+    // Distances from d1: d2=1, h1=2, d3=3, d4=4, dude=10, d5=30.
+    dude->tile = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[0]);
+    dude->elevation = 0;
+    fallout::objectSetRotation(d5, fallout::ROTATION_NW, nullptr);
+
+    // Distinct species give distinct ratings (melee damage + armor class)
+    // for the strength/weakness sorts. Proto mutations earlier sections
+    // left behind (dog AC bonus 50 from [ai], stray melee/armor bonuses)
+    // apply to all critters of the species.
+    fallout::f2jReferenceAiInfoInit(7);
+    fallout::f2jReferenceAiBeginCritters(7, roster);
+
+    fallout::CombatState savedCombatState = fallout::gCombatState;
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
+
+    std::printf("rating=%d,%d,%d,%d,%d,%d,%d\n",
+        fallout::f2jReferenceAiRating(dude),
+        fallout::f2jReferenceAiRating(h1),
+        fallout::f2jReferenceAiRating(d1),
+        fallout::f2jReferenceAiRating(d2),
+        fallout::f2jReferenceAiRating(d3),
+        fallout::f2jReferenceAiRating(d4),
+        fallout::f2jReferenceAiRating(d5));
+
+    auto pids = [](fallout::Object** list, int length) {
+        std::printf("order=");
+        for (int index = 0; index < length; index++) {
+            fallout::Object* obj = list[index];
+            if (index != 0) {
+                std::printf(",");
+            }
+            std::printf("%d", obj != nullptr ? (int)obj->pid : -1);
+        }
+        std::printf("\n");
+    };
+
+    fallout::Object* list[4];
+    list[0] = d3;
+    list[1] = nullptr;
+    list[2] = d2;
+    list[3] = d4;
+    fallout::f2jReferenceAiSortListDistance(list, 4, d1);
+    pids(list, 4);
+
+    list[0] = d2;
+    list[1] = d3;
+    list[2] = d4;
+    list[3] = nullptr;
+    fallout::f2jReferenceAiSortListStrength(list, 3);
+    pids(list, 4);
+    fallout::f2jReferenceAiSortListWeakness(list, 3);
+    pids(list, 4);
+
+    // Nearest-team scans: same team (0x01) and other team (0x02), skipping
+    // dead critters and the actor itself.
+    std::printf("nt-same=%d\n", fallout::f2jReferenceAiFindNearestTeam(d1, d1, 1) != nullptr
+        ? (int)fallout::f2jReferenceAiFindNearestTeam(d1, d1, 1)->pid : -1);
+    d2->data.critter.combat.results = fallout::DAM_DEAD;
+    std::printf("nt-same-dead=%d\n", fallout::f2jReferenceAiFindNearestTeam(d1, d1, 1) != nullptr
+        ? (int)fallout::f2jReferenceAiFindNearestTeam(d1, d1, 1)->pid : -1);
+    d2->data.critter.combat.results = fallout::DAM_NONE;
+    std::printf("nt-other=%d\n", fallout::f2jReferenceAiFindNearestTeam(d1, d1, 2) != nullptr
+        ? (int)fallout::f2jReferenceAiFindNearestTeam(d1, d1, 2)->pid : -1);
+    d3->data.critter.combat.results = fallout::DAM_DEAD;
+    std::printf("nt-other-dead=%d\n", fallout::f2jReferenceAiFindNearestTeam(d1, d1, 2) != nullptr
+        ? (int)fallout::f2jReferenceAiFindNearestTeam(d1, d1, 2)->pid : -1);
+    d3->data.critter.combat.results = fallout::DAM_NONE;
+
+    // In-combat variant additionally requires whoHitMe.
+    std::printf("ntc-same=%d\n", fallout::f2jReferenceAiFindNearestTeamInCombat(d1, d1, 1) != nullptr
+        ? (int)fallout::f2jReferenceAiFindNearestTeamInCombat(d1, d1, 1)->pid : -1);
+    d2->data.critter.combat.whoHitMe = d1;
+    std::printf("ntc-hit=%d\n", fallout::f2jReferenceAiFindNearestTeamInCombat(d1, d1, 1) != nullptr
+        ? (int)fallout::f2jReferenceAiFindNearestTeamInCombat(d1, d1, 1)->pid : -1);
+    d2->data.critter.combat.whoHitMe = nullptr;
+    d3->data.critter.combat.whoHitMe = d1;
+    std::printf("ntc-other-hit=%d\n", fallout::f2jReferenceAiFindNearestTeamInCombat(d1, d1, 2) != nullptr
+        ? (int)fallout::f2jReferenceAiFindNearestTeamInCombat(d1, d1, 2)->pid : -1);
+    d3->data.critter.combat.whoHitMe = nullptr;
+
+    // find-attackers: slot 0 is preserved, slots 1-3 fill from whoHitMe
+    // relations.
+    fallout::Object* targets[4] = { dude, nullptr, nullptr, nullptr };
+    d2->data.critter.combat.whoHitMe = d1;
+    h1->data.critter.combat.whoHitMe = d3;
+    d4->data.critter.combat.whoHitMe = h1;
+    fallout::f2jReferenceAiFindAttackers(d1, targets);
+    pids(targets, 4);
+    d2->data.critter.combat.whoHitMe = nullptr;
+    h1->data.critter.combat.whoHitMe = nullptr;
+    d4->data.critter.combat.whoHitMe = nullptr;
+    fallout::f2jReferenceAiFindAttackers(d1, targets);
+    pids(targets, 4);
+
+    // Perception: visible branch (rotation within one step), glass halving,
+    // hearing in combat and the dude sneak adjustments. _sneak_working is
+    // true at this point of the run (earlier sections), so the sneaking
+    // case below takes the quarter branch.
+    std::printf("per-see=%d\n", fallout::f2jReferenceAiIsWithinPerception(h1, d2, 3));
+    d5->flags |= fallout::OBJECT_TRANS_GLASS;
+    std::printf("per-glass=%d\n", fallout::f2jReferenceAiIsWithinPerception(h1, d5, 3));
+    d5->flags &= ~fallout::OBJECT_TRANS_GLASS;
+    std::printf("per-far=%d\n", fallout::f2jReferenceAiIsWithinPerception(h1, d5, 3));
+    dude->tile = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, 13);
+    std::printf("per-hear=%d\n", fallout::f2jReferenceAiIsWithinPerception(h1, dude, 3));
+    fallout::dudeEnableState(fallout::DUDE_STATE_SNEAKING);
+    std::printf("per-sneak=%d\n", fallout::f2jReferenceAiIsWithinPerception(h1, dude, 3));
+    fallout::dudeDisableState(fallout::DUDE_STATE_SNEAKING);
+    fallout::gCombatState = fallout::COMBAT_STATE_PLAYER_TURN;
+    std::printf("per-quiet=%d\n", fallout::f2jReferenceAiIsWithinPerception(h1, dude, 3));
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
+    dude->tile = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, 10);
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+
+    // Danger source. The packet the dude resolves to (by packet_num) drives
+    // the party branch.
+    fallout::AiPacket* packet0 = fallout::f2jReferenceAiPacketByNum(dude->data.critter.combat.aiPacket);
+    int savedAttackWho = fallout::f2jReferenceAiAttackWho(packet0);
+    int savedDisposition = fallout::f2jReferenceAiDisposition(packet0);
+    int savedDistance = fallout::f2jReferenceAiDistance(packet0);
+    auto ds = [&](fallout::Object* actor) {
+        fallout::Object* found = fallout::f2jReferenceAiDangerSource(actor);
+        std::printf("ds=%d\n", found != nullptr ? (int)found->pid : -1);
+    };
+    auto clearRelations = [&]() {
+        for (int index = 0; index < 7; index++) {
+            roster[index]->data.critter.combat.whoHitMe = nullptr;
+            roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+            roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+            fallout::f2jReferenceAiInfoSetLastTarget(roster[index], nullptr);
+        }
+    };
+
+    // Non-party actor: alive whoHitMe wins outright.
+    d1->data.critter.combat.whoHitMe = d2;
+    ds(d1);
+    // Dead whoHitMe from the other team: nearest member of that team.
+    d2->data.critter.combat.team = 2;
+    d2->data.critter.combat.results = fallout::DAM_DEAD;
+    ds(d1);
+    // No relations at all.
+    clearRelations();
+    d2->data.critter.combat.team = 1;
+    ds(d1);
+
+    // Party branch, whomever-attacking-me with a valid last target.
+    fallout::f2jReferenceAiSetPacketAttackWho(packet0, 0); // WHOMEVER_ATTACKING_ME
+    fallout::f2jReferenceAiSetPacketDisposition(packet0, 3); // DEFENSIVE: ignore fleeing
+    fallout::f2jReferenceAiSetPacketDistance(packet0, 0); // STAY_CLOSE
+    d2->data.critter.combat.team = 2;
+    fallout::f2jReferenceAiInfoSetLastTarget(dude, d2);
+    fallout::f2jReferenceAiInfoSetLastTarget(d2, dude);
+    ds(dude);
+    // Fleeing target is skipped under DEFENSIVE; the scan picks a critter
+    // attacking the dude.
+    d2->data.critter.combat.maneuver = fallout::CRITTER_MANUEVER_FLEEING;
+    d3->data.critter.combat.whoHitMe = nullptr;
+    fallout::f2jReferenceAiInfoSetLastTarget(d3, dude);
+    ds(dude);
+    // Also fleeing: next attacker is knocked out, nobody left.
+    d3->data.critter.combat.maneuver = fallout::CRITTER_MANUEVER_FLEEING;
+    d4->data.critter.combat.whoHitMe = nullptr;
+    fallout::f2jReferenceAiInfoSetLastTarget(d4, dude);
+    d4->data.critter.combat.results = fallout::DAM_KNOCKED_OUT;
+    ds(dude);
+    // AGGRESSIVE: fleeing critters are not ignored, last target returns.
+    d2->data.critter.combat.maneuver = fallout::CRITTER_MANUEVER_FLEEING;
+    fallout::f2jReferenceAiSetPacketDisposition(packet0, 4); // AGGRESSIVE
+    ds(dude);
+    // STRONGEST/WEAKEST/CLOSEST with a preserved whoHitMe and an attacker;
+    // the case clears dude->whoHitMe, which the WHOMEVER tail then reads.
+    d3->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+    d4->data.critter.combat.results = fallout::DAM_NONE;
+    dude->data.critter.combat.whoHitMe = d3;
+    d2->data.critter.combat.whoHitMe = dude;
+    fallout::f2jReferenceAiSetPacketAttackWho(packet0, 1); // STRONGEST
+    ds(dude);
+    fallout::f2jReferenceAiSetPacketAttackWho(packet0, 2); // WEAKEST
+    ds(dude);
+    fallout::f2jReferenceAiSetPacketAttackWho(packet0, 4); // CLOSEST
+    ds(dude);
+    // WHOMEVER over the cleared whoHitMe: the attacker slot fills and the
+    // final loop returns the first passable candidate.
+    fallout::f2jReferenceAiSetPacketAttackWho(packet0, 3); // WHOMEVER
+    ds(dude);
+
+    fallout::f2jReferenceAiSetPacketAttackWho(packet0, savedAttackWho);
+    fallout::f2jReferenceAiSetPacketDisposition(packet0, savedDisposition);
+    fallout::f2jReferenceAiSetPacketDistance(packet0, savedDistance);
+    fallout::gCombatState = savedCombatState;
+    fallout::f2jReferenceAiOverCritters();
+}
+
 
 void sectionIsoRest()
 {
@@ -12165,6 +12446,7 @@ int main()
     RUN_SECTION(Spray);
     RUN_SECTION(CombatAttack);
     RUN_SECTION(Path);
+    RUN_SECTION(AiTarget);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

@@ -336,4 +336,39 @@ public final class CombatAiDefs {
     public static HurtTooMuch ofHurtTooMuch(int id) {
         return HURT_BY_ID.get(id);
     }
+
+    /** Port of {@code PerceptionType} ({@code src/sfall_script_hooks.h}). */
+    public enum PerceptionType {
+        PERCEPTION_OTHER(0),
+        PERCEPTION_SEE(1),
+        PERCEPTION_HEAR(2),
+        PERCEPTION_AI_TARGET(3);
+
+        private final int id;
+
+        PerceptionType(int id) {
+            this.id = id;
+        }
+
+        public int id() {
+            return id;
+        }
+    }
+
+    /** Port of {@code PerceptionResult} ({@code src/sfall_script_hooks.h}). */
+    public enum PerceptionResult {
+        PERCEPTION_OUT_OF_RANGE(0),
+        PERCEPTION_IN_RANGE(1),
+        PERCEPTION_FORCE(2);
+
+        private final int id;
+
+        PerceptionResult(int id) {
+            this.id = id;
+        }
+
+        public int id() {
+            return id;
+        }
+    }
 }

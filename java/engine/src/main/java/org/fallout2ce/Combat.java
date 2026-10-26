@@ -538,10 +538,21 @@ public final class Combat {
     static int combatNumTurns;
     static ScriptsState.CombatStartData gcsd;
 
+    /** Port of {@code CombatAiInfo} (src/combat.cc:66). */
+    public static final class CombatAiInfo {
+        public GameObject friendlyDead;
+        public GameObject lastTarget;
+        public GameObject lastItem;
+        public int lastMove;
+    }
+
+    /** Port of {@code _aiInfoList} (src/combat.cc:171): cid-indexed. */
+    public static CombatAiInfo[] aiInfoList;
+
     /**
-     * Port of {@code _combat_begin} (0x421B8C). The animation, AI info and
-     * UI tails are game-phase seams; what stays is the list build, the
-     * combat-data reset and the in-combat state.
+     * Port of {@code _combat_begin} (0x421B8C). The animation and UI tails
+     * are game-phase seams; what stays is the list build, the combat-data
+     * reset, the AI info list allocation and the in-combat state.
      */
     static void combatBegin(GameObject attacker) {
         if (isInCombat()) {
@@ -573,8 +584,15 @@ public final class Combat {
 
         combatEndingGuy = null;
 
-        // _combat_begin_extra(attacker): attackInit on the main attack and
-        // the AI begin are game-phase seams.
+        // _combat_begin_extra(attacker): the main-attack attackInit and
+        // _combat_ai_begin (roster copy) stay game-phase-callable; the AI
+        // info list allocates here like _combat_begin does.
+        aiInfoList = new CombatAiInfo[listTotal];
+        for (int index = 0; index < listTotal; index++) {
+            aiInfoList[index] = new CombatAiInfo();
+        }
+
+        CombatAi.combatAiBegin(combatList, listTotal);
     }
 
     /**
@@ -1177,10 +1195,88 @@ public final class Combat {
         combatState &= ~(COMBAT_STATE_IN_COMBAT | COMBAT_STATE_PLAYER_TURN);
         combatState |= COMBAT_STATE_PLAYER_TURN;
 
+        aiInfoList = null;
+        CombatAi.combatAiOver();
+
         combatList = null;
         listTotal = 0;
         listCom = 0;
         listNoncom = 0;
+    }
+
+    // 0x4217FC _combatInitAIInfoList body is inlined at the combatBegin
+    // allocation; the readers/writers below mirror the combat.cc accessors.
+
+    /** Port of {@code aiInfoGetFriendlyDead} (0x421798). */
+    public static GameObject aiInfoGetFriendlyDead(GameObject obj) {
+        if (!isInCombat() || obj == null || obj.cid == -1) {
+            return null;
+        }
+        return aiInfoList[obj.cid].friendlyDead;
+    }
+
+    /** Port of {@code aiInfoSetFriendlyDead} (0x4218AC). */
+    public static int aiInfoSetFriendlyDead(GameObject a1, GameObject a2) {
+        if (!isInCombat() || a1 == null || a1.cid == -1 || a1 == a2) {
+            return -1;
+        }
+        aiInfoList[a1.cid].friendlyDead = a2;
+        return 0;
+    }
+
+    /** Port of {@code aiInfoGetLastTarget} (0x4218EC). */
+    public static GameObject aiInfoGetLastTarget(GameObject obj) {
+        if (!isInCombat() || obj == null || obj.cid == -1) {
+            return null;
+        }
+        return aiInfoList[obj.cid].lastTarget;
+    }
+
+    /** Port of {@code aiInfoSetLastTarget} (0x421918). */
+    public static int aiInfoSetLastTarget(GameObject a1, GameObject a2) {
+        if (!isInCombat()) {
+            return 0;
+        }
+        if (a1 == null || a1.cid == -1 || a1 == a2) {
+            return -1;
+        }
+        if (Critter.critterIsDead(a2)) {
+            a2 = null;
+        }
+        aiInfoList[a1.cid].lastTarget = a2;
+        return 0;
+    }
+
+    /** Port of {@code aiInfoGetLastItem} (0x42196C). */
+    public static GameObject aiInfoGetLastItem(GameObject obj) {
+        if (!isInCombat() || obj == null || obj.cid == -1) {
+            return null;
+        }
+        return aiInfoList[obj.cid].lastItem;
+    }
+
+    /** Port of {@code aiInfoSetLastItem} (0x421998). */
+    public static int aiInfoSetLastItem(GameObject obj, GameObject a2) {
+        if (!isInCombat()) {
+            return 0;
+        }
+        if (obj == null || obj.cid == -1) {
+            return -1;
+        }
+        aiInfoList[obj.cid].lastItem = a2;
+        return 0;
+    }
+
+    /** Port of {@code _combatAIInfoSetLastMove} (0x421804). */
+    public static int combatAiInfoSetLastMove(GameObject obj, int lastMove) {
+        if (!isInCombat()) {
+            return 0;
+        }
+        if (obj == null || obj.cid == -1) {
+            return -1;
+        }
+        aiInfoList[obj.cid].lastMove = lastMove;
+        return 0;
     }
 
     /**

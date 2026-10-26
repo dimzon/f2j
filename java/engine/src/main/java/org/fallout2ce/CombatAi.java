@@ -1079,11 +1079,535 @@ public final class CombatAi {
         burstDisabledCritters.remove(critter);
     }
 
+    // ===== target selection (src/combat_ai.cc) =====
+
+    // _curr_crit_list/_curr_crit_num (src/combat_ai.cc:263-268): the combat
+    // roster the target-selection helpers scan.
+    private static GameObject[] currCritList = new GameObject[0];
+
+    // _combat_obj (src/combat_ai.cc:270): origin scratch for the distance
+    // comparator, set by _ai_sort_list_distance.
+    private static GameObject combatObj;
+
+    /** Port of {@code _combat_ai_begin} (src/combat_ai.cc:3133). */
+    public static void combatAiBegin(GameObject[] list, int count) {
+        if (count != 0) {
+            currCritList = new GameObject[count];
+            System.arraycopy(list, 0, currCritList, 0, count);
+        } else {
+            currCritList = new GameObject[0];
+        }
+    }
+
+    /** Port of {@code _combat_ai_over} (src/combat_ai.cc:3148). */
+    public static void combatAiOver() {
+        currCritList = new GameObject[0];
+    }
+
+    // 0x428B1C _compare_nearer: distance to _combat_obj, nulls first.
+    private static int compareNearer(GameObject object1, GameObject object2) {
+        if (object1 == null && object2 == null) {
+            return 0;
+        }
+        if (object1 != null && object2 == null) {
+            return -1;
+        }
+        if (object1 == null && object2 != null) {
+            return 1;
+        }
+        int distance1 = ObjectSystem.objectGetDistanceBetween(object1, combatObj);
+        int distance2 = ObjectSystem.objectGetDistanceBetween(object2, combatObj);
+        return Integer.compare(distance1, distance2);
+    }
+
+    // 0x428B8C _compare_strength: rating ascending, nulls first.
+    private static int compareStrength(GameObject object1, GameObject object2) {
+        if (object1 == null && object2 == null) {
+            return 0;
+        }
+        if (object1 != null && object2 == null) {
+            return -1;
+        }
+        if (object1 == null && object2 != null) {
+            return 1;
+        }
+        int rating1 = combataiRating(object1);
+        int rating2 = combataiRating(object2);
+        return Integer.compare(rating1, rating2);
+    }
+
+    // 0x428BE4 _compare_weakness: rating descending, nulls first.
+    private static int compareWeakness(GameObject object1, GameObject object2) {
+        if (object1 == null && object2 == null) {
+            return 0;
+        }
+        if (object1 != null && object2 == null) {
+            return -1;
+        }
+        if (object1 == null && object2 != null) {
+            return 1;
+        }
+        int rating1 = combataiRating(object1);
+        int rating2 = combataiRating(object2);
+        return Integer.compare(rating2, rating1);
+    }
+
+    private interface CritterComparator {
+        int compare(GameObject object1, GameObject object2);
+    }
+
+    // NOTE: C qsort is unstable; these sorts keep equal elements in place
+    // (insertion sort). The [aitarget] vectors use distinct keys, so the
+    // orders match; in-game ties may order differently than glibc.
+    private static void sortList(GameObject[] critterList, int length, CritterComparator cmp) {
+        for (int index = 1; index < length; index++) {
+            GameObject key = critterList[index];
+            int position = index - 1;
+            while (position >= 0 && cmp.compare(critterList[position], key) > 0) {
+                critterList[position + 1] = critterList[position];
+                position--;
+            }
+            critterList[position + 1] = key;
+        }
+    }
+
+    /** {@code _ai_sort_list_distance} (0x428B74). */
+    public static void aiSortListDistance(GameObject[] critterList, int length, GameObject origin) {
+        combatObj = origin;
+        sortList(critterList, length, CombatAi::compareNearer);
+    }
+
+    /** {@code _ai_sort_list_strength} (0x428BD0). */
+    public static void aiSortListStrength(GameObject[] critterList, int length) {
+        sortList(critterList, length, CombatAi::compareStrength);
+    }
+
+    /** {@code _ai_sort_list_weakness} (0x428C28). */
+    public static void aiSortListWeakness(GameObject[] critterList, int length) {
+        sortList(critterList, length, CombatAi::compareWeakness);
+    }
+
+    /** Port of {@code _ai_find_nearest_team} (0x428C3C). */
+    public static GameObject aiFindNearestTeam(GameObject a1, GameObject a2, int flags) {
+        if (a2 == null) {
+            return null;
+        }
+
+        int team = a2.data.critter.combat.team;
+
+        if (currCritList.length == 0) {
+            return null;
+        }
+
+        aiSortListDistance(currCritList, currCritList.length, a1);
+
+        for (int index = 0; index < currCritList.length; index++) {
+            GameObject obj = currCritList[index];
+            if (a1 != obj
+                && (obj.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0
+                && (((flags & 0x02) != 0 && team != obj.data.critter.combat.team)
+                    || ((flags & 0x01) != 0 && team == obj.data.critter.combat.team))) {
+                return obj;
+            }
+        }
+
+        return null;
+    }
+
+    /** Port of {@code _ai_find_nearest_team_in_combat} (0x428CF4). */
+    public static GameObject aiFindNearestTeamInCombat(GameObject a1, GameObject a2, int flags) {
+        if (a2 == null) {
+            return null;
+        }
+
+        int team = a2.data.critter.combat.team;
+
+        if (currCritList.length == 0) {
+            return null;
+        }
+
+        aiSortListDistance(currCritList, currCritList.length, a1);
+
+        for (int index = 0; index < currCritList.length; index++) {
+            GameObject obj = currCritList[index];
+            if (obj != a1
+                && (obj.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0
+                && (((flags & 0x02) != 0 && team != obj.data.critter.combat.team)
+                    || ((flags & 0x01) != 0 && team == obj.data.critter.combat.team))) {
+                if (obj.data.critter.combat.whoHitMe != null) {
+                    return obj;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** Port of {@code aiFindAttackers} (0x428DB0): fills slots 1-3. */
+    public static void aiFindAttackers(GameObject critter, GameObject[] targets) {
+        targets[1] = null;
+        targets[2] = null;
+        targets[3] = null;
+
+        if (currCritList.length == 0) {
+            return;
+        }
+
+        aiSortListDistance(currCritList, currCritList.length, critter);
+
+        int foundTargetCount = 0;
+        int team = critter.data.critter.combat.team;
+
+        for (int index = 0; foundTargetCount < 3 && index < currCritList.length; index++) {
+            GameObject candidate = currCritList[index];
+            if (candidate != critter) {
+                if (targets[1] == null) {
+                    if ((candidate.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0
+                        && candidate.data.critter.combat.whoHitMe == critter
+                        && !targetExists(targets, candidate)) {
+                        foundTargetCount++;
+                        targets[1] = candidate;
+                        continue;
+                    }
+                }
+
+                if (targets[2] == null) {
+                    if (team == candidate.data.critter.combat.team) {
+                        GameObject whoHitCandidate = candidate.data.critter.combat.whoHitMe;
+                        if (whoHitCandidate != null
+                            && whoHitCandidate != critter
+                            && team != whoHitCandidate.data.critter.combat.team
+                            && (whoHitCandidate.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0
+                            && !targetExists(targets, whoHitCandidate)) {
+                            foundTargetCount++;
+                            targets[2] = whoHitCandidate;
+                            continue;
+                        }
+                    }
+                }
+
+                if (targets[3] == null) {
+                    if (candidate.data.critter.combat.team != team
+                        && (candidate.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0) {
+                        GameObject whoHitCandidate = candidate.data.critter.combat.whoHitMe;
+                        if (whoHitCandidate != null
+                            && whoHitCandidate.data.critter.combat.team == team
+                            && !targetExists(targets, candidate)) {
+                            foundTargetCount++;
+                            targets[3] = candidate;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean targetExists(GameObject[] targets, GameObject target) {
+        for (GameObject existing : targets) {
+            if (existing == target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Port of {@code _ai_danger_source} (0x428F4C). */
+    public static GameObject aiDangerSource(GameObject a1) {
+        if (a1 == null) {
+            return null;
+        }
+
+        boolean ignoreFleeingCritters = false;
+        int attackWho;
+        GameObject[] targets = new GameObject[4];
+        boolean preservedPartyTarget = false;
+
+        if (PartyMembers.objectIsPartyMember(a1)) {
+            int disposition = aiGetDisposition(a1);
+            int distanceMode = aiGetDistance(a1);
+
+            int dispositionPlusOne = disposition + 1;
+            if (dispositionPlusOne == CombatAiDefs.Disposition.DISPOSITION_CUSTOM.id()
+                || dispositionPlusOne == CombatAiDefs.Disposition.DISPOSITION_COWARD.id()
+                || dispositionPlusOne == CombatAiDefs.Disposition.DISPOSITION_DEFENSIVE.id()
+                || dispositionPlusOne == CombatAiDefs.Disposition.DISPOSITION_AGGRESSIVE.id()) {
+                ignoreFleeingCritters = true;
+            } else if (dispositionPlusOne == CombatAiDefs.Disposition.DISPOSITION_NONE.id()
+                || dispositionPlusOne == CombatAiDefs.Disposition.DISPOSITION_BERKSERK.id()) {
+                ignoreFleeingCritters = false;
+            }
+
+            if (ignoreFleeingCritters
+                && distanceMode == CombatAiDefs.DistanceMode.DISTANCE_CHARGE.id()) {
+                ignoreFleeingCritters = false;
+            }
+
+            attackWho = aiGetAttackWho(a1);
+            if (attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_WHOMEVER_ATTACKING_ME.id()) {
+                // CE: Slightly improve "Whomever is attacking me" targeting:
+                // first attempt to continue attacking the previous target,
+                // otherwise pick the nearest critter attacking the dude.
+                GameObject candidate = Combat.aiInfoGetLastTarget(a1);
+                if (candidate != null) {
+                    GameObject critter = candidate;
+                    if ((critter.data.critter.combat.results.bits()
+                            & (ObjTypes.Dam.DEAD.bits() | ObjTypes.Dam.KNOCKED_OUT.bits())) != 0
+                        || a1.data.critter.combat.team == critter.data.critter.combat.team
+                        || Combat.aiInfoGetLastTarget(critter) != ObjectSystem.getDude()) {
+                        candidate = null;
+                    }
+
+                    // Do not chase fleeing critter.
+                    if (ignoreFleeingCritters && Critter.critterIsFleeing(critter)) {
+                        candidate = null;
+                    }
+                }
+
+                if (candidate == null) {
+                    aiSortListDistance(currCritList, currCritList.length, a1);
+
+                    for (int index = 0; index < currCritList.length; index++) {
+                        GameObject critter = currCritList[index];
+                        if (critter != a1) {
+                            boolean deadOrKo = (critter.data.critter.combat.results.bits()
+                                & (ObjTypes.Dam.DEAD.bits() | ObjTypes.Dam.KNOCKED_OUT.bits())) != 0;
+                            boolean sameTeam = a1.data.critter.combat.team
+                                == critter.data.critter.combat.team;
+                            boolean attacksDude =
+                                Combat.aiInfoGetLastTarget(critter) == ObjectSystem.getDude();
+                            if (deadOrKo
+                                || sameTeam
+                                || !attacksDude) {
+                                continue;
+                            }
+
+                            int path = Animation.pathfinderFindPath(a1, a1.tile, critter.tile,
+                                null, 0, ObjectSystem::objBlockingAt);
+
+                            // SFALL: No ammo is a recoverable result because
+                            // AI can reload after selecting the target.
+                            CombatDefs.CombatBadShot badShot = Combat.combatCheckBadShot(a1,
+                                critter, CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(),
+                                false);
+                            if (path == 0
+                                && badShot != CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK
+                                && badShot != CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_NO_AMMO) {
+                                continue;
+                            }
+
+                            // Do not chase fleeing critter.
+                            if (ignoreFleeingCritters && Critter.critterIsFleeing(critter)) {
+                                continue;
+                            }
+
+                            candidate = critter;
+                            break;
+                        }
+                    }
+                }
+
+                if (candidate != null) {
+                    return candidate;
+                }
+            } else if (attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_STRONGEST.id()
+                || attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_WEAKEST.id()
+                || attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_CLOSEST.id()) {
+                targets[0] = a1.data.critter.combat.whoHitMe;
+                if (targets[0] == a1
+                    || (targets[0] != null
+                        && (targets[0].data.critter.combat.results.bits()
+                            & ObjTypes.Dam.DEAD.bits()) != 0)) {
+                    targets[0] = null;
+                }
+                preservedPartyTarget = true;
+                a1.data.critter.combat.whoHitMe = null;
+            }
+        } else {
+            attackWho = CombatAiDefs.AttackWho.ATTACK_WHO_INVALID.id();
+        }
+
+        GameObject whoHitMe = a1.data.critter.combat.whoHitMe;
+        if (!preservedPartyTarget) {
+            if (whoHitMe == null || a1 == whoHitMe) {
+                targets[0] = null;
+            } else {
+                if ((whoHitMe.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0) {
+                    if (attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_WHOMEVER.id()
+                        || attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_INVALID.id()) {
+                        return whoHitMe;
+                    }
+                } else {
+                    if (whoHitMe.data.critter.combat.team != a1.data.critter.combat.team) {
+                        targets[0] = aiFindNearestTeam(a1, whoHitMe, 1);
+                    } else {
+                        targets[0] = null;
+                    }
+                }
+            }
+        }
+
+        aiFindAttackers(a1, targets);
+
+        if (ignoreFleeingCritters) {
+            for (int index = 0; index < 4; index++) {
+                if (targets[index] != null && Critter.critterIsFleeing(targets[index])) {
+                    targets[index] = null;
+                }
+            }
+        }
+
+        if (attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_STRONGEST.id()) {
+            aiSortListStrength(targets, 4);
+        } else if (attackWho == CombatAiDefs.AttackWho.ATTACK_WHO_WEAKEST.id()) {
+            aiSortListWeakness(targets, 4);
+        } else {
+            aiSortListDistance(targets, 4, a1);
+        }
+
+        for (int index = 0; index < 4; index++) {
+            GameObject candidate = targets[index];
+            if (candidate != null
+                && isWithinPerceptionDetailed(a1, candidate,
+                    CombatAiDefs.PerceptionType.PERCEPTION_AI_TARGET.id())
+                    != CombatAiDefs.PerceptionResult.PERCEPTION_OUT_OF_RANGE.id()) {
+                CombatDefs.CombatBadShot badShot = Combat.combatCheckBadShot(a1, candidate,
+                    CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(), false);
+                int path = Animation.pathfinderFindPath(a1, a1.tile, candidate.tile, null, 0,
+                    ObjectSystem::objBlockingAt);
+                if (path != 0
+                    || badShot == CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_OK
+                    || badShot == CombatDefs.CombatBadShot.COMBAT_BAD_SHOT_NO_AMMO) {
+                    return candidate;
+                }
+                Debug.print("\nai_danger_source: I couldn't get at my target!"
+                    + "  Picking alternate!");
+            }
+        }
+
+        return null;
+    }
+
+    // ===== perception (src/combat_ai.cc:3701+) =====
+
+    /** Port of {@code adjustPerceptionDistanceForDudeSneak} (0x42B9B0). */
+    static int adjustPerceptionDistanceForDudeSneak(int maxDistance, GameObject target) {
+        if (target != ObjectSystem.getDude()) {
+            return maxDistance;
+        }
+
+        if (Critter.dudeIsSneaking()) {
+            int sneak = Skill.skillGetValue(ObjectSystem.getDude(),
+                SkillDefs.Skill.SKILL_SNEAK.id());
+            maxDistance /= 4;
+            if (sneak > 120) {
+                maxDistance -= 1;
+            }
+        } else if (Critter.dudeHasState(Critter.DUDE_STATE_SNEAKING)) {
+            maxDistance = maxDistance * 2 / 3;
+        }
+
+        return maxDistance;
+    }
+
+    /** {@code scriptHooks_WithinPerception} seam: identity headless. */
+    private static int scriptHooksWithinPerception(GameObject watcher, GameObject target,
+            int type, int result) {
+        return result;
+    }
+
+    /** Port of {@code isWithinPerceptionDetailed} (0x42BA04). */
+    public static int isWithinPerceptionDetailed(GameObject critter, GameObject target, int type) {
+        if (target == null) {
+            return CombatAiDefs.PerceptionResult.PERCEPTION_OUT_OF_RANGE.id();
+        }
+
+        int distance = ObjectSystem.objectGetDistanceBetween(target, critter);
+        int perception = Stat.critterGetStat(critter, StatDefs.Stat.STAT_PERCEPTION.id());
+        if (canSee(critter, target)) {
+            int maxDistance = perception * 5;
+            if ((target.flags.bits() & ObjTypes.ObjectFlags.TRANS_GLASS.bits()) != 0) {
+                maxDistance /= 2;
+            }
+
+            maxDistance = adjustPerceptionDistanceForDudeSneak(maxDistance, target);
+
+            if (distance <= maxDistance) {
+                return scriptHooksWithinPerception(critter, target, type,
+                    CombatAiDefs.PerceptionResult.PERCEPTION_IN_RANGE.id());
+            }
+        }
+
+        int maxDistance;
+        if (Combat.isInCombat()) {
+            maxDistance = perception * 2;
+        } else {
+            maxDistance = perception;
+        }
+
+        maxDistance = adjustPerceptionDistanceForDudeSneak(maxDistance, target);
+
+        if (distance <= maxDistance) {
+            return scriptHooksWithinPerception(critter, target, type,
+                CombatAiDefs.PerceptionResult.PERCEPTION_IN_RANGE.id());
+        }
+
+        return scriptHooksWithinPerception(critter, target, type,
+            CombatAiDefs.PerceptionResult.PERCEPTION_OUT_OF_RANGE.id());
+    }
+
+    /** Port of {@code isWithinPerception} (0x42BB24). */
+    public static boolean isWithinPerception(GameObject watcher, GameObject target) {
+        return isWithinPerceptionDetailed(watcher, target,
+            CombatAiDefs.PerceptionType.PERCEPTION_OTHER.id())
+            != CombatAiDefs.PerceptionResult.PERCEPTION_OUT_OF_RANGE.id();
+    }
+
+    // _can_see (src/actions.cc:1580): the target lies in the watcher's
+    // facing cone (same rotation or one step off).
+    public static boolean canSee(GameObject source, GameObject target) {
+        int diff = source.rotation.id()
+            - TileMath.tileGetRotationTo(source.tile, target.tile).value();
+        if (diff < 0) {
+            diff = -diff;
+        }
+
+        return diff == 0 || diff == 1 || diff == 5;
+    }
+
+    // ===== packet readers (src/combat_ai.cc) =====
+
+    /** {@code aiGetBestWeapon} (0x4281FC). */
+    public static int aiGetBestWeapon(GameObject obj) {
+        return aiGetPacket(obj).bestWeapon;
+    }
+
+    /** {@code aiGetDistance} (0x428208). */
+    public static int aiGetDistance(GameObject obj) {
+        return aiGetPacket(obj).distance;
+    }
+
+    /** {@code aiGetAttackWho} (0x428214). */
+    public static int aiGetAttackWho(GameObject obj) {
+        return aiGetPacket(obj).attackWho;
+    }
+
+    /** {@code aiGetDisposition} (0x428340). */
+    public static int aiGetDisposition(GameObject obj) {
+        if (obj == null) {
+            return CombatAiDefs.Disposition.DISPOSITION_NONE.id();
+        }
+
+        return aiGetPacket(obj).disposition;
+    }
+
     /** Test seam: fresh-process mirror. */
     static void resetForTests() {
         aiPackets = new AiPacket[0];
         aiInitialized = false;
         burstDisabledCritters.clear();
+        combatAiOver();
+        combatObj = null;
     }
 
     /** Test seam: direct table access (fresh-process mirror). */

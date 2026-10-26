@@ -83,6 +83,13 @@ AiPacket* f2jReferenceAiPacketRef(int index)
     return index >= 0 && index < gAiPacketsLength ? &(gAiPackets[index]) : nullptr;
 }
 
+// aiGetPacket resolves by packet_num (ai.txt ids), not by array index; the
+// dude's packet is the one with packet_num == obj->aiPacket.
+AiPacket* f2jReferenceAiPacketByNum(int packetNum)
+{
+    return aiGetPacketByNum(packetNum);
+}
+
 int f2jReferenceAiRangeForHitMode(Object* critter, Object* weapon, HitMode mode)
 {
     return aiGetWeaponRangeForHitMode(critter, weapon, mode);
@@ -263,6 +270,128 @@ void f2jReferenceAiSetBurstDisabled(Object* critter, bool disable)
 bool f2jReferenceAiIsBurstDisabled(Object* critter)
 {
     return aiIsBurstDisabled(critter);
+}
+
+// _combat_ai_begin/_combat_ai_over feed _curr_crit_list, the roster every
+// target-selection helper scans (src/combat_ai.cc:3133).
+void f2jReferenceAiBeginCritters(int count, Object** list)
+{
+    _combat_ai_begin(count, list);
+}
+
+void f2jReferenceAiOverCritters()
+{
+    _combat_ai_over();
+}
+
+int f2jReferenceAiCurrCritNum()
+{
+    return _curr_crit_num;
+}
+
+void f2jReferenceAiSortListDistance(Object** critterList, int length, Object* origin)
+{
+    _ai_sort_list_distance(critterList, length, origin);
+}
+
+void f2jReferenceAiSortListStrength(Object** critterList, int length)
+{
+    _ai_sort_list_strength(critterList, length);
+}
+
+void f2jReferenceAiSortListWeakness(Object** critterList, int length)
+{
+    _ai_sort_list_weakness(critterList, length);
+}
+
+Object* f2jReferenceAiFindNearestTeam(Object* a1, Object* a2, int flags)
+{
+    return _ai_find_nearest_team(a1, a2, flags);
+}
+
+Object* f2jReferenceAiFindNearestTeamInCombat(Object* a1, Object* a2, int flags)
+{
+    return _ai_find_nearest_team_in_combat(a1, a2, flags);
+}
+
+void f2jReferenceAiFindAttackers(Object* critter, Object** targets)
+{
+    // aiFindAttackers takes an array reference; copy through a local array.
+    Object* local[4] = { targets[0], targets[1], targets[2], targets[3] };
+    aiFindAttackers(critter, local);
+    for (int index = 0; index < 4; index++) {
+        targets[index] = local[index];
+    }
+}
+
+Object* f2jReferenceAiDangerSource(Object* a1)
+{
+    return _ai_danger_source(a1);
+}
+
+int f2jReferenceAiIsWithinPerception(Object* critter, Object* target, int type)
+{
+    return (int)isWithinPerceptionDetailed(critter, target, (PerceptionType)type);
+}
+
+bool f2jReferenceCritterIsFleeing(Object* critter)
+{
+    return critterIsFleeing(critter);
+}
+
+int f2jReferenceAiRating(Object* obj)
+{
+    return _combatai_rating(obj);
+}
+
+void f2jReferenceAiSetPacketAttackWho(AiPacket* ai, int attackWho)
+{
+    ai->attack_who = (AttackWho)attackWho;
+}
+
+void f2jReferenceAiSetPacketDisposition(AiPacket* ai, int disposition)
+{
+    ai->disposition = (Disposition)disposition;
+}
+
+void f2jReferenceAiSetPacketDistance(AiPacket* ai, int distance)
+{
+    ai->distance = (DistanceMode)distance;
+}
+
+int f2jReferenceAiGetDisposition(Object* obj)
+{
+    return (int)aiGetDisposition(obj);
+}
+
+int f2jReferenceAiGetDistance(Object* obj)
+{
+    return (int)aiGetDistance(obj);
+}
+
+int f2jReferenceAiGetAttackWho(Object* obj)
+{
+    return (int)aiGetAttackWho(obj);
+}
+
+int f2jReferenceAiGetBestWeapon(Object* obj)
+{
+    return (int)aiGetBestWeapon(obj);
+}
+
+int f2jReferenceAiAttackWho(AiPacket* ai)
+{
+    return (int)ai->attack_who;
+}
+
+int f2jReferenceAiDisposition(AiPacket* ai)
+{
+    return (int)ai->disposition;
+}
+
+int f2jReferenceAiDistance(AiPacket* ai)
+{
+    return (int)ai->distance;
 }
 
 } // namespace fallout

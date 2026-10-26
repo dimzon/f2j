@@ -185,4 +185,31 @@ void f2jReferenceSetEndingGuy(Object* guy)
     _combat_ending_guy = guy;
 }
 
+// AI info list is a combat.cc static indexed by cid; allocate and zero it
+// the way _combat_begin does (src/combat.cc:2195). _list_total is 0 in this
+// process (no _combat_begin), so zero the entries directly.
+void f2jReferenceAiInfoInit(int count)
+{
+    if (_aiInfoList != nullptr) {
+        internal_free(_aiInfoList);
+    }
+    _aiInfoList = (CombatAiInfo*)internal_malloc(sizeof(*_aiInfoList) * count);
+    for (int index = 0; index < count; index++) {
+        _aiInfoList[index].friendlyDead = nullptr;
+        _aiInfoList[index].lastTarget = nullptr;
+        _aiInfoList[index].lastItem = nullptr;
+        _aiInfoList[index].lastMove = 0;
+    }
+}
+
+Object* f2jReferenceAiInfoGetLastTarget(Object* obj)
+{
+    return aiInfoGetLastTarget(obj);
+}
+
+int f2jReferenceAiInfoSetLastTarget(Object* a1, Object* a2)
+{
+    return aiInfoSetLastTarget(a1, a2);
+}
+
 } // namespace fallout

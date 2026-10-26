@@ -308,6 +308,15 @@ public final class Critter {
     }
 
     /**
+     * Port of {@code critterIsFleeing} (0x42E690): the fleeing maneuver bit.
+     */
+    public static boolean critterIsFleeing(GameObject critter) {
+        return critter != null
+            && (critter.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.FLEEING.bits()) != 0;
+    }
+
+    /**
      * Port of {@code critterIsProne} (0x42DD80): non-critter false; then the
      * knockdown bits, or the animation inside either death range.
      */
@@ -345,10 +354,47 @@ public final class Critter {
             return critterGetRadiation(dude) > RADATION_INDICATOR_THRESHOLD;
         }
 
-        // NOTE: sneaking / level-up / addicted are CRITTER_DUDE_* flag bits.
-        // critterInit (game phase) owns them, so they read false headless,
-        // exactly like C without it.
+        // SNEAKING / LEVEL_UP_AVAILABLE / ADDICTED are CRITTER_DUDE_* bits
+        // on the dude proto flags (dudeEnableState/dudeDisableState mutate
+        // them; dudeEnableState runs in the [aitarget] vectors).
+        return (getDudeProtoFlags().bits() & dudeStateFlag(state).bits()) != 0;
+    }
+
+    /** Port of {@code dudeIsSneaking} (0x42E3F4): sneaking and it works. */
+    public static boolean dudeIsSneaking() {
+        if (dudeHasState(DUDE_STATE_SNEAKING)) {
+            return sneakWorking;
+        }
+
         return false;
+    }
+
+    // _sneak_working (src/critter.cc:129): set by the sneak skill queue
+    // event (game phase); tests drive it directly.
+    static boolean sneakWorking;
+
+    private static ObjTypes.CritterFlags getDudeProtoFlags() {
+        GameObject dude = ObjectSystem.getDude();
+        if (dude == null) {
+            return ObjTypes.CritterFlags.NONE;
+        }
+
+        ProtoTypes.Proto[] slot = new ProtoTypes.Proto[1];
+        ProtoDb.protoGetProto(ProtoTypes.ProtoId.ofGameObject(dude), slot);
+        return slot[0].critter.data.flags;
+    }
+
+    private static ObjTypes.CritterFlags dudeStateFlag(int state) {
+        switch (state) {
+        case DUDE_STATE_SNEAKING:
+            return ObjTypes.CritterFlags.DUDE_SNEAKING;
+        case DUDE_STATE_LEVEL_UP_AVAILABLE:
+            return ObjTypes.CritterFlags.DUDE_LEVEL_UP_AVAILABLE;
+        case DUDE_STATE_ADDICTED:
+            return ObjTypes.CritterFlags.DUDE_ADDICTED;
+        default:
+            return ObjTypes.CritterFlags.NONE;
+        }
     }
 
     // critter_get_hits (src/critter.cc 0x42D18C): non-critter -> 0, else
