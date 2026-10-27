@@ -185,6 +185,20 @@ void f2jReferenceSetEndingGuy(Object* guy)
     _combat_ending_guy = guy;
 }
 
+void f2jReferenceSetCombatRoster(Object** list, int com, int noncom, int elev)
+{
+    _combat_list = list;
+    _list_com = com;
+    _list_noncom = noncom;
+    _combat_elev = elev;
+}
+
+int f2jReferenceCombatAttemptEnd()
+{
+    combatAttemptEnd();
+    return (gCombatState & COMBAT_STATE_EXIT_REQUESTED) != 0 ? 1 : 0;
+}
+
 // The AI attack helpers call _combat_turn_run, which spins on this counter
 // headless; the sections park it so the runs return.
 void f2jReferenceSetTurnRunning(int value)

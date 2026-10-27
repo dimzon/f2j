@@ -7343,6 +7343,8 @@ int f2jReferenceAiAttack(Object*, Object*, HitMode);
 int f2jReferenceAiCalledFreq(AiPacket*);
 void f2jReferenceAiSetCalledFreq(AiPacket*, int);
 void f2jReferenceSetTurnRunning(int);
+void f2jReferenceSetCombatRoster(Object**, int, int, int);
+int f2jReferenceCombatAttemptEnd();
 void f2jReferenceSetProbeScheduling(bool, int);
 void f2jReferenceAiRetargetFromFriendlyFire(Object*, Object*, int*);
 bool f2jReferenceAiAttackWouldIntersect(Object*, Object*, Object*, int, int*);
@@ -9586,6 +9588,89 @@ void sectionCombatAiFlow()
     h1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
     d2->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
 
+    fallout::f2jReferenceAiOverCritters();
+}
+
+void sectionCombatEndAttempt()
+{
+    std::puts("[combatendattempt]");
+
+    // combatAttemptEnd: the end-of-combat gate that consults the AI
+    // want-to-stop/want-to-join decisions of every non-dude critter and
+    // sets EXIT_REQUESTED when nobody objects. The roster and the fight
+    // counters are arranged directly (the combat list is a static of
+    // combat.cc, served by the probe setters).
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // human, team 1, idle ally
+    fallout::Object* d1 = nullptr; // dog, team 2, enemy
+    fallout::Object* d2 = nullptr; // dog, team 2, second enemy
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&d2, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr || d2 == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    const int a = 38101;
+    fallout::Object* roster[4] = { dude, h1, d1, d2 };
+    const int rosterDistances[4] = { 10, 0, 4, 8 };
+    for (int index = 0; index < 4; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = index >= 2 ? 2 : 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 5;
+        roster[index]->data.critter.combat.damageLastTurn = 0;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        fallout::objectSetLocation(roster[index],
+            fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
+            0, nullptr);
+    }
+    dude->elevation = 0;
+    fallout::objectSetLocation(dude, fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, 10), 0, nullptr);
+
+    fallout::f2jReferenceAiInfoInit(4);
+    fallout::f2jReferenceAiBeginCritters(4, roster);
+    fallout::animationReset();
+
+    // Combat roster: 2 combatants (dude, h1) + 2 non-com (d1, d2).
+    fallout::Object* combatList[2] = { dude, h1 };
+    fallout::Object* noncomList[2] = { d1, d2 };
+    fallout::Object* fullList[4] = { dude, h1, d1, d2 };
+    fallout::f2jReferenceSetCombatRoster(fullList, 2, 2, 0);
+
+    // Enemy in sight and not fleeing: want-to-stop is false -> no exit.
+    // Give the enemies a living target (h1) so danger source finds them.
+    d1->data.critter.combat.whoHitMe = h1;
+    d2->data.critter.combat.whoHitMe = h1;
+    int rc = fallout::f2jReferenceCombatAttemptEnd();
+    std::printf("enemy-active exit=%d\n", rc);
+
+    // Enemy dead: want-to-stop is true -> exit requested.
+    d1->data.critter.combat.results = fallout::DAM_DEAD;
+    d2->data.critter.combat.results = fallout::DAM_DEAD;
+    rc = fallout::f2jReferenceCombatAttemptEnd();
+    std::printf("enemy-dead exit=%d\n", rc);
+
+    // Clean slate: no enemies at all -> exit requested (want-to-join loop
+    // also passes).
+    d1->data.critter.combat.results = fallout::DAM_NONE;
+    d2->data.critter.combat.results = fallout::DAM_NONE;
+    d1->data.critter.combat.whoHitMe = nullptr;
+    d2->data.critter.combat.whoHitMe = nullptr;
+    fallout::f2jReferenceSetCombatRoster(fullList, 1, 3, 0);
+    rc = fallout::f2jReferenceCombatAttemptEnd();
+    std::printf("no-enemies exit=%d\n", rc);
+
+    fallout::gCombatState &= ~fallout::COMBAT_STATE_EXIT_REQUESTED;
     fallout::f2jReferenceAiOverCritters();
 }
 
@@ -13196,6 +13281,7 @@ int main()
     RUN_SECTION(AiAttack);
     RUN_SECTION(AiDrug);
     RUN_SECTION(CombatAiFlow);
+    RUN_SECTION(CombatEndAttempt);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

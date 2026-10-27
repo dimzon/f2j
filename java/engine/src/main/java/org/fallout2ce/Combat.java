@@ -1212,6 +1212,56 @@ public final class Combat {
         listNoncom = 0;
     }
 
+    /**
+     * Port of {@code combatAttemptEnd} (0x4212D0): the end-of-combat gate.
+     * When all non-dude critters agree (want-to-stop for combatants, want
+     * to-join for non-combatants), EXIT_REQUESTED is set. The message-103
+     * display is a UI seam; the decision logic is exact.
+     */
+    static int combatAttemptEnd() {
+        if (combatElev == ObjectSystem.getDude().elevation) {
+            int dudeTeam = ObjectSystem.getDude().data.critter.combat.team;
+
+            for (int index = 0; index < listCom; index++) {
+                GameObject critter = combatList[index];
+                if (critter != ObjectSystem.getDude()) {
+                    int critterTeam = critter.data.critter.combat.team;
+                    GameObject critterWhoHitMe = critter.data.critter.combat.whoHitMe;
+                    if (critterTeam != dudeTeam
+                            || (critterWhoHitMe != null
+                                && critterWhoHitMe.data.critter.combat.team == critterTeam)) {
+                        if (!CombatAi.combataiWantToStop(critter)) {
+                            // messageListGetItem(103) + displayMonitorAddMessage:
+                            // UI seam.
+                            return 0;
+                        }
+                    }
+                }
+            }
+
+            for (int index = listCom; index < listCom + listNoncom; index++) {
+                GameObject critter = combatList[index];
+                if (critter != ObjectSystem.getDude()) {
+                    int critterTeam = critter.data.critter.combat.team;
+                    GameObject critterWhoHitMe = critter.data.critter.combat.whoHitMe;
+                    if (critterTeam != dudeTeam
+                            || (critterWhoHitMe != null
+                                && critterWhoHitMe.data.critter.combat.team == critterTeam)) {
+                        if (CombatAi.combataiWantToJoin(critter)) {
+                            // messageListGetItem(103) + displayMonitorAddMessage:
+                            // UI seam.
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        combatState |= COMBAT_STATE_EXIT_REQUESTED;
+        // _caiTeamCombatExit: attacker/defender team scratch reset.
+        return 1;
+    }
+
     // 0x4217FC _combatInitAIInfoList body is inlined at the combatBegin
     // allocation; the readers/writers below mirror the combat.cc accessors.
 
