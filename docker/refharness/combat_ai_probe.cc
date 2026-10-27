@@ -418,6 +418,26 @@ int f2jReferenceAiMoveStepsCloser(Object* critter, Object* target, int actionPoi
     return _ai_move_steps_closer(critter, target, actionPoints, taunt);
 }
 
+int f2jReferenceAiCheckDrugs(Object* critter)
+{
+    return _ai_check_drugs(critter);
+}
+
+int f2jReferenceAiMagicHands(Object* critter, Object* item, int num)
+{
+    return _ai_magic_hands(critter, item, num);
+}
+
+int f2jReferenceAiSearchEnviron(Object* critter, int itemType)
+{
+    return _ai_search_environ(critter, (ItemType)itemType) != nullptr ? 1 : 0;
+}
+
+int f2jReferenceAiRetrieveObject(Object* critter, Object* item)
+{
+    return _ai_retrieve_object(critter, item) != nullptr ? 1 : 0;
+}
+
 int f2jReferenceAiMoveCloser(Object* critter, Object* target, bool taunt)
 {
     return _ai_move_closer(critter, target, taunt);

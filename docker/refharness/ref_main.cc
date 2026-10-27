@@ -7330,6 +7330,10 @@ bool f2jReferenceAiFindFriend(Object*, int, int);
 int f2jReferenceAiPerformDistancePrefs(Object*, Object*);
 bool f2jReferenceAiFindFriend(Object*, int, int);
 int f2jReferenceAiCalledShot(Object*, Object*, HitMode);
+int f2jReferenceAiCheckDrugs(Object*);
+int f2jReferenceAiMagicHands(Object*, Object*, int);
+int f2jReferenceAiSearchEnviron(Object*, int);
+int f2jReferenceAiRetrieveObject(Object*, Object*);
 int f2jReferenceAiAttack(Object*, Object*, HitMode);
 int f2jReferenceAiCalledFreq(AiPacket*);
 void f2jReferenceAiSetCalledFreq(AiPacket*, int);
@@ -9330,6 +9334,143 @@ void sectionAiAttack()
     fallout::f2jReferenceAiSetMinToHit(humanPacket, savedMinToHit);
     fallout::gCombatState = fallout::COMBAT_STATE_PLAYER_TURN;
     fallout::f2jReferenceAiOverCritters();
+}
+
+void sectionAiDrug()
+{
+    std::puts("[aimdrug]");
+
+    // AI chemistry: the drug-taking engine (drugItemTakeDrug and the
+    // effect/withdrawal events) and the AI drug decision (_ai_check_drugs)
+    // plus the environ search (_ai_search_environ). The section runs out of
+    // combat (the retrieve path's turn-run and the rotate handlers need game
+    // phase, so retrieve is deferred). The event queue is initialized so the
+    // effect events register.
+    fallout::queueInit();
+
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // human (drug user)
+    fallout::Object* d1 = nullptr; // dog
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    // A clean corner of the map.
+    const int a = 44101;
+    fallout::Object* roster[2] = { h1, d1 };
+    int distances[2] = { 0, 3 };
+    for (int index = 0; index < 2; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 10;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        fallout::objectSetLocation(roster[index],
+            fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, distances[index]), 0, nullptr);
+    }
+
+    // Items on the ground for the environ scan.
+    fallout::Object* pistol = nullptr;
+    fallout::Object* ammo = nullptr;
+    fallout::Object* jet = nullptr;
+    fallout::Object* buffout = nullptr;
+    fallout::Object* mentats = nullptr;
+    fallout::Object* stimpak = nullptr;
+    fallout::objectCreateWithProtoId(&pistol, fallout::ProtoId(8));
+    fallout::objectCreateWithProtoId(&ammo, fallout::ProtoId(29));
+    fallout::objectCreateWithProtoId(&jet, fallout::ProtoId(259));
+    fallout::objectCreateWithProtoId(&buffout, fallout::ProtoId(87));
+    fallout::objectCreateWithProtoId(&mentats, fallout::ProtoId(53));
+    fallout::objectCreateWithProtoId(&stimpak, fallout::ProtoId(40));
+    if (pistol == nullptr || ammo == nullptr || jet == nullptr || buffout == nullptr
+        || mentats == nullptr || stimpak == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::objectSetLocation(pistol, 199, 0, nullptr);
+    fallout::objectSetLocation(ammo, 199, 0, nullptr);
+    fallout::objectSetLocation(jet, 199, 0, nullptr);
+    fallout::objectSetLocation(buffout, 199, 0, nullptr);
+    fallout::objectSetLocation(mentats, 199, 0, nullptr);
+    fallout::objectSetLocation(stimpak, 199, 0, nullptr);
+
+    // Drug take: examine the drug proto, then take each drug and report the
+    // outcome plus the bonus stats and the queue event counts.
+    auto countEvents = [](fallout::Object* owner, int type) {
+        int count = 0;
+        void* event = fallout::queueFindFirstEvent(owner, (fallout::EventType)type);
+        while (event != nullptr) {
+            count++;
+            event = fallout::queueFindNextEvent(owner, (fallout::EventType)type);
+        }
+        return count;
+    };
+
+    fallout::randomSeedPrerandom(1);
+    fallout::Proto* jetProto = nullptr;
+    fallout::protoGetProto(jet, &jetProto);
+    std::printf("jet-proto stat=%d,%d,%d amount=%d,%d,%d dur=%d,%d chance=%d\n",
+        (int)jetProto->item.data.drug.stat[0],
+        (int)jetProto->item.data.drug.stat[1],
+        (int)jetProto->item.data.drug.stat[2],
+        jetProto->item.data.drug.amount[0],
+        jetProto->item.data.drug.amount[1],
+        jetProto->item.data.drug.amount[2],
+        jetProto->item.data.drug.duration1,
+        jetProto->item.data.drug.duration2,
+        jetProto->item.data.drug.addictionChance);
+
+    std::printf("drug-before drg=%d wd=%d\n", countEvents(h1, 0 /* EVENT_TYPE_DRUG */), countEvents(h1, 2 /* EVENT_TYPE_WITHDRAWAL */));
+    int takeRc = (int)fallout::drugItemTakeDrug(h1, jet);
+    std::printf("jet rc=%d\n", takeRc);
+    std::printf("drug-after drg=%d wd=%d\n", countEvents(h1, 0), countEvents(h1, 2));
+    // Bonus stats for the jet proto (PERCEPTION/AGILITY/etc as per proto).
+    std::printf("jet-bonus=%d,%d,%d\n",
+        fallout::critterGetBonusStat(h1, jetProto->item.data.drug.stat[0]),
+        fallout::critterGetBonusStat(h1, jetProto->item.data.drug.stat[1]),
+        fallout::critterGetBonusStat(h1, jetProto->item.data.drug.stat[2]));
+
+    // Taken again: the same drug is re-inserted (allowed maxActiveEffects 4).
+    fallout::Proto* buffoutProto = nullptr;
+    fallout::protoGetProto(buffout, &buffoutProto);
+    std::printf("buffout-proto stat=%d,%d,%d amount=%d,%d,%d dur=%d,%d chance=%d\n",
+        (int)buffoutProto->item.data.drug.stat[0],
+        (int)buffoutProto->item.data.drug.stat[1],
+        (int)buffoutProto->item.data.drug.stat[2],
+        buffoutProto->item.data.drug.amount[0],
+        buffoutProto->item.data.drug.amount[1],
+        buffoutProto->item.data.drug.amount[2],
+        buffoutProto->item.data.drug.duration1,
+        buffoutProto->item.data.drug.duration2,
+        buffoutProto->item.data.drug.addictionChance);
+    int takeRc2 = (int)fallout::drugItemTakeDrug(h1, buffout);
+    std::printf("buffout rc=%d\n", takeRc2);
+    std::printf("drug-after2 drg=%d\n", countEvents(h1, 0));
+
+    // _ai_search_environ over the ground items. The human first equips a
+    // pistol (so the ammo scan can pair it) and the small-guns skill is
+    // raised (so the weapon scan passes its can-use gate).
+    fallout::itemAdd(h1, pistol, 1);
+    pistol->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+    fallout::Proto* humanProto = nullptr;
+    fallout::protoGetProto(h1, &humanProto);
+    int savedSkill = humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS];
+    humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 200;
+    std::printf("env-weapon=%d\n", fallout::f2jReferenceAiSearchEnviron(h1, (int)fallout::ITEM_TYPE_WEAPON));
+    std::printf("env-ammo=%d\n", fallout::f2jReferenceAiSearchEnviron(h1, (int)fallout::ITEM_TYPE_AMMO));
+    std::printf("env-drug=%d\n", fallout::f2jReferenceAiSearchEnviron(h1, (int)fallout::ITEM_TYPE_DRUG));
+    humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = savedSkill;
 }
 
 void sectionIsoRest()
@@ -12937,6 +13078,7 @@ int main()
     RUN_SECTION(AiMove);
     RUN_SECTION(AiDist);
     RUN_SECTION(AiAttack);
+    RUN_SECTION(AiDrug);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

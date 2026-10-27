@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-27) | **793 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-27) | **794 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v167.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]`, `[aitarget]`, `[aimove]`, `[aidist]` и `[aiattack]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray`, `pathfinderFindPath`, выбор AI-цели (сортировки, `_ai_find_nearest_team[_in_combat]`, `aiFindAttackers`, `_ai_danger_source`, `isWithinPerceptionDetailed`) и AI-движение (`_obj_ai_blocking_at`, `_cai_attackWouldIntersect`, `_cai_retargetTileFromFriendlyFire`, `_ai_run_away`/`_ai_move_away`/`_ai_move_steps_closer`/`_ai_find_friend`) и дистанционные предпочтения (`_cai_perform_distance_prefs`) и голову AI-атаки (`_ai_called_shot`, `_ai_attack`-гард) | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика, pathfinder, AI-выбор цели, AI-движение, дистанции и голова AI-атаки проверены C++-векторами; дальше — химия (`_ai_check_drugs`, `_ai_search_environ`) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `CombatAi.aiDangerSource`, `CombatAi.aiRunAway`, `CombatAi.aiMoveStepsCloser`, `CombatAi.caiPerformDistancePrefs`, `CombatAi.aiCalledShot`, `CombatAi.aiAttack`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
+| Эталон харнеса | `golden/v167.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]`, `[aitarget]`, `[aimove]`, `[aidist]`, `[aiattack]` и `[aimdrug]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray`, `pathfinderFindPath`, выбор AI-цели (сортировки, `_ai_find_nearest_team[_in_combat]`, `aiFindAttackers`, `_ai_danger_source`, `isWithinPerceptionDetailed`) и AI-движение (`_obj_ai_blocking_at`, `_cai_attackWouldIntersect`, `_cai_retargetTileFromFriendlyFire`, `_ai_run_away`/`_ai_move_away`/`_ai_move_steps_closer`/`_ai_find_friend`) и дистанционные предпочтения (`_cai_perform_distance_prefs`) и голову AI-атаки (`_ai_called_shot`, `_ai_attack`-гард) и химию (`drugItemTakeDrug` + эффекты/аддикция, `_ai_search_environ`) | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика, pathfinder, AI-выбор цели, AI-движение, дистанции, голова AI-атаки и химия проверены C++-векторами; дальше — сборка `_combat_ai` и `_combat_input` (`_ai_check_drugs`, `_ai_search_environ`) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `CombatAi.aiDangerSource`, `CombatAi.aiRunAway`, `CombatAi.aiMoveStepsCloser`, `CombatAi.caiPerformDistancePrefs`, `CombatAi.aiCalledShot`, `CombatAi.aiAttack`, `Drugs.drugItemTakeDrug`, `CombatAi.aiSearchEnviron`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -344,6 +344,24 @@ HP) нужен и здесь; сетка вокруг старых секций 
 INT ≥ 1) — вектор документирует кламп. Отложено: тик-насос анимаций и
 обработчики шагов (игровая фаза), хвост `_combat_turn_run` в
 `aiFinishMovement`, перк/сник-ветки дуда в регистраторах (швы на месте).
+Следующий слайс (2026-10-27): химия.
+Векторы `[aimdrug]` (`v171`) снимают настоящий C++: прото Jet/Buffout
+(статы/моды/длительности/шанс аддикции), принятие через
+`drugItemTakeDrug` (результат REMOVE, два DRUG-события на длительность,
+бонусы +2 PE/+1 ST/+1 AG для Jet, +2/+2/+3 по статам Buffout, аддикция
+по сиду 1 даёт WITHDRAWAL-событие) и `_ai_search_environ` с предметами
+вне порога перцепции (все три скана 0). Портирован новый `Drugs.java`
+(порт drug-подсистемы из item.cc: таблица описаний, DrugEffectEvent/
+WithdrawalEvent, queue-события, аддикция в GameGlobalVars и флаги dude,
+`drugItemTakeDrug`; швы: сообщения/UI, perkAddEffect/perkRemoveEffect),
+`ObjectSystem.objectListCreate` (обобщение по типу предмета) и
+`CombatAi.aiSearchEnviron`. Найдено по ходу: `_ai_check_drugs`
+(полный AI-контур) нестабильно зависает в объектных циклах headless, и
+разные прогоны давали разное количество событий при повторных приёмах,
+поэтому вектор фиксирует проверяемые компоненты — принятие и сканирование
+окружения; аддикционный ролл засеян единым сидом 1 в обоих мирах, иначе
+C++ и Java разошлись бы на WITHDRAWAL=0/1; «распаковка» предметов вне
+порога перцепции (тайл 199) делает границы сканов детерминированными.
 Следующий слайс (2026-10-27): голова AI-атаки.
 Векторы `[aiattack]` (`v170`) снимают `_ai_called_shot` (сетка по
 цене прицеливания, `critterCanAim`, ролл called-shot при called_freq=1,

@@ -690,6 +690,42 @@ public final class ObjectSystem {
         return out.toArray(new GameObject[0]);
     }
 
+    // 0x48BD2C objectListCreate: all objects of a type on the elevation
+    // (tile -1) or on one tile, in tile order; hidden objects are skipped.
+    // The Java port returns the array; the C free is not needed.
+    static GameObject[] objectListCreate(int tile, int elevation, int objectTypeId) {
+        java.util.ArrayList<GameObject> out = new java.util.ArrayList<>();
+        if (tile == -1) {
+            for (GameObjectListNode head : tileHeads) {
+                GameObjectListNode node = head;
+                while (node != null) {
+                    GameObject obj = node.obj;
+                    if ((obj.flags.bits() & ObjectFlags.HIDDEN.bits()) == 0
+                            && obj.elevation == elevation
+                            && FrmId.ofFid(obj.fid).objectType().value() == objectTypeId) {
+                        out.add(obj);
+                    }
+                    node = node.next;
+                }
+            }
+        } else {
+            if (tile < 0 || tile >= tileHeads.length) {
+                return new GameObject[0];
+            }
+            GameObjectListNode node = tileHeads[tile];
+            while (node != null) {
+                GameObject obj = node.obj;
+                if ((obj.flags.bits() & ObjectFlags.HIDDEN.bits()) == 0
+                        && obj.elevation == elevation
+                        && FrmId.ofFid(obj.fid).objectType().value() == objectTypeId) {
+                    out.add(obj);
+                }
+                node = node.next;
+            }
+        }
+        return out.toArray(new GameObject[0]);
+    }
+
     // 0x48B930 obj_shoot_blocking_at: like objBlockingAt, but dead critters
     // never block and shoot-thru objects pass.
     static GameObject objShootBlockingAt(GameObject exclude, int tile, int elevation) {

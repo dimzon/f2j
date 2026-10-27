@@ -1976,6 +1976,57 @@ public final class CombatAi {
         return 0;
     }
 
+    /**
+     * Port of {@code _ai_search_environ} (0x429D00): scans the ground items
+     * within perception range and applies the weapon/ammo/drug gates. The
+     * returned boolean mirrors "found != null".
+     */
+    public static boolean aiSearchEnviron(GameObject critter, int itemType) {
+        if (Critter.critterGetBodyType(critter)
+                != ProtoTypes.BodyType.BODY_TYPE_BIPED) {
+            return false;
+        }
+
+        GameObject[] objects = ObjectSystem.objectListCreate(-1, Map.gElevation,
+                ObjTypes.ObjectType.OBJ_TYPE_ITEM.id());
+        if (objects.length == 0) {
+            return false;
+        }
+
+        aiSortListDistance(objects, objects.length, critter);
+
+        int perception = Stat.critterGetStat(critter,
+                StatDefs.Stat.STAT_PERCEPTION.id()) + 5;
+        GameObject item2 = Inventory.critterGetItem2(critter);
+
+        for (int index = 0; index < objects.length; index++) {
+            GameObject item = objects[index];
+            if (ObjectSystem.objectGetDistanceBetween(critter, item) > perception) {
+                break;
+            }
+
+            if (Item.itemGetType(item).id() == itemType) {
+                if (itemType == ProtoTypes.ItemType.ITEM_TYPE_WEAPON.id()) {
+                    if (aiCanUseWeapon(critter, item,
+                            CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id())) {
+                        return true;
+                    }
+                } else if (itemType == ProtoTypes.ItemType.ITEM_TYPE_AMMO.id()) {
+                    if (Item.weaponCanBeReloadedWith(item2, item)) {
+                        return true;
+                    }
+                } else if (itemType == ProtoTypes.ItemType.ITEM_TYPE_DRUG.id()
+                        || itemType == ProtoTypes.ItemType.ITEM_TYPE_MISC.id()) {
+                    if (aiCanUseItem(critter, item)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     /** {@code AiRetargetData} (src/combat_ai.cc:60). */
     private static final class AiRetargetData {
         GameObject source;
