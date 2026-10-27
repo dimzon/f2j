@@ -29,6 +29,12 @@ public final class ScriptsState {
     /** Port of {@code gScriptsRequests} ({@code src/scripts.h}). */
     public static int scriptsRequests;
 
+    /** Port of {@code gGameModeEnabled} ({@code src/scripts.cc}). */
+    static boolean gameModeEnabled;
+
+    /** Port of {@code gCritterProcessingEnabled} ({@code src/scripts.cc}). */
+    static boolean critterProcessingEnabled;
+
     /** Port of {@code gScriptsRequestedElevatorType}. */
     public static int requestedElevatorType;
 
@@ -359,8 +365,27 @@ public final class ScriptsState {
         return 0;
     }
 
+    // 0x4A53A8 scriptsEnable.
+    public static int scriptsEnable() {
+        if (!gameModeEnabled) {
+            return -1;
+        }
+
+        critterProcessingEnabled = true;
+        ObjectSystem.scriptsEnabled = true;
+        return 0;
+    }
+
+    // 0x4A53D0 scriptsDisable.
+    public static int scriptsDisable() {
+        ObjectSystem.scriptsEnabled = false;
+        return 0;
+    }
+
     /** Test seam: fresh-process mirror. */
     static void resetForTests() {
+        gameModeEnabled = false;
+        critterProcessingEnabled = false;
         scriptsRequests = SCRIPT_REQUEST_NONE;
         requestedElevatorType = 0;
         requestedElevatorLevel = 0;

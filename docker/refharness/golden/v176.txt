@@ -42,22 +42,17 @@ rand25[2]=25
 rand25[3]=17
 rand25[4]=2
 rand-degenerate=10
-INFO: Random number 3 is not in range 5 to 3
 rand-reversed=5
 [strParsers]
 parseInt rc=0 value=12 rest=[ 34,abc]
 parseInt-empty rc=0 value=0 rest=[]
 parseList rc=0 value=1 rest=[ x]
-INFO: 
-strParseStrFromList Error: Couldn't find match for string: seven!
 parseList-miss rc=-1 value=-1 rest=[]
 parseWithKey rc=0 value=3 rest=[ x=4]
 parseWithKey-miss rc=-1 value=-99 rest=[x=4]
 parseKeyValue rc=0 key=[count] value=3 rest=[, x=4]
 [strParseFunc]
 parseFunc rc=0 value=42 rest=[ next]
-INFO: 
-strParseStrFromFunc Error: Couldn't find match for string: nope!
 parseFunc-miss rc=-1 value=-1 rest=[]
 [wordWrap]
 wrap rc=0 len=2 text=[hi] width=100 bps=0,2
@@ -306,8 +301,6 @@ misc-count=125
 misc9=1 [INTRO]
 misc10=1 [NEW GAME]
 misc-huge=0
-INFO: 
- ** String not found @ getmsg(), MESSAGE.C **
 getmsg-missing=[Error]
 reload-count=125 (was 125)
 badwords=0
@@ -326,8 +319,6 @@ gender-female[4]=[<x^y]
 repo-misc10=[NEW GAME]
 repo-extra=12288
 repo-extra9=[INTRO]
-INFO: 
- ** String not found @ getmsg(), MESSAGE.C **
 repo-unset=[Error]
 [art]
 sizeof-art=88 sizeof-frame=12
@@ -366,9 +357,7 @@ frm [art\critters\hmjmpsab.frm] rot=5 w=22 h=64 x=-2 y=-1 crc=A093D616
 frm [art\critters\hmjmpsab.frm] bad-frame=-1 bad-rot=-1 null-art=-1
 read-tiny-buf=-1
 read-missing=-2
-INFO: ART ERROR: rejected trunc.frm: invalid header
 read-trunc=-3
-INFO: ART ERROR: rejected text\english\game\misc.msg: invalid header
 read-notfrm=-3
 [cache]
 init=1
@@ -387,7 +376,6 @@ lock-over-max=0
 [artload]
 load=1 frames=1
 load-missing=0
-INFO: ART ERROR: rejected text\english\game\misc.msg: invalid header
 load-notfrm=0
 img-lock=1 w=640 h=480 x=0 y=239 crc=E4F6BDB0
 named-lock=1 w=640
@@ -413,7 +401,6 @@ blend-rebuilt=1 crc=1629B495 same=1
 load-missing=0 err=[color.c: color table not found
 ]
 [settings]
-INFO: Game config loaded from fallout2.cfg.
 init=1
 res=640x480 windowed=0 music=1 lang=[english]
 init-again=0
@@ -421,26 +408,18 @@ desc-found=1
 get-value=640
 set-800=1
 after-set active=640 configured=800
-INFO: config value screen.resolution_x was clamped.
 set-100=0 err=[Value is outside the allowed range.]
 set-bool=0 err=[Value has the wrong type.]
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 clamped-resx=640
-INFO: Game config loaded from fallout2.cfg.
 init-cli=1
 cli-resx=1024 cli-skip=2
 override=1
 set-overridden=1
 save=1
 saved-resx-lines=1 [resolution_x=100] saved-skip-lines=0
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 reinit=1 resx=1024
 [colorcycle]
 sdl-init=1
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 init-enabled=1
 init-again=1
 speed=1
@@ -464,8 +443,6 @@ delay-nonpositive-ok=1
 delay50=1
 [svga]
 video-init=1
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 scrblit-preset=1
 zeromem-null=1
 zero-noop=1
@@ -515,8 +492,6 @@ outline=DA88249A
 srccopy=EAF16D75
 transsrccopy=6F1F04E4
 [font]
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 init=0 current=0
 font0 height=16 spacing=1 width-Hi=18 charW-H=7 monoW=10 bufsize-Hi=288
 mono-str=30
@@ -533,8 +508,6 @@ add-dupe=-1 add-null=-1
 add-edge=0
 load0=0 load9=-1
 [ifacefont]
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 pre width=0
 pre-draw=190A55AD
 init=0
@@ -559,13 +532,10 @@ tri bounds=0,0,8,6 centroid=2,2 in=1 out=0
 name=[hello]
 name-null=[]
 name-long=[0123456789abcdef0123456789abcde]
-INFO: regionGetName(): null region ptr
 name-null-region=[<null>]
 userdata-null=1
 userdata-roundtrip=1
 flags=5
-INFO: regionAddPoint(): null region ptr
-INFO: regionDelete(): null region ptr
 deleted=1
 [datafile]
 pcx=6x4 img-crc=0779E7D2 pal-crc=8DE4C36E
@@ -589,8 +559,6 @@ sfall-reinit=0
 sfall-init-file=1
 Misc.OverrideCriticalTable=[5]
 Misc.BooksFile=[bks.ini]
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 content-init=1
 f2res-migrate=1
 screen.resolution_x=[800]
@@ -598,7 +566,6 @@ screen.scale=[2]
 ui.main_menu_scale_mode=[2]
 ui.iface_bar_mode=[1]
 f2res-again=0
-INFO: Migrated settings from ddraw.ini to game.cfg.
 sfall-migrated-file=1
 start.map=[arroyo]
 start.year=[2250]
@@ -607,7 +574,6 @@ movies.movie1=[custom.mve]
 movies.endgame_movie_male=[10]
 combat.check_weapon_ammo_cost=[1]
 sfall-migrate-again=1
-INFO: Migrated settings from f2_res.ini to /tmp/f2mig3\config\game.cfg.
 f2res-content-file=1
 main_menu.main_menu_panel_offset_x=[50]
 main_menu.scale_buttons_and_text=[1]
@@ -636,8 +602,6 @@ first-char=32 last-char=122 queue=64
 mod-shift=8 mod-ctrl=128 mod-alt=32 any-shift=24
 lock-num=1 lock-caps=2 state-up=0 state-down=1
 [dinput]
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 uses-relative=0
 direct-init=1
 acquire-mouse=1 acquire-kbd=1
@@ -650,16 +614,11 @@ kbd-reset=1 kbd-data=1 kbd-unacquire=1
 mouse-unacquire=1
 freed=1
 [graph]
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value screen.resolution_x was clamped.
 channels music=1 speech=1 sfx=4 movie=1 script=4 float=4 pipboy=1 total=16
 clamped sfx=16 script=1 bad-type=0 total=25
 high-white=31 high-black=0
-INFO: load_lbm_to_buf: loaded 6x4 OK
 lbm=6 crc=52FF2860
-INFO: load_lbm_to_buf: loaded 6x4 OK
 lbm-clip=6 crc=9AC24FE6
-INFO: load_lbm_to_buf(/tmp/nope.lbm): fileOpen failed
 lbm-missing=-1
 compress=27 crc=798E8D45
 decompress=0 match=1
@@ -676,9 +635,6 @@ schema id=[ui.hotkey] type=5 cat=3 section=[ui] key=[hotkey] source=[fallout2.cf
 schema id=[ui.motd] type=3 cat=3 section=[ui] key=[motd] source=[fallout2.cfg] default=[hello] label=-1:[Motd] apply=2 choices=0
 parse-bad=0
 parse-nodot=0 parse-null=0
-INFO: Game config loaded from fallout2.cfg.
-INFO: config value sound.sfx_channels was clamped.
-INFO: config value sound.script_channels was clamped.
 model-edits=110 dirty=0
 set-resx=1
 dirty=1 dirty-resx=1 dirty-music=0
@@ -688,7 +644,6 @@ rollback-dirty=0
 reset-default=1
 commit=1 active=640 configured=800
 commit-dirty=0
-INFO: Game config loaded from fallout2.cfg.
 set-overridden=0 err=[Setting is overridden by the command line.]
 [ptrreg]
 store-null=0 store-a=1 store-b=2 fetch-a=1 fetch-remove-b=1 fetch-b-gone=1 fetch-zero=1 fetch-missing=1 store-c=3
@@ -793,7 +748,6 @@ hide-hidden=1 show-hidden=0
 ts-mode=1 pan-mode=1 tap=1 tap-type=1 tap-state=3 tap-n=1 tap-x=64 tap-y=96 tap-again=0
 pan=1 pan-type=3 pan-state=1 pan-n=1 pan-x=332 pan-y=240 panend=1 panend-state=3
 press=1 press-type=2 press-state=1 press-n=1 pressend=1 pressend-state=3
-INFO: Can't find nope.txt
 set-anim=1 found=1 found-name=[cur.anim] found-w=8 found-h=8 found-type=2 found-hot=1,1 set-anim-again=1 set-ptr=1 set-shape=1 set-missing=0 set-bad=0 cur-hot=3,4 cur-type=1
 upd-hot=2,2
 mgr-hide=1 mgr-show=0
@@ -883,12 +837,9 @@ save-rc=0 save-dest=[xy] saveempty-rc=1 saveesc-rc=1 saveesc-dest=[?]
 [protodb]
 path40=[proto\items]
 stim-rc=0,0 same=1 pid=40 msgid=4000 fid=15 type=2 material=1 size=0 weight=0 cost=175 light=0,0 flags=8
-INFO: 
-	Error: Unimp'd data member in member in proto_data_member!
 member-pid=1:40 member-weight=1:0 member-cost=1:175 member-bad=1
 empty-rc=-1 huge-rc=-1 badptr=1
 [tilemath]
-INFO: tile_hires_stencil_init
 init=0 init-center=20100 setcenter=0 center=17488
 off=16,32,16,-16,-32,-16 d5=-12,0,12,12,0,-12
 dist=11 dist-same=0 dist-bad=9999 infront=1 toright=0 rot=5
@@ -896,7 +847,6 @@ step1=17487 step3=17285 beyond=17088 beyond0=17488
 edge0=1 edge199=1 edgemid=0 edgebad=0 sq=5050 sqbad=-1
 toscr=0 back=17288 badscr=-1 outside=-1
 [squaremath]
-INFO: tile_hires_stencil_init
 init=0 toscr=0 back=4950 badscr=-1 outside=-1
 roof=0 roofxy=176,362 coord=50,49 roofcoord=50,49
 [tileinrect]
@@ -918,8 +868,6 @@ save=0 cleared=1 load=0 next-loaded=302450 has-sneak=1
 clear-calls=1 empty-after-clear=1 exit=0
 [lightreact]
 init=0 ambient=65536 base=655 clamped=65536 true=70000 inc=70100 dec=69900 badelev=0 badtile=0 reset=655
-INFO: Reaction: set thresholds neutral=0 good=100
-INFO: Reaction: set thresholds neutral=-10 good=10
 bad=0 edge=0 neutral=1 good=2 custom=0,1,2 reset=1
 [gmouseutil]
 modes=11 first-skill=4 skills=7 items=10 cursors=27 first-anim=25 scroll-invalid-off=8
@@ -956,8 +904,6 @@ rem=0 slot0after=41 qtyafter=0
 [equip]
 jacket-rc=0 jacket-type=0 equip-armor=0 worn=1
 gun-rc=0 gun-type=3 gun-skill=2 gun-attack=4
-INFO: 
-inven_wield failed!  ERROR ERROR ERROR!
 equip-gun=-1 hand2=-1
 [ballistics]
 dmg-rc=0 min=20 max=60 dmg-null=-1 radius=0 range=1 ap=1
@@ -1006,8 +952,6 @@ fresh=0:2 copy=0 weight=0 pid=2 cross=-1 miss=-1
 sub=1,0,1
 objcopy=0 twinpid=40 twinid=102 sametwin=1 objcost=175 barecost=0
 [mapvars]
-INFO: ERROR: attempt to reference map var out of range: 0
-INFO: ERROR: attempt to reference local var out of range: 99
 glob=-1 alloc=0 set=0 get=0:42 bad=-1
 pre=65536 post=655
 [skilltag]
@@ -1026,11 +970,7 @@ movecost=5 bad=0 encumbered=0
 [findcid]
 cid=-1 found=0 from1=1 missing=3
 [nevsevents]
-INFO: nevs_signal( 'nope');
-INFO: nevs_clearevent( 'nope');
-INFO: nevs_clearevent( 'ev1');
 add=0,0 signal=1 clearmiss=1 clear=0
-INFO: nevs_clearevent( 'ev07');
 fillfail=0 over=1 clearslot=0 readd=0
 [sfallvars]
 init=1 store=1 fetch=1:42 miss=0 str=1:99
@@ -1058,17 +998,8 @@ strdesc=1:[Raw physical strength. A high Strength is good for physical character
 loaded=1 start=1 miss=-1 pop=7,42
 [scriptrun]
 scripts\miJerky.int ip=20 flags=80100001 stack=1 C001:0
-INFO: 
-Error during execution: Undefined opcode 80c7.
-INFO: Current script: scripts\CATH2MV.int, procedure start
 scripts\CATH2MV.int ip=160 flags=80C70005 stack=1 C001:184
-INFO: 
-Error during execution: Undefined opcode 80c1.
-INFO: Current script: scripts\acdog.int, procedure start
 scripts\acdog.int ip=2310 flags=80C10005 stack=22 C001:0 C001:2380 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0
-INFO: 
-Error during execution: Undefined opcode 80bc.
-INFO: Current script: scripts\ABEL.int, procedure start
 scripts\ABEL.int ip=1264 flags=80BC0005 stack=3 C001:0 C001:0 C001:0
 [scriptrungame]
 gamvars length=695 checksum=-1024294307
@@ -1077,54 +1008,18 @@ msg num=100 [You see a regular domesticated brahmin.]
 msg num=101 [The brahmin's extra head is probably the result of a regular cow being exposed too soon to radiation.]
 msg num=102 [You don’t notice anything unusual about the brahmin.]
 scripts\miJerky.int ip=20 flags=80100001 stack=1 C001:0
-INFO: Script Error: scripts\CATH2MV.int: op_script_action: can't match program to sid
 scripts\CATH2MV.int ip=20 flags=80100001 stack=1 C001:0
-INFO: Script Error: scripts\acdog.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\acdog.int: op_critter_add_trait: obj is NULL
 scripts\acdog.int ip=20 flags=80100001 stack=21 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0
-INFO: Script Error: scripts\ABEL.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\ABEL.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\ABEL.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\ABEL.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\ABEL.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\ABEL.int: op_script_action: can't match program to sid
 scripts\ABEL.int ip=20 flags=80100001 stack=4 C001:0 C001:0 C001:1 C001:0
-INFO: Script Error: scripts\doorcode.int: op_script_action: can't match program to sid
 scripts\doorcode.int ip=20 flags=80100001 stack=1 C001:0
-INFO: Script Error: scripts\CODEDISK.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\CODEDISK.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\CODEDISK.int: op_script_action: can't match program to sid
 scripts\CODEDISK.int ip=20 flags=80100001 stack=1 C001:0
-INFO: Script Error: scripts\ARTIFACT.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\ARTIFACT.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\ARTIFACT.int: op_script_action: can't match program to sid
 scripts\ARTIFACT.int ip=20 flags=80100001 stack=1 C001:0
-INFO: Script Error: scripts\MutFruit.int: op_script_action: can't match program to sid
 scripts\MutFruit.int ip=20 flags=80100001 stack=1 C001:0
-INFO: Script Error: scripts\DOG2.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\DOG2.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\DOG2.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\DOG2.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\DOG2.int: op_script_action: can't match program to sid
 scripts\DOG2.int ip=20 flags=80100001 stack=7 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0
-INFO: Script Error: scripts\VSGTEAM9.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\VSGTEAM9.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\VSGTEAM9.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\VSGTEAM9.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\VSGTEAM9.int: op_script_action: can't match program to sid
 scripts\VSGTEAM9.int ip=20 flags=80100001 stack=3 C001:0 C001:1 C001:0
-INFO: Script Error: scripts\JONATHAN.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\JONATHAN.int: op_critter_add_trait: obj is NULL
-INFO: Script Error: scripts\JONATHAN.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\JONATHAN.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\JONATHAN.int: op_script_action: can't match program to sid
 scripts\JONATHAN.int ip=20 flags=80100001 stack=5 C001:0 C001:0 C001:0 C001:0 C001:1
-INFO: Script Error: scripts\FREEZER.int: op_script_action: can't match program to sid
-INFO: Script Error: scripts\FREEZER.int: op_script_action: can't match program to sid
 scripts\FREEZER.int ip=20 flags=80100001 stack=1 C001:0
-INFO: Script Error: scripts\GRAFFITI.int: op_script_action: can't match program to sid
 scripts\GRAFFITI.int ip=20 flags=80100001 stack=2 C001:0 C001:0
-INFO: Script Error: scripts\BVAIR.int: op_script_action: can't match program to sid
 scripts\BVAIR.int ip=20 flags=80100001 stack=1 C001:0
 scripts\ziclosed.int ip=20 flags=80100001 stack=20 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0
 scripts\cowbomb.int ip=20 flags=80100001 stack=12 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:0 C001:1 C001:0
@@ -1374,11 +1269,32 @@ anim=45,0,16,17,16
 critfail=-1,3
 ammocost rc=0 qty=2
 bonuscrit=0,0,0
+[mainloop]
+normal iter=1
+normal key=-1
+normal requests=0
+normal transition=0
+normal iter=2
+normal key=-1
+normal requests=0
+normal transition=0
+normal final-iter=2 final-quit=2
+space iter=1
+space key=32
+space requests=0
+space transition=0
+space iter=2
+space key=-1
+space requests=0
+space transition=0
+space final-iter=2 final-quit=2
+dead iter=1
+dead key=-1
+dead requests=0
+dead transition=0
+dead death=1
+dead final-iter=1 final-quit=2
 [isorest]
-INFO: 
-INTRFACE: Custom interface bar width (800) is greater than screen width (640). Using default interface bar.
-INFO: 
-Elevators init: no ElevatorsFile configured, custom elevators disabled
 iface=0 enter=0
 [maptransition]
 rc=0 map=0 tile=5 elev=1 rot=0
@@ -1545,11 +1461,8 @@ team=3
 team-null=-1
 dead-team=-1
 [rangedmiss]
-INFO: Random number 1 is not in range 1 to 0
 gr seed=3 tile=2301 flags=0 dmg=0 targetpid=16777558
-INFO: Random number 1 is not in range 1 to 0
 gr seed=9 tile=2102 flags=0 dmg=0 targetpid=16777558
-INFO: Random number 0 is not in range 1 to 0
 gr seed=17 tile=1902 flags=0 dmg=0 targetpid=16777558
 rg seed=5 tile=1825 flags=0 dmg=0 targetpid=16777558
 rg seed=11 tile=1825 flags=0 dmg=0 targetpid=16777558
@@ -1565,38 +1478,14 @@ seed=90 roll=2 fired=4 extras=0 hit=0 dmg=0 flags=0
 seed=200 roll=2 fired=4 extras=0 hit=0 dmg=0 flags=0
 [combatattack]
 weapon-skill=0 value=205 null=0
-INFO: computing attack...
-INFO: sequencing attack...
-INFO: running attack...
 normal rc=0 ap=5 hit=1 damage=0 flags=0 used=1 ammo=10 hp=50 last=0
-INFO: computing attack...
-INFO: sequencing attack...
-INFO: running attack...
 aimed rc=0 ap=4 hit=1 damage=0 flags=0 used=1 ammo=10 hp=50 last=0
-INFO: computing attack...
-INFO: sequencing attack...
-INFO: running attack...
 low-ap rc=0 ap=0 hit=1 damage=0 flags=0 used=1 ammo=10 hp=50 last=0
-INFO: computing attack...
-INFO: sequencing attack...
 schedule-fail rc=-1 ap=10 hit=1 damage=0 flags=0 used=1 ammo=10 hp=50 last=0
-INFO: computing attack...
-INFO: sequencing attack...
-INFO: running attack...
 override rc=0 ap=5 hit=1 damage=9 flags=2 used=1 ammo=10 hp=50 last=0
-INFO: computing attack...
-INFO: sequencing attack...
-INFO: running attack...
 minimum rc=0 ap=5 hit=1 damage=3 flags=2 used=1 ammo=10 hp=50 last=0
-INFO: computing attack...
-INFO: sequencing attack...
-INFO: running attack...
 accuracy-bonus rc=0 ap=5 hit=1 damage=0 flags=0 used=1 ammo=10 hp=50 last=0
-INFO: computing attack...
-INFO: sequencing attack...
-INFO: running attack...
 finished rc=0 ap=5 hit=1 damage=0 flags=0 used=1 ammo=9 hp=50 last=0
-INFO: computing attack...
 out-of-range rc=-1 ap=10 hit=0 damage=0 flags=0 used=0 ammo=10 hp=50 last=0
 [path]
 tiles A=24101 L1=24301 L2=24501 L3=24701 B=24901
@@ -1658,18 +1547,14 @@ iw-line=1
 iw-off=0
 iw-unarmed=0
 iw-null-friend=0
-INFO: In the way!
 rt-line tile=38902
-INFO: In the way!
 rt-blocked tile=38900
 rt-weak tile=38901
 rt-none tile=38901
-INFO: In the way!
 rt-int0 tile=38902
 ma-stay=-1
 ma=0
 ma-anim kind=1 anim=1 dst=36901 ap=5 | kind=-1 anim=-1 dst=-1 ap=-1 | kind=-1 anim=-1 dst=-1 ap=-1
-INFO: (null) is using Player AI packet with a 0% chance to taunt
 ra-fleeing=1
 ra-anim kind=1 anim=19 dst=36901 ap=5 | kind=-1 anim=-1 dst=-1 ap=-1 | kind=-1 anim=-1 dst=-1 ap=-1
 ra-far-fleeing=0
@@ -1677,7 +1562,6 @@ mc=0
 mc-run kind=1 anim=19 dst=38901 ap=10 | kind=-1 anim=-1 dst=-1 ap=-1 | kind=-1 anim=-1 dst=-1 ap=-1
 mc-walk=0
 mc-walk-anim kind=1 anim=1 dst=38901 ap=1 | kind=-1 anim=-1 dst=-1 ap=-1 | kind=-1 anim=-1 dst=-1 ap=-1
-INFO: (null) is using Player AI packet with a 0% chance to taunt
 mc-multi=0
 mc-multi-anim kind=0 anim=19 dst=16777558 ap=10 | kind=7 anim=0 dst=38901 ap=0 | kind=-1 anim=-1 dst=-1 ap=-1
 ff=1
@@ -1686,7 +1570,6 @@ ff-anim kind=0 anim=19 dst=16777558 ap=10 | kind=7 anim=0 dst=38901 ap=0 | kind=
 unarmed-apcost=3
 sc=0
 sc-anim slot=0 kind=1 anim=1 dst=39901 ap=5 | kind=-1 anim=-1 dst=-1 ap=-1 | kind=-1 anim=-1 dst=-1 ap=-1
-INFO: (null) is using Player AI packet with a 0% chance to taunt
 ch=0
 ch-anim slot=0 kind=1 anim=1 dst=38901 ap=5 | kind=-1 anim=-1 dst=-1 ap=-1 | kind=-1 anim=-1 dst=-1 ap=-1
 sn-weak=0
@@ -1714,15 +1597,9 @@ env-weapon=0
 env-ammo=0
 env-drug=0
 [combatai]
-INFO: (null): FLEEING: I'm Hurt!
-INFO: (null) is using Player AI packet with a 0% chance to taunt
 flee-maneuver=1
 flee-ap=5
-INFO: 
->>>NOTE: (null) had extra AP's to use!<<<
 friendlydead-cleared=1
-INFO: 
->>>NOTE: (null) had extra AP's to use!<<<
 calm-ap=10
 join-fleeing=0
 stop=calm=1
@@ -1759,8 +1636,6 @@ dead=0
 exit=-1 state=11
 space=0
 [mapnewmap]
-INFO: Game config loaded from fallout2.cfg.
-INFO: tile_hires_stencil_init
 boot mode=0 wminit=0 input=-1 win=1 buf=1 art=0 tile=0 party=0 objects=0 db=0 xb=1,1,1 mouse=0
 newmap elev=0 center=20100 hdr=20,20100,0,0 local=0 global=0 gvarlen=0,0
 square=00010001,00010001,00010001,00010001

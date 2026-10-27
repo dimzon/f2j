@@ -1,6 +1,7 @@
 package org.fallout2ce;
 
 import org.fallout2ce.EventQueue.EventType;
+import org.fallout2ce.ObjTypes.GameObject;
 
 /**
  * Game boot: the {@code gameInit}-minimum for the headless engine. The C++
@@ -78,6 +79,94 @@ public final class Game {
         EventQueue.queueInit();
         return 0;
     }
+
+    /** Port of {@code _main_game_paused} ({@code src/main.cc}). */
+    static int mainGamePaused;
+
+    /** Port of {@code _main_show_death_scene} ({@code src/main.cc}). */
+    static boolean mainShowDeathScene;
+
+    /**
+     * Port of {@code mainLoop} ({@code src/main.cc}), the game main loop.
+     * The loop, the input queue, scriptsHandleRequests, the pause reset and
+     * the death check are real; gameHandleKey, the sfall MainLoopHook,
+     * mapHandleTransition, the endgame death ending and the render/FPS tails
+     * are game-phase seams.
+     */
+    public static void mainLoop() {
+        boolean cursorWasHidden = Mouse.cursorIsHidden();
+        if (cursorWasHidden) {
+            Mouse.mouseShowCursor();
+        }
+
+        mainGamePaused = 0;
+
+        if (ScriptsState.scriptsEnable() == -1) {
+            Debug.print("mainLoop scriptsEnable failed");
+        }
+
+        while (GameScriptApi.gameUserWantsToQuit
+                == GameScriptApi.GAME_QUIT_REQUEST_NONE) {
+            Color.fpsLimiter.mark();
+
+            int keyCode = Input.inputGetInput();
+
+            sfallGlScrProcessMain.run();
+
+            gameHandleKey.accept(keyCode, false);
+
+            ScriptsState.scriptsHandleRequests();
+
+            mapHandleTransitionHook.getAsInt();
+
+            if (mainGamePaused != 0) {
+                mainGamePaused = 0;
+            }
+
+            GameObject dude = ObjectSystem.getDude();
+            if ((dude.data.critter.combat.results.bits()
+                    & (ObjTypes.Dam.DEAD.bits() | ObjTypes.Dam.KNOCKED_OUT.bits())) != 0) {
+                endgameSetupDeathEnding.run();
+                mainShowDeathScene = true;
+                GameScriptApi.gameUserWantsToQuit =
+                    GameScriptApi.GAME_QUIT_REQUEST_MAIN_MENU;
+            }
+
+            renderFpsCounter.run();
+            renderPresent.run();
+            Color.fpsLimiter.throttle();
+        }
+
+        ScriptsState.scriptsDisable();
+
+        if (cursorWasHidden) {
+            Mouse.mouseHideCursor();
+        }
+    }
+
+    /** Sfall MainLoopHook seam ({@code sfall_gl_scr_process_main}). */
+    public static Runnable sfallGlScrProcessMain = () -> {
+    };
+
+    /** Game-key handling seam ({@code gameHandleKey}). */
+    public static java.util.function.BiConsumer<Integer, Boolean> gameHandleKey =
+        (keyCode, inCombat) -> {
+        };
+
+    /** Map-transition seam ({@code mapHandleTransition}). */
+    public static java.util.function.IntSupplier mapHandleTransitionHook = () -> 0;
+
+    /** Endgame death-ending seam ({@code endgameSetupDeathEnding}). */
+    public static Runnable endgameSetupDeathEnding = () -> {
+    };
+
+    /** FPS counter render seam ({@code renderFpsCounter}). */
+    public static Runnable renderFpsCounter = () -> {
+    };
+
+    /** Present render seam ({@code renderPresent}). */
+    public static Runnable renderPresent = () -> {
+    };
 
     /** Test seam: full component reset, mirroring the test setups. */
     static void resetForTests() {

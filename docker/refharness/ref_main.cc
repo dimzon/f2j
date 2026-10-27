@@ -9909,6 +9909,10 @@ void sectionCombatInput()
         fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
     fallout::f2jReferenceSetTurnRunning(0);
 
+    // [mainloop] leaves a main-menu quit request behind; entering combat
+    // implies an active game.
+    fallout::_game_user_wants_to_quit = fallout::GAME_QUIT_REQUEST_NONE;
+
     // AP exhausted: the loop breaks on AP <= 0 and free-move 0.
     dude->data.critter.combat.ap = 0;
     dude->data.critter.combat.results = fallout::DAM_NONE;
@@ -9935,6 +9939,96 @@ void sectionCombatInput()
 
     fallout::gCombatState = savedCombatState;
     fallout::f2jReferenceSetTurnRunning(0);
+}
+
+// The game main loop (_main_loop, main.cc): 1:1 copy of the loop body.
+// gameHandleKey/render/sfall-hook are seams; the input queue,
+// scriptsHandleRequests, mapHandleTransition and the death check are real.
+// The sfall MainLoopHook runs every iteration in C++; here it is replaced by
+// an iteration counter that requests GAME_QUIT_REQUEST_MAIN_MENU on the
+// second pass, so the loop exits deterministically.
+static void mainLoopProbe(const char* tag)
+{
+    int iterations = 0;
+    while (fallout::_game_user_wants_to_quit == fallout::GAME_QUIT_REQUEST_NONE) {
+        iterations++;
+        std::printf("%s iter=%d\n", tag, iterations);
+
+        // sharedFpsLimiter.mark()
+        fallout::sharedFpsLimiter.mark();
+
+        int keyCode = fallout::inputGetInput();
+        std::printf("%s key=%d\n", tag, keyCode);
+
+        // sfall_gl_scr_process_main(): hook seam (iteration counter).
+        if (iterations >= 2) {
+            fallout::_game_user_wants_to_quit =
+                fallout::GAME_QUIT_REQUEST_MAIN_MENU;
+        }
+
+        // gameHandleKey(keyCode, false): UI seam.
+
+        std::printf("%s requests=%d\n", tag, fallout::scriptsHandleRequests());
+        std::printf("%s transition=%d\n", tag, fallout::mapHandleTransition());
+
+        // _main_game_paused reset (always 0 in this probe).
+        // endgameSetupDeathEnding: endgame seam.
+        if ((fallout::gDude->data.critter.combat.results & (fallout::DAM_DEAD | fallout::DAM_KNOCKED_OUT)) != 0) {
+            std::printf("%s death=1\n", tag);
+            fallout::_game_user_wants_to_quit = fallout::GAME_QUIT_REQUEST_MAIN_MENU;
+        }
+
+        // renderFpsCounter()/renderPresent()/throttle(): render seams.
+        fallout::sharedFpsLimiter.throttle();
+    }
+
+    std::printf("%s final-iter=%d final-quit=%d\n", tag, iterations,
+        (int)fallout::_game_user_wants_to_quit);
+}
+
+void sectionMainLoop()
+{
+    std::puts("[mainloop]");
+
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    // scriptsEnable(): the gGameModeEnabled gate is a static of scripts.cc,
+    // unreachable from the probe TU; enabling via f2jReferenceScriptsEnableScripts
+    // gives the same observable state.
+    fallout::f2jReferenceScriptsEnableScripts();
+
+    // The game enters its main loop with no pending script requests; the
+    // [combatrequest] section left SCRIPT_REQUEST_COMBAT behind.
+    // (scriptsClearPendingRequests is static; _scripts_check_state_in_combat
+    // is the public way to clear them.)
+    fallout::_scripts_check_state_in_combat();
+
+    // Runs before [maptransition], so gMapTransition is still the zeroed
+    // static and mapHandleTransition() takes its trivial early return.
+
+    // Normal: two passes, quit requested by the hook on the second.
+    fallout::_game_user_wants_to_quit = fallout::GAME_QUIT_REQUEST_NONE;
+    fallout::inputEventQueueReset();
+    mainLoopProbe("normal");
+
+    // Space: the queued key is read on the first pass.
+    fallout::_game_user_wants_to_quit = fallout::GAME_QUIT_REQUEST_NONE;
+    fallout::inputEventQueueReset();
+    fallout::enqueueInputEvent(fallout::KEY_SPACE);
+    mainLoopProbe("space");
+
+    // Dead: the first pass sees the dead dude and requests the main menu.
+    dude->data.critter.combat.results = fallout::DAM_DEAD;
+    fallout::_game_user_wants_to_quit = fallout::GAME_QUIT_REQUEST_NONE;
+    fallout::inputEventQueueReset();
+    mainLoopProbe("dead");
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+
+    fallout::f2jReferenceScriptsDisableScripts();
 }
 
 void sectionIsoRest()
@@ -13522,6 +13616,7 @@ int main()
     RUN_SECTION(CombatRequest);
     RUN_SECTION(PerkRank);
     RUN_SECTION(WeaponData);
+    RUN_SECTION(MainLoop);
     RUN_SECTION(IsoRest);
     RUN_SECTION(MapTransition);
     RUN_SECTION(ObjPlaceOnTile);
