@@ -1,5 +1,7 @@
 package org.fallout2ce;
 
+import org.fallout2ce.EventQueue.EventType;
+
 /**
  * The script request globals, mirroring {@code gScriptsRequests} and its
  * siblings in {@code src/scripts.h} / {@code src/scripts.cc}.
@@ -132,6 +134,159 @@ public final class ScriptsState {
 
     /** Seam for {@code _combat} (src/combat.cc, game phase). */
     private static void combat(CombatStartData data) {
+    }
+
+    // gCritterProcessingIndex (src/scripts.cc): round-robin cursor over the
+    // critter script list.
+    private static int critterProcessingIndex;
+
+    // gLastQueueProcessingTime (src/scripts.cc): the 100ms gate of the
+    // scripts tick.
+    private static int lastQueueProcessingTime;
+
+    /** Test seam: tick-state reset (fresh-process mirror). */
+    static void resetTickForTests() {
+        critterProcessingIndex = 0;
+        lastQueueProcessingTime = 0;
+    }
+
+    /**
+     * Port of {@code _script_chk_critters} (0x4A3BF8): advance the
+     * round-robin cursor over the critter script list and execute
+     * CRITTER (out of combat) for exactly one script per tick. The dialog
+     * and movie guards are game-phase (both false here); the combat guard
+     * reads the live combat state.
+     */
+    static void scriptChkCritters() {
+        if (Combat.isInCombat()) {
+            return;
+        }
+
+        java.util.List<ObjectSystem.Script> list =
+                ObjectSystem.scriptsOfType(ObjectSystem.SCRIPT_TYPE_CRITTER);
+        int scriptsCount = list.size();
+
+        critterProcessingIndex += 1;
+        if (critterProcessingIndex >= scriptsCount) {
+            critterProcessingIndex = 0;
+        }
+
+        if (critterProcessingIndex < scriptsCount) {
+            int proc = Combat.isInCombat()
+                    ? ObjectSystem.SCRIPT_PROC_COMBAT
+                    : ObjectSystem.SCRIPT_PROC_CRITTER;
+            ObjectSystem.Script script = list.get(critterProcessingIndex);
+            ObjectSystem.scriptExecProc(script.sid, proc);
+        }
+    }
+
+    /**
+     * Port of {@code _script_chk_timed_events} (0x4A3D84): the 100ms gate
+     * opens the queue drain. The dialog/movie guards are game-phase (both
+     * false); game-time advance per gate is the event clock's job.
+     */
+    public static void scriptChkTimedEvents() {
+        int currentTime = EventQueue.gameTimeGetTime();
+        if (Integer.compareUnsigned(EventQueue.gameTimeGetTime() - lastQueueProcessingTime, 100) >= 0) {
+            lastQueueProcessingTime = currentTime;
+            while (!EventQueue.queueIsEmpty()) {
+                if (Integer.compareUnsigned(EventQueue.gameTimeGetTime(),
+                        EventQueue.queueGetNextEventTime()) < 0) {
+                    break;
+                }
+                EventQueue.queueProcessEvents();
+            }
+        }
+    }
+
+    /**
+     * Port of {@code scriptAddTimerEvent} (0x4A3E60): schedule a TIMED
+     * script event on the owner with a delay in ticks.
+     */
+    public static int scriptAddTimerEvent(int sid, int delay, int param) {
+        ObjectSystem.Script[] slot = new ObjectSystem.Script[1];
+        if (ObjectSystem.scriptGetScript(sid, slot) == -1) {
+            return -1;
+        }
+
+        return EventQueue.queueAddEvent(delay, slot[0].owner,
+                new EventQueue.ScriptEvent(sid, param), EventType.SCRIPT);
+    }
+
+    /** Port of {@code scriptRemoveTimerEvents} (0x4A3E9C). */
+    public static int scriptRemoveTimerEvents(int sid, int fixedParam) {
+        ObjectSystem.Script[] slot = new ObjectSystem.Script[1];
+        if (ObjectSystem.scriptGetScript(sid, slot) == -1) {
+            return -1;
+        }
+        EventQueue.setScriptQueueRemoveUseFixedParam(true);
+        EventQueue.queueRemoveTimerEventsBySid(sid, fixedParam);
+        EventQueue.setScriptQueueRemoveUseFixedParam(false);
+        return 0;
+    }
+
+    /** Test seam: pretend 100ms passed since the last queue processing. */
+    static void pretendQueueGateElapsed() {
+        lastQueueProcessingTime = EventQueue.gameTimeGetTime() - 100;
+    }
+
+    /** Test seam: the round-robin cursor (src/scripts.cc gCritterProcessingIndex). */
+    static int critterProcessingIndexForTests() {
+        return critterProcessingIndex;
+    }
+
+    /** Test seam: a script's fixed parameter. */
+    static int scriptFixedParamForTests(int sid) {
+        ObjectSystem.Script[] slot = new ObjectSystem.Script[1];
+        if (ObjectSystem.scriptGetScript(sid, slot) == -1) {
+            return -1;
+        }
+        return slot[0].fixedParam;
+    }
+
+    /**
+     * Port of {@code scriptEventProcess} (0x4A4048): the SCRIPT queue
+     * handler - set the fixed param and execute TIMED.
+     */
+    static int scriptEventProcess(Object owner, Object data) {
+        EventQueue.ScriptEvent scriptEvent = (EventQueue.ScriptEvent) data;
+
+        ObjectSystem.Script[] slot = new ObjectSystem.Script[1];
+        if (ObjectSystem.scriptGetScript(scriptEvent.sid, slot) == -1) {
+            return 0;
+        }
+
+        slot[0].fixedParam = scriptEvent.fixedParam;
+
+        ObjectSystem.scriptExecProc(scriptEvent.sid, ObjectSystem.SCRIPT_PROC_TIMED);
+
+        return 0;
+    }
+
+    /**
+     * Port of the scripts tick ({@code _scripts_padv}/
+     * {@code _script_chk_timed_events}, src/scripts.cc:1055-1094): the 100ms
+     * gate advances game time out of combat and drains the queue while its
+     * head is due. The dialog/movie guards are game-phase (both false).
+     */
+    public static void scriptsProcessBk() {
+        int currentTime = EventQueue.gameTimeGetTime();
+        int elapsed = EventQueue.gameTimeGetTime() - lastQueueProcessingTime;
+        if (elapsed >= 100) {
+            lastQueueProcessingTime = currentTime;
+            while (!EventQueue.queueIsEmpty()) {
+                if (Integer.compareUnsigned(EventQueue.gameTimeGetTime(),
+                        EventQueue.queueGetNextEventTime()) < 0) {
+                    break;
+                }
+                EventQueue.queueProcessEvents();
+            }
+        }
+
+        if (!Combat.isInCombat()) {
+            scriptChkCritters();
+            // _script_chk_timed_events: the queue drain above is its body.
+        }
     }
 
     /**

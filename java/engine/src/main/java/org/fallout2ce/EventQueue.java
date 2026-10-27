@@ -551,6 +551,46 @@ public final class EventQueue {
         return 0;
     }
 
+    // scriptQueueRemoveUseFixedParam (src/scripts.cc): the clear filter knob.
+    private static boolean scriptQueueRemoveUseFixedParam;
+
+    /** Sets {@code scriptQueueRemoveUseFixedParam} (src/scripts.cc). */
+    static void setScriptQueueRemoveUseFixedParam(boolean enabled) {
+        scriptQueueRemoveUseFixedParam = enabled;
+    }
+
+    // scriptQueueRemoveBySid (src/scripts.cc:1105): the SCRIPT clear filter -
+    // drop the event when the sid matches (and, optionally, the fixed param).
+    static int queueRemoveTimerEventsBySid(int sid, int fixedParam) {
+        QueueListNode prev = null;
+        QueueListNode node = queueListHead;
+
+        while (node != null) {
+            QueueListNode next = node.next;
+            boolean drop = false;
+            if (node.type == EventType.SCRIPT && node.data instanceof ScriptEvent) {
+                ScriptEvent event = (ScriptEvent) node.data;
+                if (event.sid == sid
+                        && (!scriptQueueRemoveUseFixedParam
+                            || event.fixedParam == fixedParam)) {
+                    drop = true;
+                }
+            }
+            if (drop) {
+                if (prev == null) {
+                    queueListHead = next;
+                } else {
+                    prev.next = next;
+                }
+            } else {
+                prev = node;
+            }
+            node = next;
+        }
+
+        return 0;
+    }
+
     // 0x4A26A8 queue_find
     public static boolean queueHasEvent(Object owner, EventType type) {
         QueueListNode node = queueListHead;
@@ -661,6 +701,19 @@ public final class EventQueue {
     // 0x4A294C queue_is_empty
     public static boolean queueIsEmpty() {
         return queueListHead == null;
+    }
+
+    /** Test seam: live events of a type. */
+    static java.util.List<Object> eventsForTests(EventType type) {
+        java.util.ArrayList<Object> out = new java.util.ArrayList<>();
+        QueueListNode node = queueListHead;
+        while (node != null) {
+            if (node.type == type) {
+                out.add(node.data);
+            }
+            node = node.next;
+        }
+        return out;
     }
 
     // 0x4A295C queue_find_first

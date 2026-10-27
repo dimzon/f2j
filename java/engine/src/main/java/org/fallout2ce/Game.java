@@ -1,5 +1,7 @@
 package org.fallout2ce;
 
+import org.fallout2ce.EventQueue.EventType;
+
 /**
  * Game boot: the {@code gameInit}-minimum for the headless engine. The C++
  * chain ({@code _game_init}) bootstraps the world, scripts and the UI; the
@@ -63,6 +65,9 @@ public final class Game {
         // scriptsInit and enables the scripts.
         Program.setGameApi(new GameScriptApi());
         ObjectSystem.scriptsEnabled = true;
+        // The SCRIPT queue event runs the TIMED script proc (scriptsInit
+        // wires the queue descriptors in C++).
+        EventQueue.setHandler(EventType.SCRIPT, ScriptsState::scriptEventProcess);
         for (int index = 0; index < inits.length; index++) {
             int rc = inits[index].getAsInt();
             if (rc != 0) {

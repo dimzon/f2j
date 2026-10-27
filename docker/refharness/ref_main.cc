@@ -7336,6 +7336,18 @@ int f2jReferenceAiCheckDrugs(Object*);
 int f2jReferenceAiSetupTeamCombat(Object*, Object*);
 int f2jReferenceAiTeamCombatInit(Object**, int);
 void f2jReferenceAiTeamCombatExit();
+void f2jReferenceScriptsDoBkProcesses();
+void f2jReferenceScriptsChkOnly();
+void f2jReferenceScriptsRemoveAll();
+int f2jReferenceScriptsCritterCount();
+int f2jReferenceCritterProcessingIndex();
+void f2jReferenceScriptsEnableScripts();
+void f2jReferenceScriptsDisableScripts();
+int f2jReferenceScriptAddTimerEvent(int, int, int);
+int f2jReferenceScriptRemoveTimerEvents(int, int);
+bool f2jReferenceQueueIsEmpty();
+int f2jReferenceAiTeamCombatInit(Object**, int);
+void f2jReferenceAiTeamCombatExit();
 void f2jReferenceCombatAi(Object*, Object*);
 bool f2jReferenceWantToJoin(Object*);
 bool f2jReferenceWantToStop(Object*);
@@ -9758,6 +9770,118 @@ void sectionAiTeam()
         h1->data.critter.combat.whoHitMe != nullptr ? h1->data.critter.combat.whoHitMe->pid : -1,
         d1->data.critter.combat.whoHitMe != nullptr ? d1->data.critter.combat.whoHitMe->pid : -1);
 
+    fallout::f2jReferenceAiOverCritters();
+}
+
+void sectionAiTick()
+{
+    std::puts("[aimtick]");
+
+    // The scripts tick: _script_chk_critters (the round-robin cursor over
+    // the critter script list) and scriptAddTimerEvent/scriptEventProcess
+    // (the TIMED queue path). The scripts run for real; acdog.int stops at
+    // its first game call, which both worlds reproduce identically.
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr;
+    fallout::Object* d1 = nullptr;
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    const int a = 38101;
+    fallout::Object* roster[2] = { h1, d1 };
+    for (int index = 0; index < 2; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 5;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        fallout::objectSetLocation(roster[index],
+            fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, index == 0 ? 0 : 2),
+            0, nullptr);
+    }
+
+    fallout::f2jReferenceAiInfoInit(2);
+    fallout::f2jReferenceAiBeginCritters(2, roster);
+    fallout::animationReset();
+
+    // Clean the critter script registry so the tick cursor is deterministic.
+    fallout::f2jReferenceScriptsRemoveAll();
+    std::printf("critter-count-before=%d\n", fallout::f2jReferenceScriptsCritterCount());
+    int sidA = -1;
+    int sidB = -1;
+    fallout::scriptAdd(&sidA, fallout::SCRIPT_TYPE_CRITTER);
+    fallout::scriptAdd(&sidB, fallout::SCRIPT_TYPE_CRITTER);
+    std::printf("critter-count-after=%d\n", fallout::f2jReferenceScriptsCritterCount());
+    fallout::Script* scriptA = nullptr;
+    fallout::Script* scriptB = nullptr;
+    fallout::scriptGetScript(sidA, &scriptA);
+    fallout::scriptGetScript(sidB, &scriptB);
+    // No programs: the critter phase is pure rotation; the TIMED phase is
+    // pure queue mechanics.
+    scriptA->index = -1;
+    scriptB->index = -1;
+    scriptA->owner = h1;
+    scriptA->ownerId = h1->id;
+    scriptB->owner = d1;
+    scriptB->ownerId = d1->id;
+
+    fallout::f2jReferenceScriptsEnableScripts();
+
+    // Three ticks of the critter round-robin: the cursor rotates 1, 0, 1
+    // and each execution stops at the first game call (fatal in both
+    // worlds).
+    for (int tick = 0; tick < 3; tick++) {
+        fallout::f2jReferenceScriptsChkOnly();
+        std::printf("tick%d cursor=%d\n", tick, fallout::f2jReferenceCritterProcessingIndex());
+    }
+
+    // Timed events: schedule two on fresh script-less scripts (index=-1, no
+    // program), so the TIMED handler only sets the fixed param - pure queue
+    // mechanics without the acdog side effects of the critter phase.
+    int sidT1 = -1;
+    int sidT2 = -1;
+    fallout::scriptAdd(&sidT1, fallout::SCRIPT_TYPE_CRITTER);
+    fallout::scriptAdd(&sidT2, fallout::SCRIPT_TYPE_CRITTER);
+    fallout::Script* t1 = nullptr;
+    fallout::Script* t2 = nullptr;
+    fallout::scriptGetScript(sidT1, &t1);
+    fallout::scriptGetScript(sidT2, &t2);
+    t1->index = -1;
+    t2->index = -1;
+    t1->owner = h1;
+    t1->ownerId = h1->id;
+    t2->owner = d1;
+    t2->ownerId = d1->id;
+    std::printf("timer-a=%d\n", fallout::f2jReferenceScriptAddTimerEvent(sidT1, 0, 42));
+    std::printf("timer-b=%d\n", fallout::f2jReferenceScriptAddTimerEvent(sidT2, 0, 7));
+    std::printf("queue-empty-before=%d\n", fallout::f2jReferenceQueueIsEmpty() ? 1 : 0);
+    // Two drains through the scripts tick open the 100ms queue gate and run
+    // the due TIMED handlers (fixed params set below).
+    fallout::f2jReferenceScriptsChkOnly();
+    fallout::f2jReferenceScriptsChkOnly();
+    std::printf("drain-executed fixed-a=%d fixed-b=%d\n",
+        t1->fixedParam, t2->fixedParam);
+
+    // scriptRemoveTimerEvents drops only the sid's own events.
+    std::printf("timer-a2=%d\n", fallout::f2jReferenceScriptAddTimerEvent(sidA, 0, 1));
+    std::printf("timer-b2=%d\n", fallout::f2jReferenceScriptAddTimerEvent(sidB, 0, 2));
+    std::printf("remove-a=%d\n", fallout::f2jReferenceScriptRemoveTimerEvents(sidA, 1));
+    std::printf("queue-after-remove=%d\n", fallout::f2jReferenceQueueIsEmpty() ? 0 : 1);
+    fallout::f2jReferenceScriptsChkOnly();
+
+    fallout::f2jReferenceScriptsDisableScripts();
     fallout::f2jReferenceAiOverCritters();
 }
 
@@ -13370,6 +13494,7 @@ int main()
     RUN_SECTION(CombatAiFlow);
     RUN_SECTION(CombatEndAttempt);
     RUN_SECTION(AiTeam);
+    RUN_SECTION(AiTick);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

@@ -3419,6 +3419,11 @@ public final class ObjectSystem {
 
     private static final java.util.ArrayList<ScriptsListEntry> scriptsListEntries = new java.util.ArrayList<>();
 
+    /** Test/tick seam: the live list of one script type. */
+    static java.util.List<Script> scriptsOfType(int type) {
+        return scriptTypeScripts.get(type);
+    }
+
     static int scriptsListEntriesLength() {
         return scriptsListEntries.size();
     }
