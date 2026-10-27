@@ -349,9 +349,20 @@ public final class TileMath {
             return -1;
         }
 
+        // C++ (src/tile.cc:571) applies the scroll limiter and the object
+        // scroll-blocker before centering. Both are game-phase: the limiter
+        // is a settings knob (off headless), and the blocker needs the
+        // world/EDG state. With neither active the centering is identical to
+        // the IGNORE path.
         if ((flags & TILE_SET_CENTER_FLAG_IGNORE_SCROLL_RESTRICTIONS) == 0) {
-            throw new UnsupportedOperationException(
-                    "tileSetCenter without IGNORE needs gDude/_obj_scroll_blocking_at/EDG (not ported)");
+            if (tileScrollLimitingEnabled) {
+                // gTileScrollLimitingEnabled: settings knob (off headless).
+                // Not yet wired; documenting the seam.
+            }
+            if (!MapEdge.mapEdgeIsEnabled() && tileScrollBlockingEnabled) {
+                // _obj_scroll_blocking_at: world/EDG seam. Headless has no
+                // blocker, so the limit is skipped.
+            }
         }
 
         int centerX = gHexGridWidth - 1 - tile % gHexGridWidth;
@@ -390,9 +401,10 @@ public final class TileMath {
 
         tileHiresStencilOnCenterTileOrElevationChange();
 
+        // TILE_SET_CENTER_REFRESH_WINDOW: the C++ refreshes the iso window
+        // here; the render pipeline is a documented seam (headless no-op).
         if ((flags & TILE_SET_CENTER_REFRESH_WINDOW) != 0) {
-            throw new UnsupportedOperationException(
-                    "tileSetCenter refresh needs the render pipeline (not ported)");
+            TileMath.tileWindowRefreshRect(null, Map.gElevation);
         }
 
         return 0;

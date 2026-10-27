@@ -51,6 +51,18 @@ public final class Game {
             () -> Item.itemsInit(),
             () -> CombatAi.aiInit(),
         };
+        // The script registry (scripts.lst) is required by any script load;
+        // the C++ scriptsInit does this together with the message lists and
+        // the opcode registration (game-phase seams).
+        if (ObjectSystem.scriptsLoadScriptsList() != 0) {
+            Debug.print("gameInit scriptsLoadScriptsList failed");
+            return -1;
+        }
+        // The game builtins are the script API; without them every game
+        // opcode is fatal. The C++ registers its opcode handlers in
+        // scriptsInit and enables the scripts.
+        Program.setGameApi(new GameScriptApi());
+        ObjectSystem.scriptsEnabled = true;
         for (int index = 0; index < inits.length; index++) {
             int rc = inits[index].getAsInt();
             if (rc != 0) {

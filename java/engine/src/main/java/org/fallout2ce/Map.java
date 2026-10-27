@@ -567,19 +567,40 @@ public final class Map {
             ObjectSystem.objectSetRotation(dude, EnteringLocation.getEnteringRotation().value());
         }
 
-        // Map script (scriptAdd): game phase (script engine). The C++ also
-        // creates a hidden ScrollBlocker object for the map script; port the
-        // object creation (the script binding itself is a documented seam).
+        // Map script: mirror the C++ tail (src/map.cc:1045+). The hidden
+        // ScrollBlocker object for the map script, the script binding
+        // (index, NO_SAVE, owner) and the MAP_ENTER execution run for real;
+        // the spatial disable/enable and the random-encounter setup are
+        // game-phase seams.
         if (gMapHeader.scriptIndex > 0) {
-            GameObject[] blockerPtr = new GameObject[1];
-            ObjectSystem.objectCreateWithFrmIdProtoId(blockerPtr,
-                    FrmId.ofType(ObjectType.MISC, ArtDefs.MiscFrameId.ScrollBlocker.id()),
-                    ProtoTypes.ProtoId.empty());
-            GameObject blocker = blockerPtr[0];
-            if (blocker != null) {
-                blocker.flags = blocker.flags.or(ObjectFlags.LIGHT_THRU)
-                        .or(ObjectFlags.NO_SAVE).or(ObjectFlags.HIDDEN);
-                ObjectSystem.objectSetLocation(blocker, 1, 0);
+            int[] mapSidSlot = new int[1];
+            if (ObjectSystem.scriptAdd(mapSidSlot, ObjectSystem.SCRIPT_TYPE_SYSTEM) == 0) {
+                int mapSid = mapSidSlot[0];
+
+                GameObject[] blockerPtr = new GameObject[1];
+                ObjectSystem.objectCreateWithFrmIdProtoId(blockerPtr,
+                        FrmId.ofType(ObjectType.MISC, ArtDefs.MiscFrameId.ScrollBlocker.id()),
+                        ProtoTypes.ProtoId.empty());
+                GameObject blocker = blockerPtr[0];
+                if (blocker != null) {
+                    blocker.flags = blocker.flags.or(ObjectFlags.LIGHT_THRU)
+                            .or(ObjectFlags.NO_SAVE).or(ObjectFlags.HIDDEN);
+                    ObjectSystem.objectSetLocation(blocker, 1, 0);
+                    blocker.sid = mapSid;
+
+                    ObjectSystem.Script[] scriptSlot = new ObjectSystem.Script[1];
+                    if (ObjectSystem.scriptGetScript(mapSid, scriptSlot) == 0) {
+                        ObjectSystem.Script script = scriptSlot[0];
+                        script.index = gMapHeader.scriptIndex - 1;
+                        script.flags |= ObjectSystem.SCRIPT_FLAG_NO_SAVE;
+                        script.owner = blocker;
+                        script.ownerId = blocker.id;
+                        // scriptSetFixedParam(mapSid, !(flags & SAVED)).
+                        script.fixedParam = (gMapHeader.flags & ObjectSystem.MAP_HEADER_SAVED) == 0 ? 1 : 0;
+                    }
+                }
+
+                ObjectSystem.scriptExecProc(mapSid, ObjectSystem.SCRIPT_PROC_MAP_ENTER);
             }
         }
 

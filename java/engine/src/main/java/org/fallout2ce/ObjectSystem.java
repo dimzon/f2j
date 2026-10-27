@@ -3508,7 +3508,14 @@ public final class ObjectSystem {
     // 0x4A47F8 scriptExecProc: load the script's program when needed, run
     // its start procedure, then the requested procedure. The script hooks
     // are identity headless; the detached/child-call guards stay as in C.
+    // gScriptsEnabled (src/scripts.cc) gates execution; the harness boots
+    // without it, so map loads there stay script-less like C++.
+    static boolean scriptsEnabled;
+
     static int scriptExecProc(int sid, int proc) {
+        if (!scriptsEnabled) {
+            return -1;
+        }
         if (proc < SCRIPT_PROC_FIRST || proc >= SCRIPT_PROC_COUNT) {
             return -1;
         }
@@ -4066,5 +4073,6 @@ public final class ObjectSystem {
         steamBlendTable = null;
         energyBlendTable = null;
         redBlendTable = null;
+        scriptsEnabled = false;
     }
 }
