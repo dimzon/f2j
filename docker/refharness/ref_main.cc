@@ -7321,6 +7321,8 @@ int f2jReferenceAiGetBestWeapon(Object*);
 void f2jReferenceAiInfoInit(int);
 Object* f2jReferenceAiInfoGetLastTarget(Object*);
 int f2jReferenceAiInfoSetLastTarget(Object*, Object*);
+Object* f2jReferenceAiInfoGetFriendlyDead(Object*);
+int f2jReferenceAiInfoSetFriendlyDead(Object*, Object*);
 void f2jReferenceAiSetPacketMaxDist(AiPacket*, int);
 int f2jReferenceAiMoveStepsCloser(Object*, Object*, int, bool);
 int f2jReferenceAiMoveCloser(Object*, Object*, bool);
@@ -7331,6 +7333,9 @@ int f2jReferenceAiPerformDistancePrefs(Object*, Object*);
 bool f2jReferenceAiFindFriend(Object*, int, int);
 int f2jReferenceAiCalledShot(Object*, Object*, HitMode);
 int f2jReferenceAiCheckDrugs(Object*);
+void f2jReferenceCombatAi(Object*, Object*);
+bool f2jReferenceWantToJoin(Object*);
+bool f2jReferenceWantToStop(Object*);
 int f2jReferenceAiMagicHands(Object*, Object*, int);
 int f2jReferenceAiSearchEnviron(Object*, int);
 int f2jReferenceAiRetrieveObject(Object*, Object*);
@@ -9272,7 +9277,7 @@ void sectionAiAttack()
     fallout::animationReset();
     fallout::gCombatState = static_cast<fallout::CombatState>(
         fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
-    fallout::f2jReferenceSetTurnRunning(0);
+    fallout::f2jReferenceSetTurnRunning(-1);
 
     // The attacker's weapon: another pistol, and the packet drives the
     // called-shot roll.
@@ -9471,6 +9476,117 @@ void sectionAiDrug()
     std::printf("env-ammo=%d\n", fallout::f2jReferenceAiSearchEnviron(h1, (int)fallout::ITEM_TYPE_AMMO));
     std::printf("env-drug=%d\n", fallout::f2jReferenceAiSearchEnviron(h1, (int)fallout::ITEM_TYPE_DRUG));
     humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = savedSkill;
+}
+
+void sectionCombatAiFlow()
+{
+    std::puts("[combatai]");
+
+    // The main AI-turn decisions (_combat_ai) with the chem loop and the
+    // attack flow as documented seams: the vectors hit only the branches
+    // that do not enter them (no drugs, high HP, target null). The
+    // danger-source and movement helpers underneath are pinned by their
+    // own slices; here the decisions themselves are observed.
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // human, team 1, the actor
+    fallout::Object* d1 = nullptr; // dog, team 1, nearest teammate
+    fallout::Object* d2 = nullptr; // dog, team 2, the enemy
+    fallout::Object* far = nullptr; // dog, team 2, far enemy
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&d2, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&far, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr || d2 == nullptr || far == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    const int a = 38101;
+    // Roster: h1 at a, d1 at +1, d2 at +4, far at +40. Centering on h1.
+    fallout::Object* roster[4] = { h1, d1, d2, far };
+    const int rosterDistances[4] = { 0, 1, 4, 40 };
+    for (int index = 0; index < 4; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = index >= 2 ? 2 : 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 5;
+        roster[index]->data.critter.combat.damageLastTurn = 0;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        fallout::objectSetLocation(roster[index],
+            fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
+            0, nullptr);
+    }
+
+    fallout::f2jReferenceAiInfoInit(4);
+    fallout::f2jReferenceAiBeginCritters(4, roster);
+    fallout::animationReset();
+    // The section runs out of combat: the run registrations then skip the
+    // combat-anim begin (whose first-step handler spins headless), and the
+    // AI-info accessors are not required by the visited branches.
+
+    // Packet tuning: STAY_CLOSE, max_dist 7, min_hp 40 (flee when HP drops
+    // below). The human's packet field is pinned to 0 so the by-num
+    // resolution is unambiguous.
+    h1->data.critter.combat.aiPacket = 0;
+    fallout::AiPacket* humanPacket = fallout::f2jReferenceAiPacketByNum(h1->data.critter.combat.aiPacket);
+    fallout::f2jReferenceAiSetPacketDistance(humanPacket, (int)fallout::DISTANCE_STAY_CLOSE);
+    fallout::f2jReferenceAiSetPacketMaxDist(humanPacket, 7);
+    fallout::f2jReferenceAiSetMinHp(humanPacket, 40);
+
+    // Flee branch: current HP (30) drops below min_hp (40), the run fires
+    // and the maneuver is set. No whoHitMe edges: danger source stays null
+    // so the attack flow is not entered. The run animation registers; the
+    // turn tail is parked.
+    h1->data.critter.hp = 30;
+    d2->data.critter.combat.whoHitMe = nullptr;
+    h1->data.critter.combat.whoHitMe = nullptr;
+    h1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+    fallout::f2jReferenceCombatAi(h1, d2);
+    std::printf("flee-maneuver=%d\n",
+        (h1->data.critter.combat.maneuver & fallout::CRITTER_MANUEVER_FLEEING) != 0 ? 1 : 0);
+    std::printf("flee-ap=%d\n", h1->data.critter.combat.ap);
+    h1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+    h1->data.critter.hp = 50;
+
+    // No enemy in the vicinity (target null, no whoHitMe, no attacker):
+    // the distance prefs run, then the friendly-dead and teammate checks.
+    // d1 is within the teammate threshold, so no move.
+
+    // Friendly dead: a dead teammate is placed far; the AI walks away from
+    // it (move-away registers).
+    fallout::f2jReferenceAiInfoSetFriendlyDead(h1, d1);
+    d1->data.critter.combat.results = fallout::DAM_DEAD;
+    h1->data.critter.combat.ap = 10;
+    fallout::f2jReferenceCombatAi(h1, nullptr);
+    std::printf("friendlydead-cleared=%d\n",
+        fallout::f2jReferenceAiInfoGetFriendlyDead(h1) == nullptr ? 1 : 0);
+    h1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+    d1->data.critter.combat.results = fallout::DAM_NONE;
+    fallout::f2jReferenceAiInfoSetFriendlyDead(h1, nullptr);
+
+    // Extra AP: with everything calm, the distance prefs run again (no
+    // movement; the prefs only act when the triggers hit).
+    h1->data.critter.combat.ap = 10;
+    fallout::f2jReferenceCombatAi(h1, nullptr);
+    std::printf("calm-ap=%d\n", h1->data.critter.combat.ap);
+
+    // Join/stop decisions.
+    std::printf("join-fleeing=%d\n", fallout::f2jReferenceWantToJoin(h1) ? 1 : 0);
+    std::printf("stop=calm=%d\n", fallout::f2jReferenceWantToStop(h1) ? 1 : 0);
+    h1->data.critter.combat.maneuver = fallout::CRITTER_MANUEVER_FLEEING;
+    std::printf("stop-fleeing=%d\n", fallout::f2jReferenceWantToStop(h1) ? 1 : 0);
+    h1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+    d2->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+
+    fallout::f2jReferenceAiOverCritters();
 }
 
 void sectionIsoRest()
@@ -13079,6 +13195,7 @@ int main()
     RUN_SECTION(AiDist);
     RUN_SECTION(AiAttack);
     RUN_SECTION(AiDrug);
+    RUN_SECTION(CombatAiFlow);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

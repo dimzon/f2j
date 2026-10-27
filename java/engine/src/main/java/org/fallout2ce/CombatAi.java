@@ -1977,10 +1977,196 @@ public final class CombatAi {
     }
 
     /**
-     * Port of {@code _ai_search_environ} (0x429D00): scans the ground items
-     * within perception range and applies the weapon/ammo/drug gates. The
-     * returned boolean mirrors "found != null".
+     * Port of {@code _combat_ai} (0x42B100), the AI turn. The chem loop
+     * ({@code _ai_check_drugs}) and the full attack flow are game-phase
+     * seams: the first is documented in the [aimdrug] slice (it stalls in
+     * headless object churn), the second in the [aiattack] slice (the
+     * rotate-registration step handler needs real art/object wiring). The
+     * rest - the flee/distance decisions, the danger-source targeting, the
+     * friendly-dead/teammate movement, the extra-AP behavior - follows the
+     * C++ verbatim.
      */
+    public static void combatAi(GameObject actor, GameObject target) {
+        // 0x51820C aiPartyMemberDistances.
+        final int[] aiPartyMemberDistances = { 5, 7, 7, 7, 50000 };
+
+        AiPacket ai = aiGetPacket(actor);
+        int hpRatio = caiGetMinHp(ai);
+        if (ai.runAwayMode != CombatAiDefs.RunAwayMode.RUN_AWAY_MODE_INVALID.id()) {
+            int v7 = Stat.critterGetStat(actor,
+                    StatDefs.Stat.STAT_MAXIMUM_HIT_POINTS.id()) * hpRatio / 100;
+            int minimumHitPoints = Stat.critterGetStat(actor,
+                    StatDefs.Stat.STAT_MAXIMUM_HIT_POINTS.id()) - v7;
+            int currentHitPoints = Stat.critterGetStat(actor,
+                    StatDefs.Stat.STAT_CURRENT_HIT_POINTS.id());
+            Debug.print("\n%s minHp = %d; curHp = %d", actor.pid, minimumHitPoints,
+                    currentHitPoints);
+        }
+
+        ObjTypes.CritterCombatData combatData = actor.data.critter.combat;
+        if ((combatData.maneuver.bits() & ObjTypes.CritterManeuver.FLEEING.bits()) != 0
+                || (combatData.results.bits() & ai.hurtTooMuch) != 0
+                || Stat.critterGetStat(actor, StatDefs.Stat.STAT_CURRENT_HIT_POINTS.id())
+                    < ai.minHp) {
+            Debug.print("%s: FLEEING: I'm Hurt!", actor.pid);
+            aiRunAway(actor, target);
+            return;
+        }
+
+        // The chem loop (_ai_check_drugs) is a documented game-phase seam
+        // (see [aimdrug]); the C++ runs it before the distance/attack
+        // decisions.
+        if (target == null) {
+            target = aiDangerSource(actor);
+        }
+
+        caiPerformDistancePrefs(actor, target);
+
+        if (target != null) {
+            // _ai_try_attack: game-phase seam (see [aiattack]).
+        }
+
+        if (target != null
+                && (target.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0
+                && actor.data.critter.combat.ap != 0
+                && ObjectSystem.objectGetDistanceBetween(actor, target) > ai.maxDist) {
+            GameObject friendlyDead = Combat.aiInfoGetFriendlyDead(actor);
+            if (friendlyDead != null) {
+                aiMoveAway(actor, friendlyDead, 10);
+                Combat.aiInfoSetFriendlyDead(actor, null);
+            } else {
+                int perception = Stat.critterGetStat(actor,
+                        StatDefs.Stat.STAT_PERCEPTION.id());
+                if (!aiFindFriend(actor, perception * 2, 5)) {
+                    combatData.maneuver = combatData.maneuver
+                            .or(ObjTypes.CritterManeuver.DISENGAGING);
+                }
+            }
+        }
+
+        if (target == null && !PartyMembers.objectIsPartyMember(actor)) {
+            GameObject whoHitMe = combatData.whoHitMe;
+            if (whoHitMe != null) {
+                if ((whoHitMe.data.critter.combat.results.bits()
+                        & ObjTypes.Dam.DEAD.bits()) == 0
+                        && combatData.damageLastTurn > 0) {
+                    GameObject friendlyDead = Combat.aiInfoGetFriendlyDead(actor);
+                    if (friendlyDead != null) {
+                        aiMoveAway(actor, friendlyDead, 10);
+                        Combat.aiInfoSetFriendlyDead(actor, null);
+                    } else {
+                        Debug.print("%s: FLEEING: Somebody is shooting at me that I can't see!",
+                                actor.pid);
+                        aiRunAway(actor, null);
+                    }
+                }
+            }
+        }
+
+        GameObject friendlyDead = Combat.aiInfoGetFriendlyDead(actor);
+        if (friendlyDead != null) {
+            aiMoveAway(actor, friendlyDead, 10);
+            if (ObjectSystem.objectGetDistanceBetween(actor, friendlyDead) >= 10) {
+                Combat.aiInfoSetFriendlyDead(actor, null);
+            }
+        }
+
+        GameObject nearestTeammate;
+        int maxTeammateDistance = 5;
+        if (actor.data.critter.combat.team != 0) {
+            nearestTeammate = aiFindNearestTeamInCombat(actor, actor, 1);
+        } else {
+            nearestTeammate = ObjectSystem.getDude();
+            if (PartyMembers.objectIsPartyMember(actor)) {
+                int distance = aiGetDistance(actor);
+                if (distance != CombatAiDefs.DistanceMode.DISTANCE_INVALID.id()) {
+                    maxTeammateDistance = aiPartyMemberDistances[distance];
+                }
+            }
+        }
+
+        if (target == null && nearestTeammate != null
+                && ObjectSystem.objectGetDistanceBetween(actor, nearestTeammate)
+                    > maxTeammateDistance) {
+            int currentDistance = ObjectSystem.objectGetDistanceBetween(actor,
+                    nearestTeammate);
+            aiMoveStepsCloser(actor, nearestTeammate, currentDistance - maxTeammateDistance,
+                    false);
+        } else {
+            if (actor.data.critter.combat.ap > 0) {
+                Debug.print("\n>>>NOTE: %s had extra AP's to use!<<<", actor.pid);
+                caiPerformDistancePrefs(actor, target);
+            }
+        }
+    }
+
+    /**
+     * Port of {@code _combatai_want_to_join} (0x42B3FC). The script-proc
+     * branch and {@code _process_bk} are game-phase seams.
+     */
+    public static boolean combataiWantToJoin(GameObject a1) {
+        if ((a1.flags.bits() & ObjTypes.ObjectFlags.HIDDEN.bits()) != 0) {
+            return false;
+        }
+
+        if (a1.elevation != ObjectSystem.getDude().elevation) {
+            return false;
+        }
+
+        if ((a1.data.critter.combat.results.bits()
+                & (ObjTypes.Dam.DEAD.bits() | ObjTypes.Dam.KNOCKED_OUT.bits())) != 0) {
+            return false;
+        }
+
+        if (a1.data.critter.combat.damageLastTurn > 0) {
+            return true;
+        }
+
+        if (a1.sid != -1) {
+            // scriptSetObjects/scriptSetFixedParam/scriptExecProc(COMBAT):
+            // script-engine seam.
+        }
+
+        if ((a1.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.ENGAGING.bits()) != 0) {
+            return true;
+        }
+
+        if ((a1.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.DISENGAGING.bits()) != 0) {
+            return false;
+        }
+
+        if ((a1.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.FLEEING.bits()) != 0) {
+            return false;
+        }
+
+        return aiDangerSource(a1) != null;
+    }
+
+    /**
+     * Port of {@code _combatai_want_to_stop} (0x42B4A8).
+     */
+    public static boolean combataiWantToStop(GameObject a1) {
+        if ((a1.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.DISENGAGING.bits()) != 0) {
+            return true;
+        }
+
+        if ((a1.data.critter.combat.results.bits()
+                & (ObjTypes.Dam.KNOCKED_OUT.bits() | ObjTypes.Dam.DEAD.bits())) != 0) {
+            return true;
+        }
+
+        if ((a1.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.FLEEING.bits()) != 0) {
+            return true;
+        }
+
+        GameObject enemy = aiDangerSource(a1);
+        return enemy == null || !isWithinPerception(a1, enemy);
+    }
     public static boolean aiSearchEnviron(GameObject critter, int itemType) {
         if (Critter.critterGetBodyType(critter)
                 != ProtoTypes.BodyType.BODY_TYPE_BIPED) {

@@ -423,6 +423,21 @@ int f2jReferenceAiCheckDrugs(Object* critter)
     return _ai_check_drugs(critter);
 }
 
+void f2jReferenceCombatAi(Object* actor, Object* target)
+{
+    _combat_ai(actor, target);
+}
+
+bool f2jReferenceWantToJoin(Object* actor)
+{
+    return _combatai_want_to_join(actor);
+}
+
+bool f2jReferenceWantToStop(Object* actor)
+{
+    return _combatai_want_to_stop(actor);
+}
+
 int f2jReferenceAiMagicHands(Object* critter, Object* item, int num)
 {
     return _ai_magic_hands(critter, item, num);

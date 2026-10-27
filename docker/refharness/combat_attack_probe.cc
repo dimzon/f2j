@@ -192,6 +192,11 @@ void f2jReferenceSetTurnRunning(int value)
     _combat_turn_running = value;
 }
 
+int f2jReferenceGetTurnRunning()
+{
+    return _combat_turn_running;
+}
+
 // The AI attack probe calls _combat_attack; the bare headless scheduler
 // rejects it, so the section arms the _action_attack substitution the same
 // way f2jReferenceCombatAttack does.
@@ -226,6 +231,16 @@ Object* f2jReferenceAiInfoGetLastTarget(Object* obj)
 int f2jReferenceAiInfoSetLastTarget(Object* a1, Object* a2)
 {
     return aiInfoSetLastTarget(a1, a2);
+}
+
+Object* f2jReferenceAiInfoGetFriendlyDead(Object* obj)
+{
+    return aiInfoGetFriendlyDead(obj);
+}
+
+int f2jReferenceAiInfoSetFriendlyDead(Object* a1, Object* a2)
+{
+    return aiInfoSetFriendlyDead(a1, a2);
 }
 
 } // namespace fallout
