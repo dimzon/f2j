@@ -199,6 +199,11 @@ int f2jReferenceCombatAttemptEnd()
     return (gCombatState & COMBAT_STATE_EXIT_REQUESTED) != 0 ? 1 : 0;
 }
 
+int f2jReferenceCombatInput()
+{
+    return _combat_input();
+}
+
 // The AI attack helpers call _combat_turn_run, which spins on this counter
 // headless; the sections park it so the runs return.
 void f2jReferenceSetTurnRunning(int value)

@@ -7360,6 +7360,7 @@ void f2jReferenceAiSetCalledFreq(AiPacket*, int);
 void f2jReferenceSetTurnRunning(int);
 void f2jReferenceSetCombatRoster(Object**, int, int, int);
 int f2jReferenceCombatAttemptEnd();
+int f2jReferenceCombatInput();
 void f2jReferenceSetProbeScheduling(bool, int);
 void f2jReferenceAiRetargetFromFriendlyFire(Object*, Object*, int*);
 bool f2jReferenceAiAttackWouldIntersect(Object*, Object*, Object*, int, int*);
@@ -9883,6 +9884,57 @@ void sectionAiTick()
 
     fallout::f2jReferenceScriptsDisableScripts();
     fallout::f2jReferenceAiOverCritters();
+}
+
+void sectionCombatInput()
+{
+    std::puts("[combatinput]");
+
+    // The script-hook engine must be up for ScopedGameMode to fire its
+    // game-mode-change hook.
+    fallout::sfall_gl_scr_init();
+    fallout::scriptHooksInit();
+
+    // The player-combat input loop (_combat_input): the stop conditions and
+    // the SPACE/RETURN keys. The render/UI tails (renderPresent, throttles,
+    // gameHandleKey) stay documented seams; the actual input queue is real.
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::CombatState savedCombatState = fallout::gCombatState;
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
+    fallout::f2jReferenceSetTurnRunning(0);
+
+    // AP exhausted: the loop breaks on AP <= 0 and free-move 0.
+    dude->data.critter.combat.ap = 0;
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+    std::printf("ap0=%d\n", fallout::f2jReferenceCombatInput());
+
+    // Dead/knocked-out dude: immediate break.
+    dude->data.critter.combat.ap = 5;
+    dude->data.critter.combat.results = fallout::DAM_DEAD;
+    std::printf("dead=%d\n", fallout::f2jReferenceCombatInput());
+
+    // EXIT_REQUESTED pre-set: loop breaks, the flag is cleared, -1.
+    dude->data.critter.combat.results = fallout::DAM_NONE;
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::gCombatState | fallout::COMBAT_STATE_EXIT_REQUESTED);
+    std::printf("exit=%d state=%d\n", fallout::f2jReferenceCombatInput(),
+        (int)fallout::gCombatState);
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::gCombatState & ~fallout::COMBAT_STATE_EXIT_REQUESTED);
+
+    // SPACE: the queued key breaks the loop on the first input.
+    fallout::inputEventQueueReset();
+    fallout::enqueueInputEvent(fallout::KEY_SPACE);
+    std::printf("space=%d\n", fallout::f2jReferenceCombatInput());
+
+    fallout::gCombatState = savedCombatState;
+    fallout::f2jReferenceSetTurnRunning(0);
 }
 
 void sectionIsoRest()
@@ -13495,6 +13547,7 @@ int main()
     RUN_SECTION(CombatEndAttempt);
     RUN_SECTION(AiTeam);
     RUN_SECTION(AiTick);
+    RUN_SECTION(CombatInput);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

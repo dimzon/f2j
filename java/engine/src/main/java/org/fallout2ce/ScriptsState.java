@@ -98,6 +98,12 @@ public final class ScriptsState {
         scriptsRequests |= SCRIPT_REQUEST_COMBAT_LOCKED | SCRIPT_REQUEST_COMBAT;
     }
 
+    // 0x4A3F80 scriptsClearPendingRequests.
+    public static int scriptsClearPendingRequests() {
+        scriptsRequests = SCRIPT_REQUEST_NONE;
+        return 0;
+    }
+
     // 0x4A3F90 _scripts_clear_combat_requests.
     public static void scriptsClearCombatRequests(ObjectSystem.Script script) {
         if ((scriptsRequests & SCRIPT_REQUEST_COMBAT) != SCRIPT_REQUEST_NONE

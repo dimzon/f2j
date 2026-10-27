@@ -26,6 +26,9 @@ public class GameScriptApi extends UnsupportedScriptApi {
     /** Port of {@code GAME_QUIT_REQUEST_NONE} ({@code src/game.h}). */
     static final int GAME_QUIT_REQUEST_NONE = 0;
 
+    /** Port of {@code GAME_QUIT_REQUEST_END_COMBAT} ({@code src/game.h}). */
+    static final int GAME_QUIT_REQUEST_END_COMBAT = 1;
+
     /** Port of {@code GAME_QUIT_REQUEST_MAIN_MENU} ({@code src/game.h}). */
     static final int GAME_QUIT_REQUEST_MAIN_MENU = 2;
 

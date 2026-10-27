@@ -529,8 +529,8 @@ public final class Combat {
 
     public static final int COMBAT_STATE_OUT_COMBAT = 0x00;
     public static final int COMBAT_STATE_IN_COMBAT = 0x01;
-    public static final int COMBAT_STATE_EXIT_REQUESTED = 0x02;
-    public static final int COMBAT_STATE_PLAYER_TURN = 0x04;
+    public static final int COMBAT_STATE_PLAYER_TURN = 0x02;
+    public static final int COMBAT_STATE_EXIT_REQUESTED = 0x08;
 
     /** Port of {@code isInCombat} (src/combat.h). */
     public static boolean isInCombat() {
@@ -545,6 +545,9 @@ public final class Combat {
     static int listNoncom;
     static int combatNumTurns;
     static ScriptsState.CombatStartData gcsd;
+
+    /** Port of {@code _combat_end_due_to_load} (src/combat.cc). */
+    static boolean combatEndDueToLoad;
 
     /** Port of {@code CombatAiInfo} (src/combat.cc:66). */
     public static final class CombatAiInfo {
@@ -1055,9 +1058,88 @@ public final class Combat {
         combatAttack(dude, target, hitMode, CombatDefs.HitLocation.HIT_LOCATION_UNCALLED.id());
     }
 
-    /** Seam for {@code _combat_input} (player turn loop, game phase). */
+    // 0x4227F4 _combat_input: the player-combat input loop. The render/UI
+    // tails (renderPresent, FPS throttle, gameHandleKey, the sfall loop
+    // hook, the explode animation) are documented seams; the stop
+    // conditions and the SPACE/RETURN keys are real.
     static int combatInput() {
+        // ScopedGameMode(GameMode::kPlayerTurn): game-mode stack seam.
+
+        while ((combatState & COMBAT_STATE_PLAYER_TURN) != 0) {
+            if ((combatState & COMBAT_STATE_EXIT_REQUESTED) != 0) {
+                break;
+            }
+
+            GameObject dude = ObjectSystem.getDude();
+            if (dude == null) {
+                break;
+            }
+
+            int results = dude.data.critter.combat.results.bits();
+            if ((results & (ObjTypes.Dam.KNOCKED_OUT.bits() | ObjTypes.Dam.DEAD.bits()
+                    | ObjTypes.Dam.LOSE_TURN.bits())) != 0) {
+                break;
+            }
+
+            if (GameScriptApi.gameUserWantsToQuit
+                    != GameScriptApi.GAME_QUIT_REQUEST_NONE) {
+                break;
+            }
+
+            if (combatEndDueToLoad) {
+                break;
+            }
+
+            int keyCode = Input.inputGetInput();
+
+            // sfall_gl_scr_process_main(): script-engine hook seam.
+            // _action_explode_running(): render seam, false.
+
+            if (dude.data.critter.combat.ap <= 0 && combatFreeMove <= 0) {
+                break;
+            }
+
+            if (keyCode == Kb.KEY_SPACE) {
+                break;
+            }
+
+            if (keyCode == Kb.KEY_RETURN) {
+                combatAttemptEnd();
+            } else {
+                scriptsCheckStateInCombat();
+                // gameHandleKey(keyCode, true): UI seam.
+            }
+
+            // renderPresent() + sharedFpsLimiter.throttle(): render seams.
+        }
+
+        int gameQuitRequest = GameScriptApi.gameUserWantsToQuit;
+        if (gameQuitRequest == GameScriptApi.GAME_QUIT_REQUEST_END_COMBAT) {
+            GameScriptApi.gameUserWantsToQuit = GameScriptApi.GAME_QUIT_REQUEST_NONE;
+        }
+
+        if ((combatState & COMBAT_STATE_EXIT_REQUESTED) != 0) {
+            combatState &= ~COMBAT_STATE_EXIT_REQUESTED;
+            return -1;
+        }
+
+        if (GameScriptApi.gameUserWantsToQuit != GameScriptApi.GAME_QUIT_REQUEST_NONE
+                || gameQuitRequest != GameScriptApi.GAME_QUIT_REQUEST_NONE
+                || combatEndDueToLoad) {
+            return -1;
+        }
+
+        scriptsCheckStateInCombat();
+
         return 0;
+    }
+
+    /** Port of {@code _scripts_check_state_in_combat} (src/scripts.cc). */
+    private static void scriptsCheckStateInCombat() {
+        // Elevator/looting requests: game-phase seams (scriptsHandleRequests
+        // services the combat request).
+        ScriptsState.scriptsHandleRequests();
+        ScriptsState.scriptsClearPendingRequests();
     }
 
     /**
