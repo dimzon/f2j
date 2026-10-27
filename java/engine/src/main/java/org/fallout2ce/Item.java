@@ -1812,6 +1812,11 @@ public final class Item {
     // critter_get_weapon_for_hit_mode (src/item.cc): left-hand modes read
     // item1, right-hand modes item2, every unarmed mode (basic PUNCH/KICK
     // plus advanced) -> null.
+    /** Package seam for the AI retarget slice. */
+    static GameObject critterGetWeaponForHitModeForAi(GameObject critter, int hitMode) {
+        return critterGetWeaponForHitMode(critter, hitMode);
+    }
+
     private static GameObject critterGetWeaponForHitMode(GameObject critter, int hitMode) {
         if (hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_PRIMARY.id()
                 || hitMode == CombatDefs.HitMode.HIT_MODE_LEFT_WEAPON_SECONDARY.id()

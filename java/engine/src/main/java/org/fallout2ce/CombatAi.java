@@ -1601,6 +1601,414 @@ public final class CombatAi {
         return aiGetPacket(obj).disposition;
     }
 
+    // ===== AI movement (src/combat_ai.cc) =====
+
+    /** {@code _combatai_msg} seam: the taunt/message display is game phase. */
+    private static void combataiMsg(GameObject critter, int type) {
+    }
+
+    // 0x428838 aiFinishMovement: the combat-turn wait is game phase (the
+    // turn-run counter is zero outside an AI turn); the SFALL incapacitation
+    // AP clear stays.
+    private static void aiFinishMovement(GameObject critter) {
+        ObjTypes.CritterCombatData combatData = critter.data.critter.combat;
+        if ((combatData.results.bits()
+            & (ObjTypes.Dam.DEAD.bits() | ObjTypes.Dam.KNOCKED_OUT.bits()
+                | ObjTypes.Dam.LOSE_TURN.bits())) != 0) {
+            combatData.ap = 0;
+        }
+    }
+
+    /** Port of {@code _ai_run_away} (0x428868). */
+    public static void aiRunAway(GameObject critter, GameObject enemy) {
+        if (enemy == null) {
+            enemy = ObjectSystem.getDude();
+        }
+
+        ObjTypes.CritterCombatData combatData = critter.data.critter.combat;
+
+        AiPacket ai = aiGetPacket(critter);
+        int distance = ObjectSystem.objectGetDistanceBetween(critter, enemy);
+        if (distance <= ai.maxDist) {
+            combatData.maneuver = combatData.maneuver.or(ObjTypes.CritterManeuver.FLEEING);
+
+            int rotation = TileMath.tileGetRotationTo(enemy.tile, critter.tile).value();
+
+            int destination = critter.tile;
+            int actionPoints = combatData.ap;
+            for (; actionPoints > 0; actionPoints -= 1) {
+                destination = TileMath.tileGetTileInDirection(critter.tile,
+                    org.fallout2ce.Rotation.fromInt(rotation), actionPoints);
+                if (Animation.makePath(critter, critter.tile, destination, null, 1) > 0) {
+                    break;
+                }
+
+                destination = TileMath.tileGetTileInDirection(critter.tile,
+                    org.fallout2ce.Rotation.fromInt((rotation + 1) % 6), actionPoints);
+                if (Animation.makePath(critter, critter.tile, destination, null, 1) > 0) {
+                    break;
+                }
+
+                destination = TileMath.tileGetTileInDirection(critter.tile,
+                    org.fallout2ce.Rotation.fromInt((rotation + 5) % 6), actionPoints);
+                if (Animation.makePath(critter, critter.tile, destination, null, 1) > 0) {
+                    break;
+                }
+            }
+
+            if (actionPoints > 0) {
+                Animation.regAnimBegin(Animation.ANIMATION_REQUEST_RESERVED);
+                combataiMsg(critter, 2 /* AI_MESSAGE_TYPE_RUN */);
+                Animation.animationRegisterRunToTile(critter, destination, critter.elevation,
+                    combatData.ap, 0);
+                if (Animation.regAnimEnd() == 0) {
+                    aiFinishMovement(critter);
+                }
+            }
+        } else {
+            combatData.maneuver = combatData.maneuver.or(ObjTypes.CritterManeuver.DISENGAGING);
+        }
+    }
+
+    /** Port of {@code _ai_move_away} (0x42899C). */
+    public static int aiMoveAway(GameObject critter, GameObject enemy, int distance) {
+        if (aiGetPacket(critter).distance == CombatAiDefs.DistanceMode.DISTANCE_STAY.id()) {
+            return -1;
+        }
+
+        if (ObjectSystem.objectGetDistanceBetween(critter, enemy) <= distance) {
+            int actionPoints = critter.data.critter.combat.ap;
+            if (distance < actionPoints) {
+                actionPoints = distance;
+            }
+
+            int rotation = TileMath.tileGetRotationTo(enemy.tile, critter.tile).value();
+
+            int destination = critter.tile;
+            int actionPointsLeft = actionPoints;
+            for (; actionPointsLeft > 0; actionPointsLeft -= 1) {
+                destination = TileMath.tileGetTileInDirection(critter.tile,
+                    org.fallout2ce.Rotation.fromInt(rotation), actionPointsLeft);
+                if (Animation.makePath(critter, critter.tile, destination, null, 1) > 0) {
+                    break;
+                }
+
+                destination = TileMath.tileGetTileInDirection(critter.tile,
+                    org.fallout2ce.Rotation.fromInt((rotation + 1) % 6), actionPointsLeft);
+                if (Animation.makePath(critter, critter.tile, destination, null, 1) > 0) {
+                    break;
+                }
+
+                destination = TileMath.tileGetTileInDirection(critter.tile,
+                    org.fallout2ce.Rotation.fromInt((rotation + 5) % 6), actionPointsLeft);
+                if (Animation.makePath(critter, critter.tile, destination, null, 1) > 0) {
+                    break;
+                }
+            }
+
+            if (actionPointsLeft > 0) {
+                Animation.regAnimBegin(Animation.ANIMATION_REQUEST_RESERVED);
+                Animation.animationRegisterMoveToTile(critter, destination, critter.elevation,
+                    actionPoints, 0);
+                if (Animation.regAnimEnd() == 0) {
+                    aiFinishMovement(critter);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /** Port of {@code _ai_find_friend} (0x428AC4). */
+    public static boolean aiFindFriend(GameObject critter, int a2, int a3) {
+        GameObject friend = aiFindNearestTeam(critter, critter, 1);
+        if (friend == null) {
+            return false;
+        }
+
+        int distance = ObjectSystem.objectGetDistanceBetween(critter, friend);
+        if (distance > a2) {
+            return false;
+        }
+
+        if (a3 > distance) {
+            int steps = ObjectSystem.objectGetDistanceBetween(critter, friend) - a3;
+            aiMoveStepsCloser(critter, friend, steps, false);
+        }
+
+        return true;
+    }
+
+    /** Port of {@code _ai_move_steps_closer} (0x429FC8). */
+    public static int aiMoveStepsCloser(GameObject critter, GameObject target, int actionPoints,
+            boolean taunt) {
+        if (actionPoints <= 0) {
+            return -1;
+        }
+
+        int distance = aiGetDistance(critter);
+        if (distance == CombatAiDefs.DistanceMode.DISTANCE_STAY.id()) {
+            return -1;
+        }
+
+        if (distance == CombatAiDefs.DistanceMode.DISTANCE_STAY_CLOSE.id()) {
+            if (target != ObjectSystem.getDude()) {
+                int currentDistance = ObjectSystem.objectGetDistanceBetween(critter,
+                    ObjectSystem.getDude());
+                if (currentDistance > 5
+                    && ObjectSystem.objectGetDistanceBetween(target,
+                        ObjectSystem.getDude()) > 5
+                    && currentDistance + actionPoints > 5) {
+                    return -1;
+                }
+            }
+        }
+
+        if (ObjectSystem.objectGetDistanceBetween(critter, target) <= 1) {
+            return -1;
+        }
+
+        Animation.regAnimBegin(Animation.ANIMATION_REQUEST_RESERVED);
+
+        if (taunt) {
+            combataiMsg(critter, 0 /* AI_MESSAGE_TYPE_MOVE */);
+        }
+
+        GameObject initialTarget = target;
+
+        boolean shouldUnhide;
+        if ((target.flags.bits() & ObjTypes.ObjectFlags.MULTIHEX.bits()) != 0) {
+            shouldUnhide = true;
+            target.flags = target.flags.or(ObjTypes.ObjectFlags.HIDDEN);
+        } else {
+            shouldUnhide = false;
+        }
+
+        if (Animation.pathfinderFindPath(critter, critter.tile, target.tile, null, 0,
+                ObjectSystem::objBlockingAt) == 0) {
+            ObjectSystem.moveBlockObj = null;
+            if (Animation.pathfinderFindPath(critter, critter.tile, target.tile, null, 0,
+                    ObjectSystem::objAiBlockingAt) == 0
+                && ObjectSystem.moveBlockObj != null
+                && ProtoTypes.ProtoId.ofPid(ObjectSystem.moveBlockObj.pid)
+                    .objectType() == ObjTypes.ObjectType.OBJ_TYPE_CRITTER) {
+                if (shouldUnhide) {
+                    target.flags = target.flags.and(ObjTypes.ObjectFlags.HIDDEN.not());
+                }
+
+                target = ObjectSystem.moveBlockObj;
+                if ((target.flags.bits() & ObjTypes.ObjectFlags.MULTIHEX.bits()) != 0) {
+                    shouldUnhide = true;
+                    target.flags = target.flags.or(ObjTypes.ObjectFlags.HIDDEN);
+                } else {
+                    shouldUnhide = false;
+                }
+            }
+        }
+
+        if (shouldUnhide) {
+            target.flags = target.flags.and(ObjTypes.ObjectFlags.HIDDEN.not());
+        }
+
+        int tile = target.tile;
+        if (target == initialTarget) {
+            int[] tilePtr = new int[] { tile };
+            caiRetargetTileFromFriendlyFire(critter, target, tilePtr);
+            tile = tilePtr[0];
+        }
+
+        if (actionPoints >= Stat.critterGetStat(critter,
+                StatDefs.Stat.STAT_MAXIMUM_ACTION_POINTS.id()) / 2
+            && Art.artCritterFrmIdShouldRun(FrmId.ofFid(critter.fid)) != 0) {
+            if ((target.flags.bits() & ObjTypes.ObjectFlags.MULTIHEX.bits()) != 0) {
+                Animation.animationRegisterRunToObject(critter, target, actionPoints, 0);
+            } else {
+                Animation.animationRegisterRunToTile(critter, tile, critter.elevation,
+                    actionPoints, 0);
+            }
+        } else {
+            if ((target.flags.bits() & ObjTypes.ObjectFlags.MULTIHEX.bits()) != 0) {
+                Animation.animationRegisterMoveToObject(critter, target, actionPoints, 0);
+            } else {
+                Animation.animationRegisterMoveToTile(critter, tile, critter.elevation,
+                    actionPoints, 0);
+            }
+        }
+
+        if (Animation.regAnimEnd() != 0) {
+            return -1;
+        }
+
+        aiFinishMovement(critter);
+
+        return 0;
+    }
+
+    /** {@code _ai_move_closer} (0x42A1C0). */
+    public static int aiMoveCloser(GameObject critter, GameObject target, boolean taunt) {
+        return aiMoveStepsCloser(critter, target, critter.data.critter.combat.ap, taunt);
+    }
+
+    /** {@code AiRetargetData} (src/combat_ai.cc:60). */
+    private static final class AiRetargetData {
+        GameObject source;
+        GameObject target;
+        final GameObject[] critterList = new GameObject[100];
+        final int[] ratingList = new int[100];
+        int critterCount;
+        int sourceTeam;
+        int sourceRating;
+        boolean notSameTile;
+        int[] tiles;
+        int currentTileIndex;
+        int sourceIntelligence;
+    }
+
+    /** Port of {@code _cai_retargetTileFromFriendlyFire} (0x42A1D4). */
+    public static int caiRetargetTileFromFriendlyFire(GameObject source, GameObject target,
+            int[] tilePtr) {
+        if (source == null) {
+            return -1;
+        }
+
+        if (target == null) {
+            return -1;
+        }
+
+        if (tilePtr == null) {
+            return -1;
+        }
+
+        if (tilePtr[0] == -1) {
+            return -1;
+        }
+
+        if (currCritList.length == 0) {
+            return -1;
+        }
+
+        int[] tiles = new int[32];
+
+        AiRetargetData aiRetargetData = new AiRetargetData();
+        aiRetargetData.source = source;
+        aiRetargetData.target = target;
+        aiRetargetData.sourceTeam = source.data.critter.combat.team;
+        aiRetargetData.sourceRating = combataiRating(source);
+        aiRetargetData.critterCount = 0;
+        aiRetargetData.tiles = tiles;
+        aiRetargetData.notSameTile = tilePtr[0] != source.tile;
+        aiRetargetData.currentTileIndex = 0;
+        aiRetargetData.sourceIntelligence = Stat.critterGetStat(source,
+            StatDefs.Stat.STAT_INTELLIGENCE.id());
+
+        for (int index = 0; index < 32; index++) {
+            tiles[index] = -1;
+        }
+
+        for (int index = 0; index < currCritList.length; index++) {
+            GameObject obj = currCritList[index];
+            if ((obj.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) == 0
+                && obj.data.critter.combat.team == aiRetargetData.sourceTeam
+                && Combat.aiInfoGetLastTarget(obj) == aiRetargetData.target
+                && obj != aiRetargetData.source) {
+                int rating = combataiRating(obj);
+                if (rating >= aiRetargetData.sourceRating) {
+                    aiRetargetData.critterList[aiRetargetData.critterCount] = obj;
+                    aiRetargetData.ratingList[aiRetargetData.critterCount] = rating;
+                    aiRetargetData.critterCount += 1;
+                }
+            }
+        }
+
+        aiSortListDistance(aiRetargetData.critterList, aiRetargetData.critterCount, source);
+
+        if (caiRetargetTileFromFriendlyFireSubFunc(aiRetargetData, tilePtr[0]) == 0) {
+            int minDistance = TileMath.TILE_MAX_DISTANCE + 1;
+            int minDistanceIndex = -1;
+
+            for (int index = 0; index < 32; index++) {
+                int tile = tiles[index];
+                if (!TileMath.tileIsValid(tile)) {
+                    break;
+                }
+
+                if (ObjectSystem.objBlockingAt(null, tile, source.elevation) == null) {
+                    int candidateDistance = TileMath.tileDistanceBetween(tilePtr[0], tile);
+                    if (candidateDistance < minDistance) {
+                        minDistance = candidateDistance;
+                        minDistanceIndex = index;
+                    }
+                }
+            }
+
+            if (minDistanceIndex != -1) {
+                tilePtr[0] = tiles[minDistanceIndex];
+            }
+        }
+
+        return 0;
+    }
+
+    // 0x42A410 _cai_retargetTileFromFriendlyFireSubFunc.
+    private static int caiRetargetTileFromFriendlyFireSubFunc(AiRetargetData aiRetargetData,
+            int tile) {
+        if (aiRetargetData.sourceIntelligence <= 0) {
+            return 0;
+        }
+
+        int distance = 1;
+
+        for (int index = 0; index < aiRetargetData.critterCount; index++) {
+            GameObject obj = aiRetargetData.critterList[index];
+            if (caiAttackWouldIntersect(obj, aiRetargetData.target, aiRetargetData.source, tile,
+                    new int[] { distance })) {
+                Debug.print("In the way!");
+
+                aiRetargetData.tiles[aiRetargetData.currentTileIndex] =
+                    TileMath.tileGetTileInDirection(tile,
+                        org.fallout2ce.Rotation.fromInt((obj.rotation.id() + 1) % 6), distance);
+                aiRetargetData.tiles[aiRetargetData.currentTileIndex + 1] =
+                    TileMath.tileGetTileInDirection(tile,
+                        org.fallout2ce.Rotation.fromInt((obj.rotation.id() + 5) % 6), distance);
+
+                aiRetargetData.sourceIntelligence -= 2;
+                aiRetargetData.currentTileIndex += 2;
+                break;
+            }
+        }
+
+        return 0;
+    }
+
+    // 0x42A518 _cai_attackWouldIntersect.
+    static boolean caiAttackWouldIntersect(GameObject attacker, GameObject defender,
+            GameObject attackerFriend, int tile, int[] distance) {
+        int hitMode = CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id();
+        boolean aiming = false;
+        if (attacker == ObjectSystem.getDude()) {
+            // interfaceGetCurrentHitMode: game phase; the dude is not a
+            // vector actor here.
+        }
+
+        GameObject weapon = Item.critterGetWeaponForHitModeForAi(attacker, hitMode);
+        if (weapon == null) {
+            return false;
+        }
+
+        if (Item.weaponGetRange(attacker, hitMode) < 1) {
+            return false;
+        }
+
+        GameObject object = ObjectSystem.makeStraightPath(attacker, attacker.tile, defender.tile);
+        if (object != attackerFriend) {
+            if (!Combat.combatTestIncidentalHit(attacker, defender, attackerFriend, weapon)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /** Test seam: fresh-process mirror. */
     static void resetForTests() {
         aiPackets = new AiPacket[0];

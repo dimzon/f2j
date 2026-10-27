@@ -15,10 +15,12 @@ mkdir -p /src/docker/refharness/build
 # combat_attack_probe.cc includes the unmodified combat.cc in its own TU to
 # expose private start-data state and substitute animation scheduling in probes;
 # combat_ai_probe.cc includes the unmodified combat_ai.cc to expose private AI
-# state. Exclude the regular objects to avoid duplicate definitions.
-OBJS=$(find "$OBJDIR" -name "*.o" ! -name "main.cc.o" ! -name "win32.cc.o" ! -name "combat.cc.o" ! -name "combat_ai.cc.o")
+# state; animation_probe.cc includes the unmodified animation.cc to expose the
+# animation sequence store. Exclude the regular objects to avoid duplicate
+# definitions.
+OBJS=$(find "$OBJDIR" -name "*.o" ! -name "main.cc.o" ! -name "win32.cc.o" ! -name "combat.cc.o" ! -name "combat_ai.cc.o" ! -name "animation.cc.o")
 FPATTERN=/src/out/build/linux-x64-debug/third_party/fpattern
-g++ -std=c++17 -g -I/src/src $(pkg-config --cflags sdl2) /src/docker/refharness/ref_main.cc /src/docker/refharness/combat_attack_probe.cc /src/docker/refharness/combat_ai_probe.cc $OBJS $FPATTERN/libfpattern-windows-static.a $FPATTERN/libfpattern-static.a -o /src/docker/refharness/build/refharness $(pkg-config --libs sdl2) -lz
+g++ -std=c++17 -g -I/src/src $(pkg-config --cflags sdl2) /src/docker/refharness/ref_main.cc /src/docker/refharness/combat_attack_probe.cc /src/docker/refharness/combat_ai_probe.cc /src/docker/refharness/animation_probe.cc $OBJS $FPATTERN/libfpattern-windows-static.a $FPATTERN/libfpattern-static.a -o /src/docker/refharness/build/refharness $(pkg-config --libs sdl2) -lz
 if [ "${RUN:-1}" = "1" ]; then
     /src/docker/refharness/build/refharness
 fi

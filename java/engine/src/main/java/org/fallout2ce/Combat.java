@@ -243,6 +243,14 @@ public final class Combat {
                 safeDistancePtr, null);
     }
 
+    /** {@code _combatTestIncidentalHit} (src/combat.cc:2423). */
+    static boolean combatTestIncidentalHit(ObjTypes.GameObject attacker,
+            ObjTypes.GameObject defender, ObjTypes.GameObject attackerFriend,
+            ObjTypes.GameObject weapon) {
+        return combatSafetyInvalidateWeaponFunc(attacker, weapon,
+            CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(), defender, null, attackerFriend);
+    }
+
     private static boolean combatSafetyInvalidateWeaponFunc(ObjTypes.GameObject attacker,
             ObjTypes.GameObject weapon, int hitMode, ObjTypes.GameObject defender,
             int[] safeDistancePtr, ObjTypes.GameObject attackerFriend) {

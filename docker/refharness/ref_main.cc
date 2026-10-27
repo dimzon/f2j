@@ -7320,6 +7320,15 @@ int f2jReferenceAiGetBestWeapon(Object*);
 void f2jReferenceAiInfoInit(int);
 Object* f2jReferenceAiInfoGetLastTarget(Object*);
 int f2jReferenceAiInfoSetLastTarget(Object*, Object*);
+void f2jReferenceAiSetPacketMaxDist(AiPacket*, int);
+int f2jReferenceAiMoveStepsCloser(Object*, Object*, int, bool);
+int f2jReferenceAiMoveCloser(Object*, Object*, bool);
+void f2jReferenceAiRunAway(Object*, Object*);
+int f2jReferenceAiMoveAway(Object*, Object*, int);
+bool f2jReferenceAiFindFriend(Object*, int, int);
+void f2jReferenceAiRetargetFromFriendlyFire(Object*, Object*, int*);
+bool f2jReferenceAiAttackWouldIntersect(Object*, Object*, Object*, int, int*);
+int f2jReferenceAnimLastAction(int*);
 }
 
 void sectionCombatBadShot()
@@ -8643,7 +8652,12 @@ void sectionAiTarget()
         // and would read as dead for the AI info guards.
         roster[index]->data.critter.hp = 50;
         fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
-        if (index != 0) {
+        if (index == 2) {
+            // The shooter stands behind the source so the shot line
+            // crosses it.
+            fallout::objectSetLocation(roster[index],
+                fallout::tileGetTileInDirection(a, fallout::ROTATION_NW, 1), 0, nullptr);
+        } else if (index != 0) {
             fallout::objectSetLocation(roster[index],
                 fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
                 0, nullptr);
@@ -8844,6 +8858,223 @@ void sectionAiTarget()
     fallout::f2jReferenceAiOverCritters();
 }
 
+
+void sectionAiMove()
+{
+    std::puts("[aimove]");
+
+    // AI movement decisions: _obj_ai_blocking_at with the _moveBlockObj BSS
+    // quirk, the friendly-fire retarget (_cai_attackWouldIntersect and
+    // _cai_retargetTileFromFriendlyFire) and the run/away/move-closer
+    // helpers. The move helpers run OUT of combat (reg_anim_end then skips
+    // _combat_anim_begin, so _combat_turn_run cannot spin); the registered
+    // animation is the observable effect, dumped through the animation
+    // probe TU.
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // human, team 1, the weaker source
+    fallout::Object* d1 = nullptr; // dog, team 1, the stronger ally/actor
+    fallout::Object* d2 = nullptr; // dog, team 1, flank blocker
+    fallout::Object* tgt = nullptr; // dog, team 2, the target
+    fallout::Object* far = nullptr; // dog, team 2, far enemy
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&d2, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&tgt, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&far, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr || d2 == nullptr || tgt == nullptr
+        || far == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    const int a = 38101;
+    // Roster: h1 at a (source, rating 10), d1 at +1 (ally, rating 70),
+    // tgt at +4 (target), d2 parked, far at +40.
+    fallout::Object* roster[5] = { dude, h1, d1, tgt, far };
+    const int rosterDistances[5] = { 20, 0, -1, 4, 40 };
+    for (int index = 0; index < 5; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = index == 3 || index == 4 ? 2 : 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 5;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        if (index == 2) {
+            // The shooter stands behind the source so the shot line
+            // crosses it.
+            fallout::objectSetLocation(roster[index],
+                fallout::tileGetTileInDirection(a, fallout::ROTATION_NW, 1), 0, nullptr);
+        } else if (index != 0) {
+            fallout::objectSetLocation(roster[index],
+                fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
+                0, nullptr);
+        }
+    }
+    dude->tile = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[0]);
+    dude->elevation = 0;
+
+    fallout::f2jReferenceAiInfoInit(5);
+    fallout::f2jReferenceAiBeginCritters(5, roster);
+
+    auto dumpAnim = [](const char* tag) {
+        int dump[12];
+        if (fallout::f2jReferenceAnimLastAction(dump) == 0) {
+            std::printf("%s kind=%d anim=%d dst=%d ap=%d | kind=%d anim=%d dst=%d ap=%d | kind=%d anim=%d dst=%d ap=%d\n",
+                tag, dump[0], dump[1], dump[2], dump[3], dump[4], dump[5], dump[6], dump[7],
+                dump[8], dump[9], dump[10], dump[11]);
+        } else {
+            std::printf("%s none\n", tag);
+        }
+    };
+
+    // _obj_ai_blocking_at: the first critter on the tile is remembered in
+    // _moveBlockObj and skipped; the call returns a non-critter blocker or
+    // null, and the NEXT call returns the remembered critter.
+    fallout::_moveBlockObj = nullptr;
+    fallout::Object* first = fallout::_obj_ai_blocking_at(nullptr, a, 0);
+    std::printf("ab1=%d block=%d\n", first != nullptr ? (int)first->pid : -1,
+        fallout::_moveBlockObj != nullptr ? 1 : 0);
+    fallout::Object* second = fallout::_obj_ai_blocking_at(nullptr, a, 0);
+    std::printf("ab2=%d\n", second != nullptr ? (int)second->pid : -1);
+    fallout::_moveBlockObj = nullptr;
+
+    // Friendly-fire intersection, combat on (the AI info list gates the
+    // retarget; the intersect check itself is stateless).
+    fallout::CombatState savedCombatState = fallout::gCombatState;
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
+
+    fallout::Proto* h1Proto = nullptr;
+    fallout::protoGetProto(h1, &h1Proto);
+    int savedHumanAcBonus = h1Proto->critter.data.bonusStats[fallout::STAT_ARMOR_CLASS];
+    h1Proto->critter.data.bonusStats[fallout::STAT_ARMOR_CLASS] = 5;
+
+    fallout::Object* pistol = nullptr;
+    fallout::objectCreateWithProtoId(&pistol, fallout::ProtoId(8));
+    if (pistol == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::itemAdd(d1, pistol, 1);
+    pistol->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+    const int tgtTile = tgt->tile;
+    int distance = 1;
+    // d1 at +1 shoots at tgt at +4: the line crosses h1 at a.
+    std::printf("iw-line=%d\n",
+        fallout::f2jReferenceAiAttackWouldIntersect(d1, tgt, h1, tgtTile, &distance) ? 1 : 0);
+    // The dude at +20 is off the line; the friend check falls to the
+    // incidental-hit test.
+    std::printf("iw-off=%d\n",
+        fallout::f2jReferenceAiAttackWouldIntersect(d1, tgt, dude, tgtTile, &distance) ? 1 : 0);
+    // Attacker without a weapon.
+    std::printf("iw-unarmed=%d\n",
+        fallout::f2jReferenceAiAttackWouldIntersect(h1, tgt, h1, tgtTile, &distance) ? 1 : 0);
+    // Null friend behaves like a clear line.
+    std::printf("iw-null-friend=%d\n",
+        fallout::f2jReferenceAiAttackWouldIntersect(d1, tgt, nullptr, tgtTile, &distance) ? 1 : 0);
+
+    // Friendly-fire retarget. The ally d1 (rating 70) is in the shot line,
+    // so the target tile is abandoned for the nearest free flank. The
+    // flanks fan out from the ally's facing.
+    fallout::f2jReferenceAiInfoSetLastTarget(d1, tgt);
+    int tile = tgtTile;
+    fallout::f2jReferenceAiRetargetFromFriendlyFire(h1, tgt, &tile);
+    std::printf("rt-line tile=%d\n", tile);
+    // Same, but the near flank is blocked by d2.
+    tile = tgtTile;
+    fallout::objectSetLocation(d2, fallout::tileGetTileInDirection(tgtTile,
+        (fallout::Rotation)((d1->rotation + 1) % 6), 1), 0, nullptr);
+    fallout::f2jReferenceAiRetargetFromFriendlyFire(h1, tgt, &tile);
+    std::printf("rt-blocked tile=%d\n", tile);
+    fallout::objectSetLocation(d2, 199, 0, nullptr);
+    // Weaker allies are ignored: the source is the dog (70), the only
+    // ally in line is the human (10).
+    tile = tgtTile;
+    fallout::f2jReferenceAiRetargetFromFriendlyFire(d1, tgt, &tile);
+    std::printf("rt-weak tile=%d\n", tile);
+    // No allies at all.
+    fallout::f2jReferenceAiInfoSetLastTarget(d1, nullptr);
+    tile = tgtTile;
+    fallout::f2jReferenceAiRetargetFromFriendlyFire(h1, tgt, &tile);
+    std::printf("rt-none tile=%d\n", tile);
+    // Source with zero intelligence skips the scan.
+    int savedHumanInt = h1Proto->critter.data.baseStats[fallout::STAT_INTELLIGENCE];
+    h1Proto->critter.data.baseStats[fallout::STAT_INTELLIGENCE] = 0;
+    fallout::f2jReferenceAiInfoSetLastTarget(d1, tgt);
+    tile = tgtTile;
+    fallout::f2jReferenceAiRetargetFromFriendlyFire(h1, tgt, &tile);
+    std::printf("rt-int0 tile=%d\n", tile);
+    h1Proto->critter.data.baseStats[fallout::STAT_INTELLIGENCE] = savedHumanInt;
+
+    // Movement helpers, combat off (the animation tail cannot spin).
+    // The harness never ran animationInit, so the sequence store holds
+    // zeroed (non-complete) slots and every registration would fail.
+    fallout::animationReset();
+    fallout::gCombatState = fallout::COMBAT_STATE_PLAYER_TURN;
+
+    fallout::AiPacket* dogPacket = fallout::f2jReferenceAiPacketByNum(d1->data.critter.combat.aiPacket);
+    int savedDogDistance = fallout::f2jReferenceAiDistance(dogPacket);
+
+    // _ai_move_away with DISTANCE_STAY refuses.
+    fallout::f2jReferenceAiSetPacketDistance(dogPacket, (int)fallout::DISTANCE_STAY);
+    std::printf("ma-stay=%d\n", fallout::f2jReferenceAiMoveAway(d1, tgt, 3));
+    // With STAY_CLOSE the dog walks away from the adjacent enemy.
+    fallout::f2jReferenceAiSetPacketDistance(dogPacket, (int)fallout::DISTANCE_STAY_CLOSE);
+    std::printf("ma=%d\n", fallout::f2jReferenceAiMoveAway(d1, tgt, 12));
+    dumpAnim("ma-anim");
+
+    // _ai_run_away: the enemy is within max_dist, so the dog flees. The
+    // pending move-away sequence keeps the dog busy for the registry check,
+    // so reset the store first.
+    fallout::f2jReferenceAiSetPacketMaxDist(dogPacket, 10);
+    fallout::animationReset();
+    fallout::f2jReferenceAiRunAway(d1, tgt);
+    std::printf("ra-fleeing=%d\n", fallout::f2jReferenceCritterIsFleeing(d1) ? 1 : 0);
+    dumpAnim("ra-anim");
+    // Out of range: disengaging, no animation. The maneuver accumulates,
+    // so clear it first.
+    d1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+    fallout::f2jReferenceAiSetPacketMaxDist(dogPacket, 0);
+    fallout::f2jReferenceAiRunAway(d1, far);
+    std::printf("ra-far-fleeing=%d\n", fallout::f2jReferenceCritterIsFleeing(d1) ? 1 : 0);
+
+    // _ai_move_steps_closer with plenty of action points: run branch.
+    // The previous pending sequence keeps the owner busy for the registry
+    // check, so reset the store before each move.
+    d1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+    fallout::animationReset();
+    std::printf("mc=%d\n", fallout::f2jReferenceAiMoveStepsCloser(d1, tgt, 10, false));
+    dumpAnim("mc-run");
+    // Few action points: walk branch.
+    fallout::animationReset();
+    std::printf("mc-walk=%d\n", fallout::f2jReferenceAiMoveStepsCloser(d1, tgt, 1, false));
+    dumpAnim("mc-walk-anim");
+    // Multihex target: move to object branch (taunt prints the message).
+    fallout::animationReset();
+    tgt->flags |= fallout::OBJECT_MULTIHEX;
+    std::printf("mc-multi=%d\n", fallout::f2jReferenceAiMoveStepsCloser(d1, tgt, 10, true));
+    dumpAnim("mc-multi-anim");
+    tgt->flags &= ~fallout::OBJECT_MULTIHEX;
+
+    // _ai_find_friend: the nearest same-team friend is the human at
+    // distance 1; a3 above it fires the approach move.
+    fallout::animationReset();
+    std::printf("ff=%d\n", fallout::f2jReferenceAiFindFriend(d1, 30, 5) ? 1 : 0);
+    dumpAnim("ff-anim");
+
+    fallout::f2jReferenceAiSetPacketDistance(dogPacket, savedDogDistance);
+    h1Proto->critter.data.bonusStats[fallout::STAT_ARMOR_CLASS] = savedHumanAcBonus;
+    fallout::gCombatState = savedCombatState;
+    fallout::f2jReferenceAiOverCritters();
+}
 
 void sectionIsoRest()
 {
@@ -12447,6 +12678,7 @@ int main()
     RUN_SECTION(CombatAttack);
     RUN_SECTION(Path);
     RUN_SECTION(AiTarget);
+    RUN_SECTION(AiMove);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

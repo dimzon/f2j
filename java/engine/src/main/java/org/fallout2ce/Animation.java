@@ -474,4 +474,448 @@ public final class Animation {
 
         return 0;
     }
+
+    // ===== animation sequence store (src/animation.cc), the slice the AI
+    // movement helpers need. The tick pump and the per-step handlers stay
+    // game phase; registered sequences remain pending, which is what the
+    // [aimove] vectors observe. =====
+
+    // ANIM_COMPLETE (src/animation.cc:320).
+    private static final int ANIM_COMPLETE = -1000;
+    private static final int ANIMATION_SEQUENCE_LIST_CAPACITY = 64;
+    private static final int ANIMATION_DESCRIPTION_LIST_CAPACITY = 55;
+    private static final int ANIMATION_NON_RESERVED_LIST_CAPACITY = 52;
+
+    // AnimationRequestOptions (src/animation_defs.h).
+    public static final int ANIMATION_REQUEST_NONE = 0x00;
+    public static final int ANIMATION_REQUEST_UNRESERVED = 0x01;
+    public static final int ANIMATION_REQUEST_RESERVED = 0x02;
+
+    // AnimationSequenceFlags (src/animation.cc:104-120).
+    private static final int ANIM_SEQ_RESERVED = 0x04;
+    private static final int ANIM_SEQ_ACCUMULATING = 0x08;
+    private static final int ANIM_SEQ_0x10 = 0x10;
+    private static final int ANIM_SEQ_0x20 = 0x20;
+    private static final int ANIM_SEQ_INSIGNIFICANT = 0x40;
+
+    // AnimationKind values used by the AI moves (src/animation.cc:55+).
+    public static final int ANIM_KIND_MOVE_TO_OBJECT = 0;
+    public static final int ANIM_KIND_MOVE_TO_TILE = 1;
+    private static final int ANIM_KIND_ROTATE_TO_TILE = 7;
+
+    /** Port of the {@code AnimationDescription} fields the AI moves use. */
+    public static final class AnimationDescription {
+        public int kind;
+        public int anim;
+        public GameObject owner;
+        public GameObject destination;
+        public int tile;
+        public int elevation;
+        public int actionPoints;
+        public int delay;
+    }
+
+    /** Port of {@code AnimationSequence} (src/animation.cc:254). */
+    public static final class AnimationSequence {
+        public int step;
+        public int animationIndex;
+        public int length;
+        public int flags;
+        public final AnimationDescription[] animations = new AnimationDescription[ANIMATION_DESCRIPTION_LIST_CAPACITY];
+    }
+
+    private static final AnimationSequence[] animationSequences = new AnimationSequence[ANIMATION_SEQUENCE_LIST_CAPACITY];
+    private static int animationSequenceCurrentIndex = -1;
+    private static int animationDescriptionCurrentIndex;
+
+    static {
+        for (int index = 0; index < ANIMATION_SEQUENCE_LIST_CAPACITY; index++) {
+            animationSequences[index] = new AnimationSequence();
+            for (int action = 0; action < ANIMATION_DESCRIPTION_LIST_CAPACITY; action++) {
+                animationSequences[index].animations[action] = new AnimationDescription();
+            }
+        }
+    }
+
+    // 0x4139E8 animationReset: step/flags only - the C++ keeps length (and
+    // animationIndex), so stale sequences stay visible to length scans.
+    public static void animationReset() {
+        // animationStop: the drain is game phase (no pending work here).
+        for (int index = 0; index < ANIMATION_SEQUENCE_LIST_CAPACITY; index++) {
+            animationSequences[index].step = ANIM_COMPLETE;
+            animationSequences[index].flags = 0;
+        }
+        animationSequenceCurrentIndex = -1;
+    }
+
+    // 0x413A80 _anim_free_slot.
+    private static int animFreeSlot(int requestOptions) {
+        int freeSlot = -1;
+        int pending = 0;
+        for (int index = 0; index < ANIMATION_SEQUENCE_LIST_CAPACITY; index++) {
+            AnimationSequence sequence = animationSequences[index];
+            if (sequence.step != ANIM_COMPLETE
+                    || (sequence.flags & ANIM_SEQ_ACCUMULATING) != 0
+                    || (sequence.flags & ANIM_SEQ_0x20) != 0) {
+                if ((sequence.flags & ANIM_SEQ_RESERVED) == 0) {
+                    pending++;
+                }
+            } else if (freeSlot == -1
+                    && ((requestOptions & 0x100 /* PING */) == 0
+                        || (sequence.flags & ANIM_SEQ_0x10) == 0)) {
+                freeSlot = index;
+            }
+        }
+
+        if (freeSlot == -1) {
+            return -1;
+        } else if ((requestOptions & ANIMATION_REQUEST_RESERVED) != 0
+                || pending < ANIMATION_NON_RESERVED_LIST_CAPACITY) {
+            return freeSlot;
+        }
+
+        return -1;
+    }
+
+    // 0x413B48 _check_registry: the owner must not sit in another pending
+    // sequence.
+    private static int checkRegistry(GameObject obj) {
+        if (animationSequenceCurrentIndex == -1) {
+            return -1;
+        }
+
+        if (animationDescriptionCurrentIndex >= ANIMATION_DESCRIPTION_LIST_CAPACITY) {
+            return -1;
+        }
+
+        if (obj == null) {
+            return 0;
+        }
+
+        for (int sequenceIndex = 0; sequenceIndex < ANIMATION_SEQUENCE_LIST_CAPACITY; sequenceIndex++) {
+            AnimationSequence sequence = animationSequences[sequenceIndex];
+            if (sequenceIndex != animationSequenceCurrentIndex && sequence.step != ANIM_COMPLETE) {
+                for (int actionIndex = 0; actionIndex < sequence.length; actionIndex++) {
+                    AnimationDescription description = sequence.animations[actionIndex];
+                    if (obj == description.owner && !animationKindIsCallback(description.kind)) {
+                        if ((sequence.flags & ANIM_SEQ_INSIGNIFICANT) == 0) {
+                            return -1;
+                        }
+                        animSetEnd(sequenceIndex);
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    private static boolean animationKindIsCallback(int kind) {
+        return kind == 11 /* ANIM_KIND_CALLBACK */ || kind == 12 /* ANIM_KIND_CALLBACK3 */;
+    }
+
+    // _anim_set_end stub: the sequence-end tail (fidgets, combat turn
+    // bookkeeping) is game phase; mark the sequence complete.
+    private static int animSetEnd(int sequenceIndex) {
+        animationSequences[sequenceIndex].step = ANIM_COMPLETE;
+        return 0;
+    }
+
+    // 0x413C60 _anim_cleanup.
+    private static void animCleanup() {
+        if (animationSequenceCurrentIndex == -1) {
+            return;
+        }
+
+        for (int index = 0; index < ANIMATION_SEQUENCE_LIST_CAPACITY; index++) {
+            animationSequences[index].flags &= ~(ANIM_SEQ_ACCUMULATING | ANIM_SEQ_0x10);
+        }
+
+        // The art cache keys are game phase (no locks held here).
+
+        animationSequenceCurrentIndex = -1;
+    }
+
+    /** Port of {@code reg_anim_begin} (0x413B18). */
+    public static int regAnimBegin(int requestOptions) {
+        if (animationSequenceCurrentIndex != -1) {
+            return -1;
+        }
+
+        int slot = animFreeSlot(requestOptions);
+        if (slot == -1) {
+            return -1;
+        }
+
+        AnimationSequence sequence = animationSequences[slot];
+        sequence.flags |= ANIM_SEQ_ACCUMULATING;
+
+        if ((requestOptions & ANIMATION_REQUEST_RESERVED) != 0) {
+            sequence.flags |= ANIM_SEQ_RESERVED;
+        }
+
+        animationSequenceCurrentIndex = slot;
+        animationDescriptionCurrentIndex = 0;
+
+        return 0;
+    }
+
+    /**
+     * Port of {@code reg_anim_end} (0x414030). The combat-anim begin, the
+     * first-step run and the tick pump are game phase; the registered
+     * sequence stays pending, which is what the vectors observe.
+     */
+    public static int regAnimEnd() {
+        if (animationSequenceCurrentIndex == -1) {
+            return -1;
+        }
+
+        AnimationSequence sequence = animationSequences[animationSequenceCurrentIndex];
+        sequence.step = 0;
+        sequence.length = animationDescriptionCurrentIndex;
+        sequence.animationIndex = -1;
+        sequence.flags &= ~ANIM_SEQ_ACCUMULATING;
+        sequence.animations[0].delay = 0;
+        // isInCombat() branch: _combat_anim_begin is combat phase.
+
+        int index = animationSequenceCurrentIndex;
+        animationSequenceCurrentIndex = -1;
+
+        if ((sequence.flags & ANIM_SEQ_0x10) == 0) {
+            // _anim_set_continue(index, 1) runs the first step; the move
+            // handler leaves the sequence pending, so the observable state
+            // matches without running it.
+        }
+
+        return 0;
+    }
+
+    // 0x414394 animationRegisterMoveToTile.
+    public static int animationRegisterMoveToTile(GameObject owner, int tile, int elevation,
+            int actionPoints, int delay) {
+        if (checkRegistry(owner) == -1 || actionPoints == 0) {
+            animCleanup();
+            return -1;
+        }
+
+        if (tile == owner.tile && elevation == owner.elevation) {
+            return 0;
+        }
+
+        AnimationDescription description =
+                animationSequences[animationSequenceCurrentIndex].animations[animationDescriptionCurrentIndex];
+        description.kind = ANIM_KIND_MOVE_TO_TILE;
+        description.anim = 1 /* ANIM_WALK */;
+        description.owner = owner;
+        description.tile = tile;
+        description.elevation = elevation;
+        description.actionPoints = actionPoints;
+        description.delay = delay;
+
+        FrmId frmId = FrmId.ofCritter(FrmId.ofFid(owner.fid).frameId(), 1 /* ANIM_WALK */,
+                ArtDefs.WeaponAnimation.None.id(), owner.rotation.id() + 1);
+
+        if (animPreload(owner, frmId) == -1) {
+            animCleanup();
+            return -1;
+        }
+
+        animationDescriptionCurrentIndex++;
+
+        return 0;
+    }
+
+    // animationRegisterRunToTile (0x414564+).
+    public static int animationRegisterRunToTile(GameObject owner, int tile, int elevation,
+            int actionPoints, int delay) {
+        if (checkRegistry(owner) == -1 || actionPoints == 0) {
+            animCleanup();
+            return -1;
+        }
+
+        if (tile == owner.tile && elevation == owner.elevation) {
+            return 0;
+        }
+
+        if (Critter.critterIsEncumbered(owner)) {
+            if (PartyMembers.objectIsPartyMember(owner)) {
+                // reportOverloaded: game phase.
+            }
+
+            return animationRegisterMoveToTile(owner, tile, elevation, actionPoints, delay);
+        }
+
+        AnimationDescription description =
+                animationSequences[animationSequenceCurrentIndex].animations[animationDescriptionCurrentIndex];
+        description.kind = ANIM_KIND_MOVE_TO_TILE;
+        description.owner = owner;
+        description.tile = tile;
+        description.elevation = elevation;
+
+        if ((FrmId.ofFid(owner.fid).objectType() == ObjectType.CRITTER
+                && (owner.data.critter.combat.results.bits() & ObjTypes.Dam.CRIP_LEG_ANY.bits()) != 0)
+                || (owner == ObjectSystem.getDude() && Critter.dudeHasState(Critter.DUDE_STATE_SNEAKING)
+                    && Perk.perkGetRank(owner, PerkDefs.Perk.PERK_SILENT_RUNNING.id()) == 0)
+                || !FrmId.ofCritter(FrmId.ofFid(owner.fid).frameId(), 19 /* ANIM_RUNNING */,
+                    ArtDefs.WeaponAnimation.None.id(), owner.rotation.id() + 1).exist()) {
+            description.anim = 1 /* ANIM_WALK */;
+        } else {
+            description.anim = 19 /* ANIM_RUNNING */;
+        }
+
+        description.actionPoints = actionPoints;
+        description.delay = delay;
+
+        FrmId frmId = FrmId.ofCritter(FrmId.ofFid(owner.fid).frameId(), description.anim,
+                ArtDefs.WeaponAnimation.None.id(), owner.rotation.id() + 1);
+
+        if (animPreload(owner, frmId) == -1) {
+            animCleanup();
+            return -1;
+        }
+
+        animationDescriptionCurrentIndex++;
+
+        return 0;
+    }
+
+    // animationRegisterRunToObject.
+    public static int animationRegisterRunToObject(GameObject owner, GameObject destination,
+            int actionPoints, int delay) {
+        if (checkRegistry(owner) == -1 || actionPoints == 0) {
+            animCleanup();
+            return -1;
+        }
+
+        if (owner.tile == destination.tile && owner.elevation == destination.elevation) {
+            return 0;
+        }
+
+        if (Critter.critterIsEncumbered(owner)) {
+            if (PartyMembers.objectIsPartyMember(owner)) {
+                // reportOverloaded: game phase.
+            }
+
+            return animationRegisterMoveToObject(owner, destination, actionPoints, delay);
+        }
+
+        AnimationDescription description =
+                animationSequences[animationSequenceCurrentIndex].animations[animationDescriptionCurrentIndex];
+        description.kind = ANIM_KIND_MOVE_TO_OBJECT;
+        description.owner = owner;
+        description.destination = destination;
+
+        if ((FrmId.ofFid(owner.fid).objectType() == ObjectType.CRITTER
+                && (owner.data.critter.combat.results.bits() & ObjTypes.Dam.CRIP_LEG_ANY.bits()) != 0)
+                || (owner == ObjectSystem.getDude() && Critter.dudeHasState(Critter.DUDE_STATE_SNEAKING)
+                    && Perk.perkGetRank(owner, PerkDefs.Perk.PERK_SILENT_RUNNING.id()) == 0)
+                || !FrmId.ofCritter(FrmId.ofFid(owner.fid).frameId(), 19 /* ANIM_RUNNING */,
+                    ArtDefs.WeaponAnimation.None.id(), owner.rotation.id() + 1).exist()) {
+            description.anim = 1 /* ANIM_WALK */;
+        } else {
+            description.anim = 19 /* ANIM_RUNNING */;
+        }
+
+        description.actionPoints = actionPoints;
+        description.delay = delay;
+
+        FrmId frmId = FrmId.ofCritter(FrmId.ofFid(owner.fid).frameId(), description.anim,
+                ArtDefs.WeaponAnimation.None.id(), owner.rotation.id() + 1);
+
+        if (animPreload(owner, frmId) == -1) {
+            animCleanup();
+            return -1;
+        }
+
+        animationDescriptionCurrentIndex++;
+        return animationRegisterRotateToTile(owner, destination.tile);
+    }
+
+    // animationRegisterMoveToObject (walk variant; the encumbered
+    // fallback).
+    public static int animationRegisterMoveToObject(GameObject owner, GameObject destination,
+            int actionPoints, int delay) {
+        if (checkRegistry(owner) == -1 || actionPoints == 0) {
+            animCleanup();
+            return -1;
+        }
+
+        if (owner.tile == destination.tile && owner.elevation == destination.elevation) {
+            return 0;
+        }
+
+        AnimationDescription description =
+                animationSequences[animationSequenceCurrentIndex].animations[animationDescriptionCurrentIndex];
+        description.kind = ANIM_KIND_MOVE_TO_OBJECT;
+        description.anim = 1 /* ANIM_WALK */;
+        description.owner = owner;
+        description.destination = destination;
+        description.actionPoints = actionPoints;
+        description.delay = delay;
+
+        animationDescriptionCurrentIndex++;
+
+        return 0;
+    }
+
+    // animationRegisterRotateToTile (0x414CC8).
+    private static int animationRegisterRotateToTile(GameObject owner, int tile) {
+        if (checkRegistry(owner) == -1) {
+            animCleanup();
+            return -1;
+        }
+
+        AnimationDescription description =
+                animationSequences[animationSequenceCurrentIndex].animations[animationDescriptionCurrentIndex];
+        description.kind = ANIM_KIND_ROTATE_TO_TILE;
+        description.delay = -1;
+        description.owner = owner;
+        description.tile = tile;
+
+        animationDescriptionCurrentIndex++;
+
+        return 0;
+    }
+
+    /**
+     * Seam for {@code _anim_preload} (0x413D6C): the C++ locks the art and
+     * keeps the cache key; the observable part for the AI moves is whether
+     * the frm exists, mirrored via {@link FrmId#exist()}.
+     */
+    private static int animPreload(GameObject owner, FrmId frmId) {
+        return frmId.exist() ? 0 : -1;
+    }
+
+    /** Test seam: mirror of the [aimove] animation dump (actions 0-2). */
+    static int[] lastActionForTests() {
+        int[] out = new int[12];
+        for (int index = ANIMATION_SEQUENCE_LIST_CAPACITY - 1; index >= 0; index--) {
+            AnimationSequence sequence = animationSequences[index];
+            if (sequence.length > 0) {
+                for (int actionIndex = 0; actionIndex < 3; actionIndex++) {
+                    int base = actionIndex * 4;
+                    if (actionIndex >= sequence.length) {
+                        out[base] = -1;
+                        out[base + 1] = -1;
+                        out[base + 2] = -1;
+                        out[base + 3] = -1;
+                        continue;
+                    }
+                    AnimationDescription description = sequence.animations[actionIndex];
+                    out[base] = description.kind;
+                    out[base + 1] = description.anim;
+                    if (description.kind == ANIM_KIND_MOVE_TO_OBJECT) {
+                        GameObject destination = description.destination;
+                        out[base + 2] = destination != null ? destination.pid : -1;
+                    } else {
+                        out[base + 2] = description.tile;
+                    }
+                    out[base + 3] = description.actionPoints;
+                }
+                return out;
+            }
+        }
+
+        return null;
+    }
 }

@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-27) | **790 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-27) | **791 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v167.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]` и `[aitarget]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray`, `pathfinderFindPath` и выбор AI-цели (сортировки, `_ai_find_nearest_team[_in_combat]`, `aiFindAttackers`, `_ai_danger_source`, `isWithinPerceptionDetailed`) | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика, pathfinder и AI-выбор цели проверены C++-векторами; дальше — остаток дерева AI-решений (движение, химия) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `CombatAi.aiDangerSource`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
+| Эталон харнеса | `golden/v167.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]`, `[aitarget]` и `[aimove]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray`, `pathfinderFindPath`, выбор AI-цели (сортировки, `_ai_find_nearest_team[_in_combat]`, `aiFindAttackers`, `_ai_danger_source`, `isWithinPerceptionDetailed`) и AI-движение (`_obj_ai_blocking_at`, `_cai_attackWouldIntersect`, `_cai_retargetTileFromFriendlyFire`, `_ai_run_away`/`_ai_move_away`/`_ai_move_steps_closer`/`_ai_find_friend`) | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика, pathfinder, AI-выбор цели и AI-движение проверены C++-векторами; дальше — химия (`_ai_check_drugs`, `_ai_search_environ`) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `CombatAi.aiDangerSource`, `CombatAi.aiRunAway`, `CombatAi.aiMoveStepsCloser`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -305,6 +305,45 @@ melee/armor-бонусы) зеркалятся в тесте явно. `objectSe
 писалки пакета (консоль/UI), `aiMessageListInit/Free/Reload` хвост,
 `_caiTeamCombatInit/_caiSetupTeamCombat` (командные манипуляции whoHitMe),
 `_ai_search_environ`/`_ai_retrieve_object`/химия.
+
+Следующий слайс (2026-10-27): AI-движение.
+Векторы `[aimove]` (`v168`) снимают настоящий C++: quirk `_obj_ai_blocking_at`
+(первый найденный криттер запоминается в `_moveBlockObj` и пропускается —
+вызов возвращает не-криттера или null, а следующий вызов отдаёт
+запомненного), `_cai_attackWouldIntersect` (линия выстрела через
+`_make_straight_path_func` с `_obj_shoot_blocking_at`; друг на линии →
+пересечение, вне линии → проверка случайного попадания через
+safety-invalidate), ретаргет `_cai_retargetTileFromFriendlyFire` (союзники
+той же команды с lastTarget и рейтингом ≥ источника; фланки от поворота
+союзника; блок одного фланка → другой; слабые союзники игнорируются) и
+движение: `_ai_run_away` (маневр FLEEING, цикл трёх направлений через
+`_make_path` с пустой целью, бег при max_dist), `_ai_move_away` (STAY → -1,
+шаги прочь), `_ai_move_steps_closer` (гарды AP/дистанции/STAY_CLOSE,
+ретаргет, ветки бег/шаг по AP и тайл/объект по multihex), `_ai_find_friend`.
+Наблюдаемый эффект — зарегистрированная анимация (kind/anim/цель/AP),
+читаемая новым probe TU `animation_probe.cc` (включает неизменённый
+`animation.cc`; его объект исключён из линковки). Движение гоняется вне боя:
+`reg_anim_end` тогда не входит в `_combat_anim_begin`, и
+`_combat_turn_run` не крутится. Портированы `Animation` (хранилище
+последовательностей: `animationReset` — только step/flags, длина
+сохраняется как в C; `reg_anim_begin/_end`, `_anim_free_slot`,
+`_check_registry`, `_anim_cleanup`, регистраторы move/run-to-tile,
+run/move-to-object, rotate-to-tile; швы: тик-насос, первый шаг, ключи
+арт-кэша — преклоб существует = `_anim_preload`), `ObjectSystem`
+(`objAiBlockingAt` + глобал `_moveBlockObj`), `CombatAi` (движение и
+ретаргет; `_combatai_msg` — шов интерфейсных сообщений),
+`Combat.combatTestIncidentalHit`. Найдено по ходу: гарды
+`_ai_move_steps_closer` (AP ≤ 0, STAY/STAY_CLOSE-дистанция, цель рядом)
+стоят до `reg_anim_begin`; hp-сид ростера (криттерIsDead читает текущий
+HP) нужен и здесь; сетка вокруг старых секций замусорена их объектами —
+секция переехала на чистый тайл 38101; `_anim_free_slot` требует
+инициализированного хранилища (без `animationInit` все слоты
+«незавершённые» — секция зовёт `animationReset`); pending-последовательность
+держит владельца для `_check_registry`, поэтому харнес сбрасывает
+хранилище перед каждой регистрацией; INT-гард ретаргета недостижим (кламп
+INT ≥ 1) — вектор документирует кламп. Отложено: тик-насос анимаций и
+обработчики шагов (игровая фаза), хвост `_combat_turn_run` в
+`aiFinishMovement`, перк/сник-ветки дуда в регистраторах (швы на месте).
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar

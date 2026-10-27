@@ -394,4 +394,47 @@ int f2jReferenceAiDistance(AiPacket* ai)
     return (int)ai->distance;
 }
 
+void f2jReferenceAiSetPacketMaxDist(AiPacket* ai, int maxDist)
+{
+    ai->max_dist = maxDist;
+}
+
+// Movement slice: run/away/move-closer helpers register animations; the
+// animation probe TU reads the registered sequence.
+int f2jReferenceAiMoveStepsCloser(Object* critter, Object* target, int actionPoints, bool taunt)
+{
+    return _ai_move_steps_closer(critter, target, actionPoints, taunt);
+}
+
+int f2jReferenceAiMoveCloser(Object* critter, Object* target, bool taunt)
+{
+    return _ai_move_closer(critter, target, taunt);
+}
+
+void f2jReferenceAiRunAway(Object* critter, Object* enemy)
+{
+    _ai_run_away(critter, enemy);
+}
+
+int f2jReferenceAiMoveAway(Object* critter, Object* enemy, int distance)
+{
+    return _ai_move_away(critter, enemy, distance);
+}
+
+bool f2jReferenceAiFindFriend(Object* critter, int a2, int a3)
+{
+    return _ai_find_friend(critter, a2, a3);
+}
+
+void f2jReferenceAiRetargetFromFriendlyFire(Object* source, Object* target, int* tilePtr)
+{
+    _cai_retargetTileFromFriendlyFire(source, target, tilePtr);
+}
+
+bool f2jReferenceAiAttackWouldIntersect(Object* attacker, Object* defender, Object* attackerFriend,
+    int tile, int* distance)
+{
+    return _cai_attackWouldIntersect(attacker, defender, attackerFriend, tile, distance);
+}
+
 } // namespace fallout

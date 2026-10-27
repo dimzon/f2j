@@ -728,6 +728,73 @@ public final class ObjectSystem {
         return null;
     }
 
+    // _moveBlockObj (src/object.cc:208): the critter _obj_ai_blocking_at
+    // remembered for the next call.
+    public static GameObject moveBlockObj;
+
+    // 0x48B454 _obj_ai_blocking_at: like objBlockingAt, but the first
+    // critter found is remembered in _moveBlockObj and skipped - the call
+    // returns a later non-critter blocker or null, and the NEXT call
+    // returns the remembered critter. [aimove] pins the quirk.
+    public static GameObject objAiBlockingAt(GameObject exclude, int tile, int elevation) {
+        if (!MapDefs.hexGridTileIsValid(tile)) {
+            return null;
+        }
+
+        GameObjectListNode node = tileHeads[tile];
+        while (node != null) {
+            GameObject obj = node.obj;
+            if (obj.elevation == elevation
+                    && (obj.flags.bits() & (ObjectFlags.HIDDEN.bits() | ObjectFlags.NO_BLOCK.bits())) == 0
+                    && obj != exclude) {
+                ObjectType type = FrmId.ofFid(obj.fid).objectType();
+                if (type == ObjectType.CRITTER || type == ObjectType.SCENERY
+                        || type == ObjectType.WALL) {
+                    if (moveBlockObj != null || type != ObjectType.CRITTER) {
+                        return obj;
+                    }
+
+                    moveBlockObj = obj;
+                }
+            }
+            node = node.next;
+        }
+
+        for (int rotation = org.fallout2ce.Rotation.FIRST;
+                rotation < org.fallout2ce.Rotation.COUNT;
+                rotation++) {
+            int adjacentTile = TileMath.tileGetTileInDirection(tile,
+                    org.fallout2ce.Rotation.fromInt(rotation), 1);
+            if (!MapDefs.hexGridTileIsValid(adjacentTile)) {
+                continue;
+            }
+
+            node = tileHeads[adjacentTile];
+            while (node != null) {
+                GameObject obj = node.obj;
+                if ((obj.flags.bits() & ObjectFlags.MULTIHEX.bits()) != 0) {
+                    if (obj.elevation == elevation
+                            && (obj.flags.bits()
+                                & (ObjectFlags.HIDDEN.bits() | ObjectFlags.NO_BLOCK.bits())) == 0
+                            && obj != exclude) {
+                        ObjectType type = FrmId.ofFid(obj.fid).objectType();
+                        if (type == ObjectType.CRITTER || type == ObjectType.SCENERY
+                                || type == ObjectType.WALL) {
+                            if (moveBlockObj != null || type != ObjectType.CRITTER) {
+                                return obj;
+                            }
+
+                            moveBlockObj = obj;
+                        }
+                    }
+                }
+                node = node.next;
+            }
+        }
+
+        return null;
+    }
+
     // _obj_portal_is_walk_thru (src/object.cc:2113): a scenery counts as
     // walk-through when its proto carries the walk-through generic flag; the
     // CE auto-open QOL additionally treats plain unlocked scriptless doors
@@ -3913,6 +3980,7 @@ public final class ObjectSystem {
     }
 
     static void resetForTests() {
+        moveBlockObj = null;
         head = null;
         tileHeads = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
         objectListByTile = new GameObjectListNode[MapDefs.HEX_GRID_SIZE];
