@@ -8,7 +8,8 @@ namespace fallout {
 
 // Dump the most recently registered animation sequence: for actions 0-2,
 // kind, anim, destination (tile or pid) and action points. out[0..11];
-// returns 0 when a sequence was found, -1 otherwise.
+// out[12] receives the sequence index (out[13] = 1 on success); returns
+// the sequence index, or -1 when no sequence exists.
 int f2jReferenceAnimLastAction(int* out)
 {
     for (int index = ANIMATION_SEQUENCE_LIST_CAPACITY - 1; index >= 0; index--) {
@@ -34,7 +35,9 @@ int f2jReferenceAnimLastAction(int* out)
                 }
                 out[base + 3] = description->actionPoints;
             }
-            return 0;
+            out[12] = index;
+            out[13] = 1;
+            return index;
         }
     }
 

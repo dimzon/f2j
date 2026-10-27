@@ -1849,6 +1849,70 @@ public final class CombatAi {
         return aiMoveStepsCloser(critter, target, critter.data.critter.combat.ap, taunt);
     }
 
+    /** Port of {@code _cai_perform_distance_prefs} (0x42AFDC). */
+    public static int caiPerformDistancePrefs(GameObject a1, GameObject a2) {
+        if (a1.data.critter.combat.ap <= 0) {
+            return -1;
+        }
+
+        int distance = aiGetPacket(a1).distance;
+
+        if (a2 != null) {
+            if ((a2.data.critter.combat.results.bits() & ObjTypes.Dam.DEAD.bits()) != 0) {
+                a2 = null;
+            }
+        }
+
+        if (distance == CombatAiDefs.DistanceMode.DISTANCE_STAY_CLOSE.id()) {
+            if (a1.data.critter.combat.whoHitMe != ObjectSystem.getDude()) {
+                int dudeDistance = ObjectSystem.objectGetDistanceBetween(a1, ObjectSystem.getDude());
+                if (dudeDistance > 5) {
+                    aiMoveStepsCloser(a1, ObjectSystem.getDude(), dudeDistance - 5, false);
+                }
+            }
+        } else if (distance == CombatAiDefs.DistanceMode.DISTANCE_CHARGE.id()) {
+            if (a2 != null) {
+                aiMoveCloser(a1, a2, true);
+            }
+        } else if (distance == CombatAiDefs.DistanceMode.DISTANCE_SNIPE.id()) {
+            if (a2 != null) {
+                // SFALL: Fix AI behavior for "Snipe" distance preference.
+                int targetDistance = ObjectSystem.objectGetDistanceBetween(a1, a2);
+                if (targetDistance < 10) {
+                    int attackCost = Item.weaponGetActionPointCost(a1,
+                        CombatDefs.HitMode.HIT_MODE_RIGHT_WEAPON_PRIMARY.id(), false);
+                    int movementPoints = a1.data.critter.combat.ap - attackCost;
+                    if (movementPoints > 0) {
+                        if (movementPoints + targetDistance - 1 < 5) {
+                            int attackerRating = combataiRating(a1);
+                            int defenderRating = combataiRating(a2);
+                            if (attackerRating < defenderRating) {
+                                aiMoveAway(a1, a2, 10);
+                            }
+                        }
+                    } else {
+                        aiMoveAway(a1, a2, 10);
+                    }
+                }
+            }
+        }
+
+        int[] tilePtr = new int[] { a1.tile };
+        if (caiRetargetTileFromFriendlyFire(a1, a2, tilePtr) == 0
+                && tilePtr[0] != a1.tile) {
+            Animation.regAnimBegin(Animation.ANIMATION_REQUEST_RESERVED);
+            Animation.animationRegisterMoveToTile(a1, tilePtr[0], a1.elevation,
+                a1.data.critter.combat.ap, 0);
+            if (Animation.regAnimEnd() != 0) {
+                return -1;
+            }
+            // _combat_turn_run: the combat tail is a game-phase seam (it
+            // spins on the animation counter headless).
+        }
+
+        return 0;
+    }
+
     /** {@code AiRetargetData} (src/combat_ai.cc:60). */
     private static final class AiRetargetData {
         GameObject source;

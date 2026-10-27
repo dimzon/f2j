@@ -7326,6 +7326,7 @@ int f2jReferenceAiMoveCloser(Object*, Object*, bool);
 void f2jReferenceAiRunAway(Object*, Object*);
 int f2jReferenceAiMoveAway(Object*, Object*, int);
 bool f2jReferenceAiFindFriend(Object*, int, int);
+int f2jReferenceAiPerformDistancePrefs(Object*, Object*);
 void f2jReferenceAiRetargetFromFriendlyFire(Object*, Object*, int*);
 bool f2jReferenceAiAttackWouldIntersect(Object*, Object*, Object*, int, int*);
 int f2jReferenceAnimLastAction(int*);
@@ -9073,6 +9074,136 @@ void sectionAiMove()
     fallout::f2jReferenceAiSetPacketDistance(dogPacket, savedDogDistance);
     h1Proto->critter.data.bonusStats[fallout::STAT_ARMOR_CLASS] = savedHumanAcBonus;
     fallout::gCombatState = savedCombatState;
+    fallout::f2jReferenceAiOverCritters();
+}
+
+void sectionAiDist()
+{
+    std::puts("[aidist]");
+
+    // Distance preferences (_cai_perform_distance_prefs) over the already
+    // ported movement/retarget helpers. The combat tail of the retarget
+    // branch cannot run headless (_combat_turn_run spins on the anim
+    // counter), so the section runs out of combat where aiInfo reads are
+    // null and the retarget stays inert; the retarget itself and the anim
+    // registrars are pinned by [aimove].
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // human, team 1, the weak sniper
+    fallout::Object* d1 = nullptr; // dog, team 1, the main actor
+    fallout::Object* d2 = nullptr; // dog, team 1, parked
+    fallout::Object* tgt = nullptr; // dog, team 2, the target
+    fallout::Object* far = nullptr; // dog, team 2, far enemy
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&d2, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&tgt, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&far, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr || d2 == nullptr || tgt == nullptr
+        || far == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    const int a = 38101;
+    const int rosterDistances[5] = { 10, 0, -1, 4, 40 };
+    fallout::Object* roster[5] = { dude, h1, d1, tgt, far };
+    for (int index = 0; index < 5; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = index == 3 || index == 4 ? 2 : 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 5;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        if (index == 2) {
+            fallout::objectSetLocation(roster[index],
+                fallout::tileGetTileInDirection(a, fallout::ROTATION_NW, 1), 0, nullptr);
+        } else if (index != 0) {
+            fallout::objectSetLocation(roster[index],
+                fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
+                0, nullptr);
+        }
+    }
+    dude->tile = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[0]);
+    dude->elevation = 0;
+
+    fallout::f2jReferenceAiInfoInit(5);
+    fallout::f2jReferenceAiBeginCritters(5, roster);
+    fallout::animationReset();
+
+    auto dumpAnim = [](const char* tag) {
+        int dump[14];
+        if (fallout::f2jReferenceAnimLastAction(dump) != -1) {
+            std::printf("%s slot=%d kind=%d anim=%d dst=%d ap=%d | kind=%d anim=%d dst=%d ap=%d | kind=%d anim=%d dst=%d ap=%d\n",
+                tag, dump[12], dump[0], dump[1], dump[2], dump[3], dump[4], dump[5], dump[6],
+                dump[7], dump[8], dump[9], dump[10], dump[11]);
+        } else {
+            std::printf("%s none\n", tag);
+        }
+    };
+
+    // Unarmed AP cost for the human sniper (no weapon yet).
+    std::printf("unarmed-apcost=%d\n",
+        fallout::weaponGetActionPointCost(h1, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, false));
+
+    fallout::Object* pistol = nullptr;
+    fallout::objectCreateWithProtoId(&pistol, fallout::ProtoId(8));
+    if (pistol == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::itemAdd(d1, pistol, 1);
+    pistol->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+    fallout::AiPacket* dogPacket = fallout::f2jReferenceAiPacketByNum(d1->data.critter.combat.aiPacket);
+    int savedDogDistance = fallout::f2jReferenceAiDistance(dogPacket);
+    fallout::AiPacket* humanPacket = fallout::f2jReferenceAiPacketByNum(h1->data.critter.combat.aiPacket);
+    int savedHumanDistance = fallout::f2jReferenceAiDistance(humanPacket);
+
+    // STAY_CLOSE: the dog's whoHitMe is not the dude and the dude is more
+    // than 5 tiles away, so the dog steps closer.
+    fallout::f2jReferenceAiSetPacketDistance(dogPacket, (int)fallout::DISTANCE_STAY_CLOSE);
+    std::printf("sc=%d\n", fallout::f2jReferenceAiPerformDistancePrefs(d1, tgt));
+    dumpAnim("sc-anim");
+
+    // CHARGE: the dog charges the target; the taunt prints the packet line.
+    fallout::animationReset();
+    fallout::f2jReferenceAiSetPacketDistance(dogPacket, (int)fallout::DISTANCE_CHARGE);
+    std::printf("ch=%d\n", fallout::f2jReferenceAiPerformDistancePrefs(d1, tgt));
+    dumpAnim("ch-anim");
+
+    // SNIPE weak: the human (rating 10) snipes the dog (rating 70); with
+    // spare AP after the shot cost the weaker actor retreats.
+    fallout::animationReset();
+    fallout::f2jReferenceAiSetPacketDistance(humanPacket, (int)fallout::DISTANCE_SNIPE);
+    std::printf("sn-weak=%d\n", fallout::f2jReferenceAiPerformDistancePrefs(h1, d1));
+    dumpAnim("sn-weak-anim");
+
+    // SNIPE no AP: the dog has AP 3, the pistol costs 4, so the movement
+    // points are spent - retreat.
+    d1->data.critter.combat.ap = 3;
+    fallout::animationReset();
+    fallout::f2jReferenceAiSetPacketDistance(dogPacket, (int)fallout::DISTANCE_SNIPE);
+    std::printf("sn-noap=%d\n", fallout::f2jReferenceAiPerformDistancePrefs(d1, tgt));
+    dumpAnim("sn-noap-anim");
+
+    // SNIPE no spare AP: the pistol costs the dog's whole AP (5), so the
+    // movement points are exhausted and the else-branch retreat fires even
+    // though the ratings are equal. The animation matches a direct
+    // move-away.
+    d1->data.critter.combat.ap = 5;
+    fallout::animationReset();
+    std::printf("sn-strong=%d\n", fallout::f2jReferenceAiPerformDistancePrefs(d1, tgt));
+    dumpAnim("sn-strong-anim");
+
+    fallout::f2jReferenceAiSetPacketDistance(dogPacket, savedDogDistance);
+    fallout::f2jReferenceAiSetPacketDistance(humanPacket, savedHumanDistance);
     fallout::f2jReferenceAiOverCritters();
 }
 
@@ -12679,6 +12810,7 @@ int main()
     RUN_SECTION(Path);
     RUN_SECTION(AiTarget);
     RUN_SECTION(AiMove);
+    RUN_SECTION(AiDist);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

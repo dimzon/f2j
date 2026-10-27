@@ -421,6 +421,11 @@ int f2jReferenceAiMoveAway(Object* critter, Object* enemy, int distance)
     return _ai_move_away(critter, enemy, distance);
 }
 
+int f2jReferenceAiPerformDistancePrefs(Object* critter, Object* target)
+{
+    return _cai_perform_distance_prefs(critter, target);
+}
+
 bool f2jReferenceAiFindFriend(Object* critter, int a2, int a3)
 {
     return _ai_find_friend(critter, a2, a3);

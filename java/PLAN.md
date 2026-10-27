@@ -16,10 +16,10 @@
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
-| Тесты (последний прогон, 2026-10-27) | **791 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
+| Тесты (последний прогон, 2026-10-27) | **792 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v167.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]`, `[aitarget]` и `[aimove]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray`, `pathfinderFindPath`, выбор AI-цели (сортировки, `_ai_find_nearest_team[_in_combat]`, `aiFindAttackers`, `_ai_danger_source`, `isWithinPerceptionDetailed`) и AI-движение (`_obj_ai_blocking_at`, `_cai_attackWouldIntersect`, `_cai_retargetTileFromFriendlyFire`, `_ai_run_away`/`_ai_move_away`/`_ai_move_steps_closer`/`_ai_find_friend`) | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика, pathfinder, AI-выбор цели и AI-движение проверены C++-векторами; дальше — химия (`_ai_check_drugs`, `_ai_search_environ`) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `CombatAi.aiDangerSource`, `CombatAi.aiRunAway`, `CombatAi.aiMoveStepsCloser`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
+| Эталон харнеса | `golden/v167.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]`, `[aitarget]`, `[aimove]` и `[aidist]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray`, `pathfinderFindPath`, выбор AI-цели (сортировки, `_ai_find_nearest_team[_in_combat]`, `aiFindAttackers`, `_ai_danger_source`, `isWithinPerceptionDetailed`) и AI-движение (`_obj_ai_blocking_at`, `_cai_attackWouldIntersect`, `_cai_retargetTileFromFriendlyFire`, `_ai_run_away`/`_ai_move_away`/`_ai_move_steps_closer`/`_ai_find_friend`) и дистанционные предпочтения (`_cai_perform_distance_prefs`) | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика, pathfinder, AI-выбор цели, AI-движение и дистанции проверены C++-векторами; дальше — химия (`_ai_check_drugs`, `_ai_search_environ`) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `CombatAi.aiDangerSource`, `CombatAi.aiRunAway`, `CombatAi.aiMoveStepsCloser`, `CombatAi.caiPerformDistancePrefs`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
 
 Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
 (общая блочная куча строк интерпретатора и компилятора). Осталось только
@@ -344,6 +344,25 @@ HP) нужен и здесь; сетка вокруг старых секций 
 INT ≥ 1) — вектор документирует кламп. Отложено: тик-насос анимаций и
 обработчики шагов (игровая фаза), хвост `_combat_turn_run` в
 `aiFinishMovement`, перк/сник-ветки дуда в регистраторах (швы на месте).
+Следующий слайс (2026-10-27): дистанционные предпочтения.
+Векторы `[aidist]` (`v169`) снимают `_cai_perform_distance_prefs`: STAY_CLOSE
+(ктоHitMe != dude и dude дальше 5 тайлов → подход к dude), CHARGE (таунт
+печатает строку пакета), SNIPE-slack (человек rating 10 против собаки 70,
+после стоимости выстрела хватает очков действий и слабый отступает), SNIPE
+без запаса (AP 3 против стоимости 5) и SNIPE с AP = стоимость (5 = 5:
+очков действий ноль → ветка else отступает даже при равных рейтингах —
+это и есть исходное поведение C++). Точность вектора держится на
+`f2jReferenceAnimLastAction`, дополненном индексом слота: когда новая
+регистрация не происходит, дамп показывает прежний слот — так
+документируется «без движения». Хвост ретаргета с анимацией не гоняется
+(в бою `_combat_turn_run` крутится на счётчике анимаций headless) —
+сам ретаргет и регистраторы покрыты `[aimove]`. Портирован
+`CombatAi.caiPerformDistancePrefs` (шав `_combat_turn_run` в хвосте).
+Найдено по ходу: стоимость основного выстрела пистолета равна 5 AP (не 3,
+как unarmed), поэтому SNIPE-ветка else срабатывает даже при AP = полная
+стоимость; при сборке векторного харнеса нельзя приравнивать void-зонд к
+int (правка sn-diag ломала сборку и капча молча показывала старый
+бинарник).
 
 - Исправлена читалка `weaponGetSkillValue`: C++ возвращает **значение навыка**
   через `weaponGetSkillForHitMode`, а не ID из таблицы типов атак. Solar
