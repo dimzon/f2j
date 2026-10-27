@@ -1,6 +1,6 @@
 # PLAN.md — план доведения порта до играбельного состояния
 
-Дата снимка: 2026-10-26, `HEAD = 44f26b6d` (`main`, чисто, впереди `origin`).
+Дата снимка: 2026-10-27, `HEAD = 693594ca` (`main`, чисто, в sync с `origin`).
 Правила не меняются: сначала векторы в `docker/refharness` (`ref_main.cc` + новый
 `golden/vN.txt`, старые immutable), потом Java-класс; перед каждым коммитом
 `mvn -B test` из `java/` + `check-refharness.ps1` → `VECTORS_MATCH`;
@@ -11,36 +11,15 @@
 
 | Метрика | Значение | Где проверено |
 |---|---|---|
-| Файлов Java в `engine/src/main` | 136 | `rglob('*.java')` |
-| Файлов Java в `engine/src/test` | 186 | то же |
+| Файлов Java в `engine/src/main` | 145 | `rglob('*.java')` |
+| Файлов Java в `engine/src/test` | 214 | то же |
 | Билд-инов объявлено в `GameApi` / слотов в `GameApiSlots` | 161 / 161 | `GameApi.java`, `GameApiSlots.java` |
 | Билд-инов в `PROVIDED_OPCODES` (`GameScriptApi`) | **161/161** | `GameScriptApi.java:38+` |
 | **Не отдаётся игрой** | **0** | полноту держит `GameApiDispatchStackTest` |
 | Тесты (последний прогон, 2026-10-27) | **797 engine + 23 platform, 0 падений, 0 ошибок, 3 skipped** | полный `mvn -B -o test` с `F2J_GAMEDATA` |
 | `CompiledSweepTest` | 1443 скрипта, **1442 совпадают**, 1 расхождение — только `KRUPPER.int` | отчёт surefire; `KNOWN` в тесте |
-| Эталон харнеса | `golden/v167.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]`, `[aitarget]`, `[aimove]`, `[aidist]`, `[aiattack]`, `[aimdrug]`, `[combatai]`, `[combatendattempt]` и `[aimteam]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия (`_ai_best_weapon`, `_ai_search_inven_weap`/`armor`, `aiCanUseItem`, `_ai_pick_hit_mode`, `_combat_safety_invalidate_weapon`, `aiHaveAmmo`, `weaponCanBeReloadedWith`), ветку случайной траектории/гранаты, `_compute_explosion_on_extras`, `_compute_spray`, `pathfinderFindPath`, выбор AI-цели (сортировки, `_ai_find_nearest_team[_in_combat]`, `aiFindAttackers`, `_ai_danger_source`, `isWithinPerceptionDetailed`) и AI-движение (`_obj_ai_blocking_at`, `_cai_attackWouldIntersect`, `_cai_retargetTileFromFriendlyFire`, `_ai_run_away`/`_ai_move_away`/`_ai_move_steps_closer`/`_ai_find_friend`) и дистанционные предпочтения (`_cai_perform_distance_prefs`) и голову AI-атаки (`_ai_called_shot`, `_ai_attack`-гард) и химию (`drugItemTakeDrug` + эффекты/аддикция, `_ai_search_environ`) и сборку `_combat_ai` (FLEEING/calm/join/stop) и гейт конца боя (`combatAttemptEnd`) и командные манипуляции whoHitMe (`_caiSetupTeamCombat``/`_caiTeamCombatInit`) | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `check.sh` |
-| Активный фронт работ | Этап 3: выполнение атаки, завершение, bad-shot, критические таблицы, завершение боя, AI-пакеты/рейтинг/хелперы решений, AI-инвентарь/выбор оружия, баллистика, pathfinder, AI-выбор цели, AI-движение, дистанции, голова AI-атаки, химия, главная функция AI-хода, гейт конца боя и командные whoHitMe-манипуляции проверены C++-векторами; дальше — `_combat_input` (UI-фаза) и рендер (`_ai_check_drugs`, `_ai_search_environ`) и `_combat_input` | `Combat.combatAttack`, `Combat.attackComputeCriticalHit`, `Combat.combatPlayerKnockedOutBy`, `CombatAi.aiInit`, `CombatAi.combataiRating`, `CombatAi.aiCanUseWeapon`, `CombatAi.aiBestWeapon`, `CombatAi.aiSearchInvenWeap`, `CombatAi.aiCanUseItem`, `CombatAi.aiPickHitMode`, `CombatAi.aiDangerSource`, `CombatAi.aiRunAway`, `CombatAi.aiMoveStepsCloser`, `CombatAi.caiPerformDistancePrefs`, `CombatAi.aiCalledShot`, `CombatAi.aiAttack`, `Drugs.drugItemTakeDrug`, `CombatAi.aiSearchEnviron`, `CombatAi.combatAi`, `CombatAi.combataiWantToJoin`, `CombatAi.combataiWantToStop`, `Combat.combatAttemptEnd`, `Combat.combatSafetyInvalidateWeapon`, `Item.weaponCanBeReloadedWith`, `Combat.computeExplosionOnExtras`, `Combat.computeSpray`, `Animation.pathfinderFindPath` |
-
-Про `CompiledSweepTest`: HUNTER.int и ROMERO.int из старых отчётов **уже пофикшены**
-(общая блочная куча строк интерпретатора и компилятора). Осталось только
-фундаментальное ограничение KRUPPER.int — прыжок на вычисленный адрес,
-который скомпилированный код знать не может.
-
-Исходное расхождение `PORTING.md` (161 заявлено, 147 фактически) закрыто
-Этапами 0–1. Сейчас все 161 слота доступны; наличие слота само по себе
-не означает полной реализации всех ветвей игрового поведения.
-
-## 2. Карта недостающих билд-инов: закрыта Этапом 1
-
-Все 13 недостававших билд-инов отданны (коммиты указаны). Таблица ниже —
-история скоупа; актуальное состояние — `PROVIDED_OPCODES` (161/161),
-полноту держит `GameApiDispatchStackTest`.
-
-Сверка `PROVIDED_OPCODES` против слотов `GameApiSlots` (порядок — по числу
-вызовов в shipped-скриптах, т.е. по цене). `critter_rm_trait` (0x8103) уже
-отдаётся — метод, диспетчер и слот были, не хватало одной строки в
-`PROVIDED_OPCODES` (добавлена Этапом 0):
-
+| Эталон харнеса | `golden/v174.txt`; `[combatattack]`, `[combatbadshot]`, `[criticalhit]`, `[combatend]`, `[ai]`, `[aidec]`, `[aiinv]`, `[rangedmiss]`, `[explosionextras]`, `[spray]`, `[path]`, `[aitarget]`, `[aimove]`, `[aidist]`, `[aiattack]`, `[aimdrug]`, `[combatai]`, `[combatendattempt]`, `[aimteam]` снимают настоящий C++ `_combat_attack`, `_combat_anim_finished`, `_combat_check_bad_shot`, `attackComputeCriticalHit`, `_combat_player_knocked_out_by`, `aiInit`/`_combatai_rating`/`aiGetRunAwayMode`, хелперы AI-решений, AI-инвентарь/выбор оружия, баллистику (spray/ranged-miss/explosion-extras), `pathfinderFindPath`, выбор AI-цели и AI-движение, дистанционные предпочтения, голову AI-атаки, химию (`drugItemTakeDrug`+эффекты/аддикция, `_ai_search_environ`), сборку `_combat_ai` (FLEEING/calm/join/stop), гейт конца боя (`combatAttemptEnd`) и командные whoHitMe-манипуляции | `docker/refharness/combat_attack_probe.cc`, `combat_ai_probe.cc`, `animation_probe.cc`, `check.sh` |
+| Активный фронт работ | Этап 3 закрыт: боевой цикл, AI-пакеты/рейтинг/хелперы/инвентарь/выбор оружия/выбор цели/движение/дистанции/атака/химия/главная функция AI-хода/гейт конца боя/командные whoHitMe проверены C++-векторами; дальше — `_combat_input` (UI-фаза), затем Этап 4 (игровой цикл) | `Combat.combatAttack`, `CombatAi.combatAi`, `Combat.combatAttemptEnd`, `CombatAi.caiTeamCombatInit`, `Drugs.drugItemTakeDrug`, `Animation.pathfinderFindPath`, `Combat.computeSpray` и др. |
 | Вызовов | Opcode | Метод | Что нужно | Вердикт |
 |---|---|---|---|---|
 | 1601 | 0x80CE | `animateMoveObjToTile` | очередь анимаций + straight path; вне боя | Этап 1: телепорт через `objectSetLocation` + проверки (`9a35dd4d`, `[animovetile]`/`v149`) |
@@ -465,10 +444,12 @@ int (правка sn-diag ломала сборку и капча молча п�
 - `KRUPPER.int` — неустранимо для компилятора (прыжок на вычисленный адрес); держать в `KNOWN` с комментарием, не пытаться «починить».
 - Временные `Probe*`-тесты и файлы мимо `java/`/`docker` — ловить ревью чек-листом: `git status`, `git ls-files`, отсутствие `System.out.println("PROBE`.
 
-## 7. Ближайшие конкретные коммиты (порядок) — Этап 1 выполнен
+## 7. Ближайшие конкретные коммиты (порядок)
 
 1. ~~`f2j: housekeeping` (Этап 0).~~ — `60acaef0`.
 2. ~~`f2j: give the game the tile rect and the critter state builtins`~~ — `d4487e75` (`0x80CF`), `2ce3d230` (`0x80FB`).
-3. ~~`f2j: give the game the say screen and dialog stubs`~~ — `a9dfaaf` (say-экран, gsay start/end, `0x80CD`).
+3. ~~`f2j: give the game the say screen and dialog stubs`~~ — `a9dfaaf`.
 4. ~~`f2j: give the game the move to tile and the placement builtins`~~ — `9a35dd4d` (`0x80CE`), `51b2a3ca` (`0x80FF`).
-5. Далее — Этап 2 (реестр скриптов).
+5. ~~Этап 2 (реестр скриптов).~~ — `efe77878`.
+6. ~~Этап 3: боевой цикл и AI-решения.~~ — `3123e056`..`693594ca` (см. §1).
+7. Далее — `_combat_input` (UI-фаза, будет собран с игровым циклом), затем Этап 4.
