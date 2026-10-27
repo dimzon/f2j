@@ -7333,6 +7333,9 @@ int f2jReferenceAiPerformDistancePrefs(Object*, Object*);
 bool f2jReferenceAiFindFriend(Object*, int, int);
 int f2jReferenceAiCalledShot(Object*, Object*, HitMode);
 int f2jReferenceAiCheckDrugs(Object*);
+int f2jReferenceAiSetupTeamCombat(Object*, Object*);
+int f2jReferenceAiTeamCombatInit(Object**, int);
+void f2jReferenceAiTeamCombatExit();
 void f2jReferenceCombatAi(Object*, Object*);
 bool f2jReferenceWantToJoin(Object*);
 bool f2jReferenceWantToStop(Object*);
@@ -9671,6 +9674,90 @@ void sectionCombatEndAttempt()
     std::printf("no-enemies exit=%d\n", rc);
 
     fallout::gCombatState &= ~fallout::COMBAT_STATE_EXIT_REQUESTED;
+    fallout::f2jReferenceAiOverCritters();
+}
+
+void sectionAiTeam()
+{
+    std::puts("[aimteam]");
+
+    // Team combat helpers (_caiSetupTeamCombat/_caiTeamCombatInit/_caiTeamCombatExit):
+    // mark every critter on the elevation as engaging, remember the team
+    // representatives, then wire whoHitMe pointers between the two teams by
+    // nearest same-team search. The roster is directly provided (the AI
+    // list needs combat for the reads below, but the helpers themselves
+    // only touch the critters list and the team objects).
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // team 1
+    fallout::Object* d1 = nullptr; // team 1
+    fallout::Object* d2 = nullptr; // team 2
+    fallout::Object* far = nullptr; // team 2, far
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&d2, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&far, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr || d2 == nullptr || far == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    const int a = 38101;
+    fallout::Object* roster[4] = { h1, d1, d2, far };
+    const int rosterDistances[4] = { 0, 1, 4, 40 };
+    for (int index = 0; index < 4; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = index >= 2 ? 2 : 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 5;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        fallout::objectSetLocation(roster[index],
+            fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
+            0, nullptr);
+    }
+    dude->elevation = 0;
+
+    fallout::f2jReferenceAiInfoInit(4);
+    fallout::f2jReferenceAiBeginCritters(4, roster);
+
+    // Setup: attacker team representative h1, defender team representative d2.
+    int setupRc = fallout::f2jReferenceAiSetupTeamCombat(h1, d2);
+    std::printf("setup rc=%d\n", setupRc);
+    std::printf("mark-h1=%d mark-d1=%d mark-d2=%d mark-far=%d\n",
+        (h1->data.critter.combat.maneuver & fallout::CRITTER_MANEUVER_ENGAGING) != 0 ? 1 : 0,
+        (d1->data.critter.combat.maneuver & fallout::CRITTER_MANEUVER_ENGAGING) != 0 ? 1 : 0,
+        (d2->data.critter.combat.maneuver & fallout::CRITTER_MANEUVER_ENGAGING) != 0 ? 1 : 0,
+        (far->data.critter.combat.maneuver & fallout::CRITTER_MANEUVER_ENGAGING) != 0 ? 1 : 0);
+
+    int initRc = fallout::f2jReferenceAiTeamCombatInit(roster, 4);
+    std::printf("init rc=%d\n", initRc);
+    std::printf("h1who=%d d1who=%d d2who=%d farwho=%d\n",
+        h1->data.critter.combat.whoHitMe != nullptr ? h1->data.critter.combat.whoHitMe->cid : -1,
+        d1->data.critter.combat.whoHitMe != nullptr ? d1->data.critter.combat.whoHitMe->cid : -1,
+        d2->data.critter.combat.whoHitMe != nullptr ? d2->data.critter.combat.whoHitMe->cid : -1,
+        far->data.critter.combat.whoHitMe != nullptr ? far->data.critter.combat.whoHitMe->cid : -1);
+
+    // Null list / empty list guards.
+    std::printf("init-null=%d\n", fallout::f2jReferenceAiTeamCombatInit(nullptr, 2));
+    std::printf("init-empty=%d\n", fallout::f2jReferenceAiTeamCombatInit(roster, 0));
+
+    // Exit clears the representatives; a second init with no setup is a
+    // no-op (returns 0 but does not touch whoHitMe).
+    fallout::f2jReferenceAiTeamCombatExit();
+    h1->data.critter.combat.whoHitMe = nullptr;
+    d1->data.critter.combat.whoHitMe = nullptr;
+    int afterExitRc = fallout::f2jReferenceAiTeamCombatInit(roster, 4);
+    std::printf("init-after-exit rc=%d h1who=%d d1who=%d\n", afterExitRc,
+        h1->data.critter.combat.whoHitMe != nullptr ? h1->data.critter.combat.whoHitMe->pid : -1,
+        d1->data.critter.combat.whoHitMe != nullptr ? d1->data.critter.combat.whoHitMe->pid : -1);
+
     fallout::f2jReferenceAiOverCritters();
 }
 
@@ -13282,6 +13369,7 @@ int main()
     RUN_SECTION(AiDrug);
     RUN_SECTION(CombatAiFlow);
     RUN_SECTION(CombatEndAttempt);
+    RUN_SECTION(AiTeam);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.

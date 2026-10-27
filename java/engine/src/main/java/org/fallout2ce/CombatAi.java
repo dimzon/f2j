@@ -2167,6 +2167,70 @@ public final class CombatAi {
         GameObject enemy = aiDangerSource(a1);
         return enemy == null || !isWithinPerception(a1, enemy);
     }
+
+    // Port of {@code _attackerTeamObj} / {@code _targetTeamObj}
+    // (src/combat_ai.cc:235-238).
+    private static GameObject attackerTeamObj;
+    private static GameObject targetTeamObj;
+
+    /** Port of {@code _caiSetupTeamCombat} (0x4291C4). */
+    public static int caiSetupTeamCombat(GameObject attackerTeam, GameObject defenderTeam) {
+        GameObject obj = ObjectSystem.objectFindFirstAtElevation(attackerTeam.elevation);
+        while (obj != null) {
+            if (ProtoTypes.ProtoId.ofGameObject(obj).objectType()
+                    == ObjTypes.ObjectType.OBJ_TYPE_CRITTER
+                    && obj != ObjectSystem.getDude()) {
+                obj.data.critter.combat.maneuver = obj.data.critter.combat.maneuver
+                        .or(ObjTypes.CritterManeuver.ENGAGING);
+            }
+            obj = ObjectSystem.objectFindNextAtElevation();
+        }
+
+        attackerTeamObj = attackerTeam;
+        targetTeamObj = defenderTeam;
+
+        return 0;
+    }
+
+    /** Port of {@code _caiTeamCombatInit} (0x429210). */
+    public static int caiTeamCombatInit(GameObject[] crittersList, int length) {
+        if (crittersList == null) {
+            return -1;
+        }
+
+        if (length == 0) {
+            return 0;
+        }
+
+        if (attackerTeamObj == null) {
+            return 0;
+        }
+
+        int attackerTeam = attackerTeamObj.data.critter.combat.team;
+        int defenderTeam = targetTeamObj.data.critter.combat.team;
+
+        for (int index = 0; index < length; index++) {
+            int team = crittersList[index].data.critter.combat.team;
+            if (team == attackerTeam) {
+                crittersList[index].data.critter.combat.whoHitMe =
+                        aiFindNearestTeam(crittersList[index], targetTeamObj, 1);
+            } else if (team == defenderTeam) {
+                crittersList[index].data.critter.combat.whoHitMe =
+                        aiFindNearestTeam(crittersList[index], attackerTeamObj, 1);
+            }
+        }
+
+        attackerTeamObj = null;
+        targetTeamObj = null;
+
+        return 0;
+    }
+
+    /** Port of {@code _caiTeamCombatExit} (0x4292C0). */
+    public static void caiTeamCombatExit() {
+        targetTeamObj = null;
+        attackerTeamObj = null;
+    }
     public static boolean aiSearchEnviron(GameObject critter, int itemType) {
         if (Critter.critterGetBodyType(critter)
                 != ProtoTypes.BodyType.BODY_TYPE_BIPED) {

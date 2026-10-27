@@ -423,6 +423,21 @@ int f2jReferenceAiCheckDrugs(Object* critter)
     return _ai_check_drugs(critter);
 }
 
+int f2jReferenceAiSetupTeamCombat(Object* attackerTeam, Object* defenderTeam)
+{
+    return _caiSetupTeamCombat(attackerTeam, defenderTeam);
+}
+
+int f2jReferenceAiTeamCombatInit(Object** crittersList, int length)
+{
+    return _caiTeamCombatInit(crittersList, length);
+}
+
+void f2jReferenceAiTeamCombatExit()
+{
+    _caiTeamCombatExit();
+}
+
 void f2jReferenceCombatAi(Object* actor, Object* target)
 {
     _combat_ai(actor, target);
