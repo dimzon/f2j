@@ -4,6 +4,8 @@
 
 namespace fallout {
 
+void f2jReferenceSetTurnRunning(int);
+
 int f2jReferenceAiInit()
 {
     return aiInit();
@@ -237,6 +239,16 @@ int f2jReferenceAiSecondaryFreq(AiPacket* ai)
     return ai->secondary_freq;
 }
 
+int f2jReferenceAiCalledFreq(AiPacket* ai)
+{
+    return ai->called_freq;
+}
+
+void f2jReferenceAiSetCalledFreq(AiPacket* ai, int frequency)
+{
+    ai->called_freq = frequency;
+}
+
 void f2jReferenceAiSetSecondaryFreq(AiPacket* ai, int frequency)
 {
     ai->secondary_freq = frequency;
@@ -424,6 +436,23 @@ int f2jReferenceAiMoveAway(Object* critter, Object* enemy, int distance)
 int f2jReferenceAiPerformDistancePrefs(Object* critter, Object* target)
 {
     return _cai_perform_distance_prefs(critter, target);
+}
+
+HitLocation f2jReferenceAiCalledShot(Object* attacker, Object* defender, HitMode hitMode)
+{
+    return _ai_called_shot(attacker, defender, hitMode);
+}
+
+int f2jReferenceAiAttack(Object* attacker, Object* defender, HitMode hitMode)
+{
+    // _ai_attack registers a rotate animation whose reg_anim_end enters
+    // _combat_anim_begin in combat, pushing the turn-run counter to 1; the
+    // subsequent _combat_turn_run would spin headless. Parking the counter
+    // at -1 lets the increment land on 0 so the run loop exits immediately.
+    f2jReferenceSetTurnRunning(-1);
+    int rc = _ai_attack(attacker, defender, hitMode);
+    f2jReferenceSetTurnRunning(0);
+    return rc;
 }
 
 bool f2jReferenceAiFindFriend(Object* critter, int a2, int a3)

@@ -1678,6 +1678,67 @@ public final class Item {
         return weaponGetAnimationForHitMode(critterGetWeaponForHitMode(critter, hitMode), hitMode);
     }
 
+    // sfall aimed-shot overrides (src/item.cc).
+    private static final java.util.Set<Integer> disabledAimedShotPids = new java.util.HashSet<>();
+    private static final java.util.Set<Integer> forcedAimedShotPids = new java.util.HashSet<>();
+
+    /** {@code aimedShotOverridesReset} (src/item.cc). */
+    public static void aimedShotOverridesReset() {
+        forcedAimedShotPids.clear();
+        disabledAimedShotPids.clear();
+    }
+
+    /** {@code forceAimedShots} (src/item.cc). */
+    public static void forceAimedShots(ProtoId protoId) {
+        int pid = protoId.valid() ? protoId.pid() : 0;
+        disabledAimedShotPids.remove(pid);
+        forcedAimedShotPids.add(pid);
+    }
+
+    /** {@code disableAimedShots} (src/item.cc). */
+    public static void disableAimedShots(ProtoId protoId) {
+        int pid = protoId.valid() ? protoId.pid() : 0;
+        forcedAimedShotPids.remove(pid);
+        disabledAimedShotPids.add(pid);
+    }
+
+    // 0x478DD0 critterCanAim: trait gate for the dude, the sfall aimed-shot
+    // override sets, and the burst/continuous/explosive/fire/emp anim-type
+    // gates.
+    public static boolean critterCanAim(GameObject critter, int hitMode) {
+        if (critter == ObjectSystem.getDude() && TraitDefs.traitIsSelectedAndActive(
+                TraitDefs.Trait.TRAIT_FAST_SHOT.id())) {
+            return false;
+        }
+
+        GameObject weapon = critterGetWeaponForHitMode(critter, hitMode);
+        ProtoId protoId = ProtoId.ofGameObject(weapon);
+        if (!protoId.valid()) {
+            protoId = ProtoId.ofPid(0);
+        }
+
+        if (disabledAimedShotPids.contains(protoId.pid())) {
+            return false;
+        }
+
+        int anim = critterGetAnimationForHitMode(critter, hitMode);
+        if (anim == AnimationType.FIRE_BURST.value() || anim == AnimationType.FIRE_CONTINUOUS.value()) {
+            return false;
+        }
+
+        if (forcedAimedShotPids.contains(protoId.pid())) {
+            return true;
+        }
+
+        ProtoTypes.DamageType damageType = weaponGetDamageType(critter, weapon);
+
+        return damageType != ProtoTypes.DamageType.DAMAGE_TYPE_EXPLOSION
+            && damageType != ProtoTypes.DamageType.DAMAGE_TYPE_FIRE
+            && damageType != ProtoTypes.DamageType.DAMAGE_TYPE_EMP
+            && (damageType != ProtoTypes.DamageType.DAMAGE_TYPE_PLASMA
+                || anim != AnimationType.THROW_ANIM.value());
+    }
+
     // 0x478D30 weaponGetCriticalFailureType.
     public static int weaponGetCriticalFailureType(GameObject weapon) {
         if (weapon == null) {

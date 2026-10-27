@@ -859,7 +859,7 @@ public final class Animation {
     }
 
     // animationRegisterRotateToTile (0x414CC8).
-    private static int animationRegisterRotateToTile(GameObject owner, int tile) {
+    static int animationRegisterRotateToTile(GameObject owner, int tile) {
         if (checkRegistry(owner) == -1) {
             animCleanup();
             return -1;

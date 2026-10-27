@@ -185,6 +185,22 @@ void f2jReferenceSetEndingGuy(Object* guy)
     _combat_ending_guy = guy;
 }
 
+// The AI attack helpers call _combat_turn_run, which spins on this counter
+// headless; the sections park it so the runs return.
+void f2jReferenceSetTurnRunning(int value)
+{
+    _combat_turn_running = value;
+}
+
+// The AI attack probe calls _combat_attack; the bare headless scheduler
+// rejects it, so the section arms the _action_attack substitution the same
+// way f2jReferenceCombatAttack does.
+void f2jReferenceSetProbeScheduling(bool enabled, int result)
+{
+    probeAttackScheduling = enabled;
+    probeSchedulingResult = result;
+}
+
 // AI info list is a combat.cc static indexed by cid; allocate and zero it
 // the way _combat_begin does (src/combat.cc:2195). _list_total is 0 in this
 // process (no _combat_begin), so zero the entries directly.

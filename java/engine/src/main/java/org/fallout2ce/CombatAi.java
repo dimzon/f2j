@@ -1913,6 +1913,69 @@ public final class CombatAi {
         return 0;
     }
 
+    /** Port of {@code _ai_called_shot} (0x42A670). */
+    public static int aiCalledShot(GameObject attacker, GameObject defender, int hitMode) {
+        int hitLocation = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+
+        if (Item.weaponGetActionPointCost(attacker, hitMode, true)
+                <= attacker.data.critter.combat.ap) {
+            if (Item.critterCanAim(attacker, hitMode)) {
+                AiPacket ai = aiGetPacket(attacker);
+                if (GameRandom.randomBetween(1, ai.calledFreq) == 1) {
+                    int intelligenceRequired = 5;
+                    switch (Settings.settings.preferences.combat_difficulty) {
+                    case 0: // COMBAT_DIFFICULTY_EASY
+                        intelligenceRequired = 7;
+                        break;
+                    case 1: // COMBAT_DIFFICULTY_NORMAL
+                        intelligenceRequired = 5;
+                        break;
+                    case 2: // COMBAT_DIFFICULTY_HARD
+                        intelligenceRequired = 3;
+                        break;
+                    default:
+                        break;
+                    }
+
+                    if (Stat.critterGetStat(attacker,
+                            StatDefs.Stat.STAT_INTELLIGENCE.id()) >= intelligenceRequired) {
+                        hitLocation = GameRandom.randomBetween(CombatDefs.HIT_LOCATION_FIRST,
+                            CombatDefs.HIT_LOCATION_SPECIFIC_COUNT);
+                        int chanceToHit = Combat.determineToHit(attacker, defender, hitLocation,
+                            hitMode);
+                        if (chanceToHit < ai.minToHit) {
+                            hitLocation = CombatDefs.HitLocation.HIT_LOCATION_TORSO.id();
+                        }
+                    }
+                }
+            }
+        }
+
+        return hitLocation;
+    }
+
+    /** Port of {@code _ai_attack} (0x42A7D8). */
+    public static int aiAttack(GameObject attacker, GameObject defender, int hitMode) {
+        if ((attacker.data.critter.combat.maneuver.bits()
+                & ObjTypes.CritterManeuver.FLEEING.bits()) != 0) {
+            return -1;
+        }
+
+        Animation.regAnimBegin(Animation.ANIMATION_REQUEST_RESERVED);
+        Animation.animationRegisterRotateToTile(attacker, defender.tile);
+        Animation.regAnimEnd();
+        // _combat_turn_run: the animation-pump tail is a game-phase seam.
+
+        int hitLocation = aiCalledShot(attacker, defender, hitMode);
+        if (Combat.combatAttack(attacker, defender, hitMode, hitLocation) != 0) {
+            return -1;
+        }
+
+        // _combat_turn_run: game-phase seam.
+
+        return 0;
+    }
+
     /** {@code AiRetargetData} (src/combat_ai.cc:60). */
     private static final class AiRetargetData {
         GameObject source;

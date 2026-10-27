@@ -69,6 +69,7 @@
 #include "map.h"
 #include "map_edge.h"
 #include "item.h"
+#include "sfall_script_hooks.h"
 #include "inventory.h"
 #include "sfall_config.h"
 #include "stat_defs.h"
@@ -7327,6 +7328,13 @@ void f2jReferenceAiRunAway(Object*, Object*);
 int f2jReferenceAiMoveAway(Object*, Object*, int);
 bool f2jReferenceAiFindFriend(Object*, int, int);
 int f2jReferenceAiPerformDistancePrefs(Object*, Object*);
+bool f2jReferenceAiFindFriend(Object*, int, int);
+int f2jReferenceAiCalledShot(Object*, Object*, HitMode);
+int f2jReferenceAiAttack(Object*, Object*, HitMode);
+int f2jReferenceAiCalledFreq(AiPacket*);
+void f2jReferenceAiSetCalledFreq(AiPacket*, int);
+void f2jReferenceSetTurnRunning(int);
+void f2jReferenceSetProbeScheduling(bool, int);
 void f2jReferenceAiRetargetFromFriendlyFire(Object*, Object*, int*);
 bool f2jReferenceAiAttackWouldIntersect(Object*, Object*, Object*, int, int*);
 int f2jReferenceAnimLastAction(int*);
@@ -9204,6 +9212,123 @@ void sectionAiDist()
 
     fallout::f2jReferenceAiSetPacketDistance(dogPacket, savedDogDistance);
     fallout::f2jReferenceAiSetPacketDistance(humanPacket, savedHumanDistance);
+    fallout::f2jReferenceAiOverCritters();
+}
+
+void sectionAiAttack()
+{
+    std::puts("[aiattack]");
+
+    // AI attack head: _ai_called_shot (aim cost gate, critterCanAim,
+    // called-shot roll, difficulty-scaled intelligence gate, to-hit
+    // re-check) and _ai_attack (fleeing guard, rotate registration, called
+    // shot, then _combat_attack). The attack runs outside combat; the
+    // turn-run counter is parked so the _combat_turn_run calls inside the
+    // flow return immediately.
+    fallout::Object* dude = fallout::gDude;
+    if (dude == nullptr) {
+        std::puts("dude=null");
+        return;
+    }
+
+    fallout::Object* h1 = nullptr; // human, team 1, the attacker
+    fallout::Object* d1 = nullptr; // dog, team 1
+    fallout::Object* tgt = nullptr; // dog, team 2, the defender
+    fallout::objectCreateWithProtoId(&h1, fallout::ProtoId(16777376));
+    fallout::objectCreateWithProtoId(&d1, fallout::ProtoId(16777558));
+    fallout::objectCreateWithProtoId(&tgt, fallout::ProtoId(16777558));
+    if (h1 == nullptr || d1 == nullptr || tgt == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+
+    const int a = 38101;
+    fallout::Object* roster[3] = { dude, h1, tgt };
+    const int rosterDistances[3] = { 10, 0, 4 };
+    for (int index = 0; index < 3; index++) {
+        roster[index]->cid = index;
+        roster[index]->data.critter.combat.team = index == 2 ? 2 : 1;
+        roster[index]->data.critter.combat.results = fallout::DAM_NONE;
+        roster[index]->data.critter.combat.whoHitMe = nullptr;
+        roster[index]->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+        roster[index]->data.critter.combat.ap = 10;
+        roster[index]->data.critter.hp = 50;
+        fallout::objectSetRotation(roster[index], fallout::ROTATION_SE, nullptr);
+        if (index != 0) {
+            fallout::objectSetLocation(roster[index],
+                fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[index]),
+                0, nullptr);
+        }
+    }
+    dude->tile = fallout::tileGetTileInDirection(a, fallout::ROTATION_SE, rosterDistances[0]);
+    dude->elevation = 0;
+
+    fallout::f2jReferenceAiInfoInit(3);
+    fallout::f2jReferenceAiBeginCritters(3, roster);
+    fallout::animationReset();
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
+    fallout::f2jReferenceSetTurnRunning(0);
+
+    // The attacker's weapon: another pistol, and the packet drives the
+    // called-shot roll.
+    fallout::Object* pistol = nullptr;
+    fallout::objectCreateWithProtoId(&pistol, fallout::ProtoId(8));
+    if (pistol == nullptr) {
+        std::puts("create-failed");
+        return;
+    }
+    fallout::itemAdd(h1, pistol, 1);
+    pistol->flags |= fallout::OBJECT_IN_RIGHT_HAND;
+
+    fallout::AiPacket* humanPacket = fallout::f2jReferenceAiPacketByNum(h1->data.critter.combat.aiPacket);
+    int savedCalledFreq = fallout::f2jReferenceAiCalledFreq(humanPacket);
+    int savedMinToHit = fallout::f2jReferenceAiMinToHit(humanPacket);
+    fallout::f2jReferenceAiSetCalledFreq(humanPacket, 1);
+    fallout::f2jReferenceAiSetMinToHit(humanPacket, 40);
+
+    // Called shot at the defender, with enough AP for aiming: the roll is
+    // seeded to land on 1, so a specific location is picked. The small-guns
+    // skill is raised so the aimed to-hit clears the packet minimum.
+    fallout::Proto* humanProto = nullptr;
+    fallout::protoGetProto(h1, &humanProto);
+    int savedSkill = humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS];
+    humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = 200;
+    std::printf("called-probe canaim=%d aimedcost=%d int=%d minhit=%d\n",
+        fallout::critterCanAim(h1, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY) ? 1 : 0,
+        fallout::weaponGetActionPointCost(h1, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY, true),
+        fallout::critterGetStat(h1, fallout::STAT_INTELLIGENCE),
+        fallout::f2jReferenceAiMinToHit(humanPacket));
+    fallout::randomSeedPrerandom(1);
+    int loc = (int)fallout::f2jReferenceAiCalledShot(h1, tgt, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY);
+    std::printf("called loc=%d\n", loc);
+    // Too little AP for aiming: torso always.
+    h1->data.critter.combat.ap = 1;
+    fallout::randomSeedPrerandom(1);
+    loc = (int)fallout::f2jReferenceAiCalledShot(h1, tgt, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY);
+    std::printf("called-noap loc=%d\n", loc);
+    h1->data.critter.combat.ap = 10;
+    // Weaponless attacker: no aim, torso.
+    fallout::itemRemoveWithReason(h1, pistol, 1, fallout::RemoveInventoryObjectHookReason::ItemRemoved);
+    fallout::randomSeedPrerandom(1);
+    loc = (int)fallout::f2jReferenceAiCalledShot(h1, tgt, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY);
+    std::printf("called-unarmed loc=%d\n", loc);
+    fallout::itemAdd(h1, pistol, 1);
+
+    // _ai_attack's full path registers a rotate animation whose first-step
+    // handler runs _dude_stand and turns the object; headless this stalls
+    // in the art/object wiring (the same rotate is exercised by the ported
+    // registrars' vectors). The vector pins the guard branch that returns
+    // before any registration: a fleeing attacker refuses.
+    d1->data.critter.combat.maneuver = fallout::CRITTER_MANUEVER_FLEEING;
+    int atkRc = fallout::f2jReferenceAiAttack(d1, tgt, fallout::HIT_MODE_RIGHT_WEAPON_PRIMARY);
+    std::printf("attack-fleeing rc=%d\n", atkRc);
+    d1->data.critter.combat.maneuver = fallout::CRITTER_MANEUVER_NONE;
+
+    humanProto->critter.data.skills[fallout::SKILL_SMALL_GUNS] = savedSkill;
+    fallout::f2jReferenceAiSetCalledFreq(humanPacket, savedCalledFreq);
+    fallout::f2jReferenceAiSetMinToHit(humanPacket, savedMinToHit);
+    fallout::gCombatState = fallout::COMBAT_STATE_PLAYER_TURN;
     fallout::f2jReferenceAiOverCritters();
 }
 
@@ -12811,6 +12936,7 @@ int main()
     RUN_SECTION(AiTarget);
     RUN_SECTION(AiMove);
     RUN_SECTION(AiDist);
+    RUN_SECTION(AiAttack);
 
 // Re-exec for the map sections: a fresh engine avoids the freed-object
     // links the object sections leave behind.
