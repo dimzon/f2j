@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.fallout2ce.ObjTypes.Dam;
 import org.fallout2ce.ObjTypes.GameObject;
+import org.fallout2ce.spi.VideoBackend;
 
 /**
  * The game main loop ({@code mainLoop}, main.cc), pinned against the C++
@@ -107,10 +108,6 @@ class GameMainLoopTest {
         };
         Game.gameHandleKey = (keyCode, inCombat) -> keysRead.add(keyCode);
         Game.mapHandleTransitionHook = () -> 0;
-        Game.renderFpsCounter = () -> {
-        };
-        Game.renderPresent = () -> {
-        };
         Game.endgameSetupDeathEnding = () -> {
         };
 
@@ -173,5 +170,59 @@ class GameMainLoopTest {
 
         assertEquals(0, ScriptsState.scriptsDisable());
         assertFalse(ObjectSystem.scriptsEnabled);
+    }
+
+    @Test
+    void theLoopPresentsOncePerIteration() {
+        // The loop tail calls renderFpsCounter + renderPresent; renderPresent
+        // is wired to Svga.renderPresent (video backend present), while the
+        // FPS overlay stays a seam unless the debug flag is on.
+        RecordingVideo video = new RecordingVideo();
+        VideoBackend saved = Color.video;
+        Color.video = video;
+        try {
+            GameScriptApi.gameUserWantsToQuit = GameScriptApi.GAME_QUIT_REQUEST_NONE;
+            Input.inputEventQueueReset();
+
+            int iterations = runMainLoopWithHook(new ArrayList<>(), 2);
+
+            assertEquals(2, iterations);
+            assertEquals(2, video.presents);
+        } finally {
+            Color.video = saved;
+        }
+    }
+
+    /** Recording backend: counts presents, owns a 640x480 framebuffer. */
+    private static final class RecordingVideo implements VideoBackend {
+        int presents;
+        final byte[] framebuffer = new byte[640 * 480];
+
+        @Override
+        public void setPalette(byte[] rgb768) {
+        }
+
+        @Override
+        public void setPaletteEntries(byte[] rgb, int start, int count) {
+        }
+
+        @Override
+        public void present() {
+            presents++;
+        }
+
+        @Override
+        public byte[] framebuffer() {
+            return framebuffer;
+        }
+
+        @Override
+        public byte[] palette() {
+            return new byte[256 * 3];
+        }
+
+        @Override
+        public void freeSurface() {
+        }
     }
 }

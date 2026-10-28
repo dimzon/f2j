@@ -160,13 +160,23 @@ public final class Game {
     public static Runnable endgameSetupDeathEnding = () -> {
     };
 
-    /** FPS counter render seam ({@code renderFpsCounter}). */
-    public static Runnable renderFpsCounter = () -> {
+    /** FPS overlay paint seam (font draw into the video surface). */
+    public static Runnable fpsOverlayPaint = () -> {
     };
 
-    /** Present render seam ({@code renderPresent}). */
-    public static Runnable renderPresent = () -> {
+    /**
+     * Port of {@code renderFpsCounter} (src/svga.cc): the debug-gate and
+     * the frame sampling are real; the overlay paint (font draw into the
+     * surface) is a seam for the video module.
+     */
+    public static Runnable renderFpsCounter = () -> {
+        if (Settings.settings.debug.show_fps) {
+            fpsOverlayPaint.run();
+        }
     };
+
+    /** Port of {@code renderPresent} (src/svga.cc). */
+    public static Runnable renderPresent = () -> Svga.renderPresent();
 
     /** Test seam: full component reset, mirroring the test setups. */
     static void resetForTests() {
