@@ -641,6 +641,27 @@ public final class MapAreas {
             : VisitedState.UNKNOWN;
     }
 
+    // 0x4C5A1C wmTeleportToArea.
+    public static int wmTeleportToArea(int areaIdx) {
+        if (!cityIsValid(areaIdx)) {
+            return -1;
+        }
+
+        int posX = WorldmapGenData.wmGetPartyWorldPosX();
+        int posY = WorldmapGenData.wmGetPartyWorldPosY();
+        if (WorldmapGenData.wmGetPartyCurArea().id() != areaIdx) {
+            CityInfo city = areaInfoList.get(areaIdx);
+            int[] pos = new int[2];
+            wmAreaGetMarkWorldPos(city, pos);
+            posX = pos[0];
+            posY = pos[1];
+        }
+
+        WorldmapGenData.wmTeleportCommit(areaIdx, posX, posY);
+
+        return 0;
+    }
+
     /**
      * Port of {@code wmAreaGetMarkWorldPos}: where the mark of a city sits
      * in the world, from the city's own position and the half of its size.

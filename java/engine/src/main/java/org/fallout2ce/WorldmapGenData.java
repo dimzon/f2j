@@ -150,6 +150,16 @@ public final class WorldmapGenData {
         return currentAreaId;
     }
 
+    /** Port of the {@code wmGenData} writes in {@code wmTeleportToArea}. */
+    static void wmTeleportCommit(int areaIdx, int x, int y) {
+        currentAreaId = MapAreas.cityFromInt(areaIdx);
+        worldPosX = x;
+        worldPosY = y;
+        walkDestinationX = 0;
+        walkDestinationY = 0;
+        isWalking = false;
+    }
+
     /**
      * Port of {@code wmCarFillGas} (0x4C4E34): fill the car's tank.
      *

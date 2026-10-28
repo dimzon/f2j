@@ -19,9 +19,9 @@ mkdir -p /src/docker/refharness/build
 # animation sequence store; scripts_probe.cc includes the unmodified scripts.cc
 # to expose the scripts tick. Exclude the regular objects to avoid duplicate
 # definitions.
-OBJS=$(find "$OBJDIR" -name "*.o" ! -name "main.cc.o" ! -name "win32.cc.o" ! -name "combat.cc.o" ! -name "combat_ai.cc.o" ! -name "animation.cc.o" ! -name "scripts.cc.o")
+OBJS=$(find "$OBJDIR" -name "*.o" ! -name "main.cc.o" ! -name "win32.cc.o" ! -name "combat.cc.o" ! -name "combat_ai.cc.o" ! -name "animation.cc.o" ! -name "scripts.cc.o" ! -name "map.cc.o")
 FPATTERN=/src/out/build/linux-x64-debug/third_party/fpattern
-g++ -std=c++17 -g -I/src/src $(pkg-config --cflags sdl2) /src/docker/refharness/ref_main.cc /src/docker/refharness/combat_attack_probe.cc /src/docker/refharness/combat_ai_probe.cc /src/docker/refharness/animation_probe.cc /src/docker/refharness/scripts_probe.cc $OBJS $FPATTERN/libfpattern-windows-static.a $FPATTERN/libfpattern-static.a -o /src/docker/refharness/build/refharness $(pkg-config --libs sdl2) -lz
+g++ -std=c++17 -g -I/src/src $(pkg-config --cflags sdl2) /src/docker/refharness/ref_main.cc /src/docker/refharness/combat_attack_probe.cc /src/docker/refharness/combat_ai_probe.cc /src/docker/refharness/animation_probe.cc /src/docker/refharness/scripts_probe.cc /src/docker/refharness/map_probe.cc $OBJS $FPATTERN/libfpattern-windows-static.a $FPATTERN/libfpattern-static.a -o /src/docker/refharness/build/refharness $(pkg-config --libs sdl2) -lz
 if [ "${RUN:-1}" = "1" ]; then
     /src/docker/refharness/build/refharness
 fi

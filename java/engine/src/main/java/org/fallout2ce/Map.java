@@ -173,17 +173,128 @@ public final class Map {
         }
 
         if (isInCombat()) {
-            // _game_user_wants_to_quit = GAME_QUIT_REQUEST_END_COMBAT:
-            // combat phase, deferred (see class notes).
+            GameScriptApi.gameUserWantsToQuit =
+                GameScriptApi.GAME_QUIT_REQUEST_END_COMBAT;
         }
 
         return 0;
     }
 
-    /** Seam for {@code isInCombat} (combat state unported; cf. {@link Stat}). */
-    private static boolean isInCombat() {
-        return false;
+    /** Port of {@code isInCombat} ({@code src/combat.h}). */
+    static boolean isInCombat() {
+        return Combat.isInCombat();
     }
+
+    /** Port of {@code _wmMapIdx} ({@code src/map.cc}, BSS). */
+    private static int wmMapIdx;
+
+    /** Port of {@code disableSpecialMapIds} ({@code src/map.cc}). */
+    static boolean disableSpecialMapIds;
+
+    /**
+     * Port of {@code mapLoadById} (0x482A68): the script fixed-param set
+     * ({@code gMapSid == -1} headless), the registry name lookup, the load
+     * and the music start. {@link #wmMapMusicStart} is a documented seam.
+     */
+    public static int mapLoadById(int map) {
+        String name = MapRegistry.wmMapIdxToName(map);
+        if (name.isEmpty()) {
+            return -1;
+        }
+
+        wmMapIdx = map;
+
+        int rc = mapLoadByName(name);
+
+        wmMapMusicStart.run();
+
+        return rc;
+    }
+
+    /**
+     * Port of {@code mapHandleTransition} (0x4835F8): the trivial return,
+     * the worldmap UI branches (MAP_INVALID/MAP_TRANSITION out of combat,
+     * seams), the real-map reload/placement/centering path and the final
+     * worldmap jump. The second map load in the lifecycle is a harness gap
+     * (see the {@code [maptransitionrun]} section); the Java path is the
+     * same code the first load executes.
+     */
+    public static int mapHandleTransition() {
+        if (mapTransition.map == null
+                || mapTransition.map == WorldmapDefs.Map.MAP_RND_DESERT_1) {
+            return 0;
+        }
+
+        GameMouse.gameMouseObjectsHide();
+        GameMouse.gameMouseSetCursor(GameMouse.MouseCursorType.MOUSE_CURSOR_NONE.id());
+
+        if (mapTransition.map == WorldmapDefs.Map.MAP_INVALID) {
+            if (!isInCombat()) {
+                Animation.animationStop();
+                TextObjects.textObjectsReset();
+                wmTownMap.run();
+                clearMapTransition();
+            }
+        } else if (mapTransition.map == WorldmapDefs.Map.MAP_TRANSITION) {
+            if (!isInCombat()) {
+                Animation.animationStop();
+                TextObjects.textObjectsReset();
+                wmWorldMap.run();
+                clearMapTransition();
+            }
+        } else if (!isInCombat()) {
+            int transitionMapId = mapTransition.map.id();
+            if (transitionMapId != mapIndex() || gElevation == mapTransition.elevation) {
+                TextObjects.textObjectsReset();
+                mapLoadById(transitionMapId);
+            }
+
+            if (mapTransition.tile != -1 && mapTransition.tile != 0
+                    && (disableSpecialMapIds
+                        || (gMapHeader.index.id() != WorldmapDefs.Map.MAP_MODOC_BEDNBREAKFAST.id()
+                            && gMapHeader.index.id() != WorldmapDefs.Map.MAP_THE_SQUAT_A.id()))
+                    && MapDefs.elevationIsValid(mapTransition.elevation)) {
+                ObjectSystem.objectSetLocation(ObjectSystem.getDude(), mapTransition.tile, mapTransition.elevation);
+                mapSetElevation(mapTransition.elevation);
+                ObjectSystem.objectSetRotation(ObjectSystem.getDude(), mapTransition.rotation.value());
+            }
+
+            GameObject dude = ObjectSystem.getDude();
+            if (TileMath.tileSetCenter(dude.tile, TileMath.TILE_SET_CENTER_REFRESH_WINDOW) == -1) {
+                Debug.print("\nError: map: attempt to center out-of-bounds!");
+            }
+
+            clearMapTransition();
+
+            MapAreas.City[] cityPtr = new MapAreas.City[1];
+            MapAreas.wmMatchAreaContainingMapIdx(gMapHeader.index.id(), cityPtr);
+            if (MapAreas.wmTeleportToArea(cityPtr[0].id()) == -1) {
+                Debug.print("\nError: couldn't make jump on worldmap for map jump!");
+            }
+        }
+
+        return 0;
+    }
+
+    /** Port of the {@code memset(&gMapTransition, 0, ...)} tail. */
+    private static void clearMapTransition() {
+        mapTransition.map = WorldmapDefs.Map.MAP_RND_DESERT_1;
+        mapTransition.tile = 0;
+        mapTransition.elevation = 0;
+        mapTransition.rotation = Rotation.NE;
+    }
+
+    /** Town-map UI seam ({@code wmTownMap}). */
+    public static Runnable wmTownMap = () -> {
+    };
+
+    /** World-map UI seam ({@code wmWorldMap}). */
+    public static Runnable wmWorldMap = () -> {
+    };
+
+    /** Map-music seam ({@code wmMapMusicStart}). */
+    public static Runnable wmMapMusicStart = () -> {
+    };
 
     /**
      * Seam for {@code wmMapMarkMapEntranceState} (worldmap area model, game

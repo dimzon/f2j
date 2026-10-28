@@ -56,6 +56,7 @@
 #include "sfall_ini.h"
 #include "autorun.h"
 #include "game_mouse.h"
+#include "text_object.h"
 #include "stat.h"
 #include "skill.h"
 #include "combat.h"
@@ -7343,6 +7344,7 @@ int f2jReferenceScriptsCritterCount();
 int f2jReferenceCritterProcessingIndex();
 void f2jReferenceScriptsEnableScripts();
 void f2jReferenceScriptsDisableScripts();
+void f2jReferenceMapTransitionGet(int*, int*, int*, int*);
 int f2jReferenceScriptAddTimerEvent(int, int, int);
 int f2jReferenceScriptRemoveTimerEvents(int, int);
 bool f2jReferenceQueueIsEmpty();
@@ -10050,6 +10052,7 @@ void sectionMapSave();
 void sectionMapRegistry();
 void sectionMapAreas();
 void sectionWorldmapTiles();
+void sectionMapTransitionRun();
 void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
@@ -10283,6 +10286,7 @@ void sectionMapChild()
     sectionVmExternal();
     sectionVmTimed();
     sectionWorldmapTiles();
+    sectionMapTransitionRun();
 }
 
 
@@ -10431,6 +10435,102 @@ void sectionMapLoad()
         dude != nullptr ? dude->tile : -999,
         dude != nullptr ? dude->elevation : -999,
         dude != nullptr ? dude->rotation : -999);
+}
+
+void sectionMapTransitionRun()
+{
+    std::puts("[maptransitionrun]");
+
+    // mapHandleTransition (map.cc) on the loaded ARTEMPLE map. The worldmap
+    // UI branches (MAP_INVALID/MAP_TRANSITION out of combat -> wmTownMap/
+    // wmWorldMap) are game-phase seams. The real-map reload branch is a
+    // harness gap: a second mapLoadByName in the same process crashes (the
+    // headless child only supports one load), so the section pins the trivial
+    // return, the invalid-map guard inside mapLoadById, the no-reload path,
+    // the placement/centering and the in-combat gate (which also fires the
+    // mapSetTransition END_COMBAT quit).
+    fallout::Object* dude = fallout::gDude;
+    int mStart, tStart, eStart, rStart;
+    fallout::f2jReferenceMapTransitionGet(&mStart, &tStart, &eStart, &rStart);
+    std::printf("hdr-index=%d center=%d trans=%d,%d,%d,%d dude=%d,%d,%d\n",
+        (int)fallout::gMapHeader.index,
+        fallout::gCenterTile,
+        mStart, tStart, eStart, rStart,
+        dude != nullptr ? dude->tile : -999,
+        dude != nullptr ? dude->elevation : -999,
+        dude != nullptr ? (int)dude->rotation : -999);
+
+    // Trivial transition: the loaded map leaves gMapTransition zeroed, so
+    // mapHandleTransition takes its early return. (mapSetTransition would
+    // normalize 0 to MAP_TRANSITION, so it is not used here.)
+    int ht0 = fallout::mapHandleTransition();
+    int m0, t0t, e0, r0;
+    fallout::f2jReferenceMapTransitionGet(&m0, &t0t, &e0, &r0);
+    std::printf("trivial ht=%d trans=%d,%d,%d,%d dude=%d,%d,%d center=%d\n",
+        ht0, m0, t0t, e0, r0,
+        dude != nullptr ? dude->tile : -999,
+        dude != nullptr ? dude->elevation : -999,
+        dude != nullptr ? (int)dude->rotation : -999,
+        fallout::gCenterTile);
+
+    // Invalid map index: the else-branch runs with mapLoadById failing at
+    // wmMapIdxToName (-1), so there is no reload; the placement, centering
+    // and worldmap jump still run, the transition is cleared.
+    fallout::MapTransition t1 = {};
+    t1.map = static_cast<fallout::Map>(9000);
+    t1.tile = 20100;
+    t1.elevation = 0;
+    t1.rotation = fallout::ROTATION_NE;
+    int rc1 = fallout::mapSetTransition(&t1);
+    int ht1 = fallout::mapHandleTransition();
+    int m1, t1t, e1, r1;
+    fallout::f2jReferenceMapTransitionGet(&m1, &t1t, &e1, &r1);
+    std::printf("invalid rc=%d ht=%d trans=%d,%d,%d,%d dude=%d,%d,%d center=%d\n",
+        rc1, ht1, m1, t1t, e1, r1,
+        dude != nullptr ? dude->tile : -999,
+        dude != nullptr ? dude->elevation : -999,
+        dude != nullptr ? (int)dude->rotation : -999,
+        fallout::gCenterTile);
+
+    // Elevation change without reload (map equal, elevation differs): the
+    // reload condition is false, the placement is skipped if the target
+    // elevation is invalid, centering and the worldmap jump still run.
+    fallout::MapTransition t2 = {};
+    t2.map = static_cast<fallout::Map>(fallout::gMapHeader.index);
+    t2.tile = 20100;
+    t2.elevation = 1;
+    t2.rotation = fallout::ROTATION_SW;
+    int rc2 = fallout::mapSetTransition(&t2);
+    int ht2 = fallout::mapHandleTransition();
+    int m2, t2t, e2, r2;
+    fallout::f2jReferenceMapTransitionGet(&m2, &t2t, &e2, &r2);
+    std::printf("elev rc=%d ht=%d trans=%d,%d,%d,%d dude=%d,%d,%d center=%d\n",
+        rc2, ht2, m2, t2t, e2, r2,
+        dude != nullptr ? dude->tile : -999,
+        dude != nullptr ? dude->elevation : -999,
+        dude != nullptr ? (int)dude->rotation : -999,
+        fallout::gCenterTile);
+
+    // In-combat MAP_INVALID: isInCombat() gates the worldmap UI, so only
+    // the mouse-cursor work runs and the transition stays; mapSetTransition
+    // also raised the END_COMBAT quit request.
+    fallout::CombatState savedCombatState = fallout::gCombatState;
+    fallout::gCombatState = static_cast<fallout::CombatState>(
+        fallout::COMBAT_STATE_IN_COMBAT | fallout::COMBAT_STATE_PLAYER_TURN);
+    fallout::MapTransition t3 = {};
+    t3.map = fallout::MAP_INVALID;
+    t3.tile = -1;
+    t3.elevation = 0;
+    t3.rotation = fallout::ROTATION_INVALID;
+    int rc3 = fallout::mapSetTransition(&t3);
+    int ht3 = fallout::mapHandleTransition();
+    int m3, t3t, e3, r3;
+    fallout::f2jReferenceMapTransitionGet(&m3, &t3t, &e3, &r3);
+    std::printf("combat-invalid rc=%d ht=%d trans=%d,%d,%d,%d quit=%d\n",
+        rc3, ht3, m3, t3t, e3, r3,
+        (int)fallout::_game_user_wants_to_quit);
+    fallout::gCombatState = savedCombatState;
+    fallout::_game_user_wants_to_quit = fallout::GAME_QUIT_REQUEST_NONE;
 }
 
 void sectionMapSave()
