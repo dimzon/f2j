@@ -7407,6 +7407,10 @@ void f2jReferenceScriptsDisableScripts();
 void f2jReferenceMapTransitionGet(int*, int*, int*, int*);
 void f2jReferenceMapSetIsoWindowScrollTimestamp(unsigned int);
 unsigned int f2jReferenceMapGetIsoWindowScrollTimestamp();
+unsigned char* f2jReferenceTileWindowBuffer();
+int f2jReferenceTileEnabled();
+void f2jReferenceTileWindowSize(int*, int*);
+Rect* f2jReferenceTileWindowRect();
 int f2jReferenceScriptAddTimerEvent(int, int, int);
 int f2jReferenceScriptRemoveTimerEvents(int, int);
 bool f2jReferenceQueueIsEmpty();
@@ -10117,6 +10121,7 @@ void sectionMapAreas();
 void sectionWorldmapTiles();
 void sectionMapTransitionRun();
 void sectionMapScroll();
+void sectionTileRender();
 void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
@@ -10352,6 +10357,7 @@ void sectionMapChild()
     sectionWorldmapTiles();
     sectionMapTransitionRun();
     sectionMapScroll();
+    sectionTileRender();
 }
 
 
@@ -10679,6 +10685,71 @@ void sectionMapScroll()
     fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(past);
     int rcFar = mapScrollCoreProbe(9999, 0, true);
     std::printf("far rc=%d center=%d\n", rcFar, fallout::gCenterTile);
+}
+
+void sectionTileRender()
+{
+    std::puts("[tilerender]");
+
+    // Floor tile rendering (tile.cc) on the 64x64 iso window of the map
+    // child: the square fids feed tileRefreshGame (roofs off, ambient light
+    // pinned, no EDG), the result is the window buffer. The object passes
+    // (_obj_render_pre/post_roof) draw the dude and the egg on top.
+    //
+    // The color tables (intensityColorTable) must be up for the shading.
+    bool palLoaded = fallout::colorPaletteLoad("color.pal");
+    std::printf("pal=%d\n", palLoaded ? 1 : 0);
+
+    // Tile frame -> art file names, for both the harness and the port.
+    for (int f = 0; f < 5; f++) {
+        fallout::TileFrmId fid(static_cast<fallout::TileFrameId>(f));
+        char name[ART_NAME_SIZE + 1] = {};
+        fallout::artCopyFileName(fid, name);
+        std::printf("frame %d=%s\n", f, name);
+    }
+
+    // Pin light and hide roof.
+    fallout::lightSetAmbientIntensity(65536, false);
+    fallout::tile_toggle_roof(false);
+
+    // Square grid: floor frames 1..4 repeating, no roof half, no flags.
+    const int squareCount = SQUARE_GRID_WIDTH * SQUARE_GRID_HEIGHT;
+    for (int i = 0; i < squareCount; i++) {
+        int floorFrame = 1 + (i % 4);
+        fallout::_square[0]->tileFid[i] = floorFrame;
+    }
+
+    // Refresh the window from the map child's center; the refresh proc is
+    // the real tileRefreshGame.
+    int centerRc = fallout::tileSetCenter(20100, TILE_SET_CENTER_REFRESH_WINDOW);
+    std::printf("center=%d\n", centerRc);
+
+    unsigned char* buf = fallout::windowGetBuffer(fallout::gIsoWindow);
+
+    // Floor render pass (the ported function): clear the window, render the
+    // floors into it. The roof/object passes are separate slices.
+    if (buf != nullptr) {
+        fallout::bufferFill(buf, 64, 64, 64, fallout::COLOR_FIRST);
+    }
+    fallout::tileRenderFloorsInRect(fallout::f2jReferenceTileWindowRect(), 0);
+
+    uLong crc = crc32(0L, Z_NULL, 0);
+    int nonZero = 0;
+    if (buf != nullptr) {
+        crc = crc32(crc, buf, 64 * 64);
+        for (int i = 0; i < 64 * 64; i++) {
+            if (buf[i] != 0) {
+                nonZero++;
+            }
+        }
+    }
+    std::printf("crc=%08lX nonzero=%d\n", crc, nonZero);
+    if (buf != nullptr) {
+        std::printf("px=%d,%d,%d,%d,%d,%d,%d,%d\n",
+            buf[8 * 64 + 8], buf[16 * 64 + 16], buf[24 * 64 + 24],
+            buf[32 * 64 + 32], buf[40 * 64 + 40], buf[48 * 64 + 48],
+            buf[56 * 64 + 56], buf[32 * 64 + 16]);
+    }
 }
 
 void sectionMapSave()
