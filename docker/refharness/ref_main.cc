@@ -7345,6 +7345,8 @@ int f2jReferenceCritterProcessingIndex();
 void f2jReferenceScriptsEnableScripts();
 void f2jReferenceScriptsDisableScripts();
 void f2jReferenceMapTransitionGet(int*, int*, int*, int*);
+void f2jReferenceMapSetIsoWindowScrollTimestamp(unsigned int);
+unsigned int f2jReferenceMapGetIsoWindowScrollTimestamp();
 int f2jReferenceScriptAddTimerEvent(int, int, int);
 int f2jReferenceScriptRemoveTimerEvents(int, int);
 bool f2jReferenceQueueIsEmpty();
@@ -10053,6 +10055,7 @@ void sectionMapRegistry();
 void sectionMapAreas();
 void sectionWorldmapTiles();
 void sectionMapTransitionRun();
+void sectionMapScroll();
 void sectionMapNames();
 void sectionStats();
 void sectionCritterState();
@@ -10287,6 +10290,7 @@ void sectionMapChild()
     sectionVmTimed();
     sectionWorldmapTiles();
     sectionMapTransitionRun();
+    sectionMapScroll();
 }
 
 
@@ -10531,6 +10535,89 @@ void sectionMapTransitionRun()
         (int)fallout::_game_user_wants_to_quit);
     fallout::gCombatState = savedCombatState;
     fallout::_game_user_wants_to_quit = fallout::GAME_QUIT_REQUEST_NONE;
+}
+
+// mapScroll (map.cc) up to the buffer blit: the gate, the screen-space
+// offset math, the center projection and the recenter. The memmove blit,
+// the scroll refreshes and windowRefresh are render tails and crash the
+// headless child, so they are documented seams here (the Java port hooks
+// them the same way).
+static int mapScrollCoreProbe(int dx, int dy, bool refreshTimestamp)
+{
+    if (fallout::getTicksSince(fallout::f2jReferenceMapGetIsoWindowScrollTimestamp()) < 33) {
+        return -2;
+    }
+
+    if (refreshTimestamp) {
+        fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(fallout::getTicks());
+    }
+
+    int screenDx = dx * 32;
+    int screenDy = dy * 24;
+
+    if (screenDx == 0 && screenDy == 0) {
+        return -1;
+    }
+
+    int centerScreenX;
+    int centerScreenY;
+    fallout::tileToScreenXY(fallout::gCenterTile, &centerScreenX, &centerScreenY);
+    centerScreenX += screenDx + 16;
+    centerScreenY += screenDy + 8;
+
+    int newCenterTile = fallout::tileFromScreenXY(centerScreenX, centerScreenY);
+    if (newCenterTile == -1) {
+        return -1;
+    }
+
+    if (fallout::tileSetCenter(newCenterTile, 0) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+void sectionMapScroll()
+{
+    std::puts("[mapscroll]");
+
+    // The per-step center moves and the error/gate returns, with the
+    // iso-window scroll timestamp probed so both sides of the 33ms gate are
+    // deterministic.
+    unsigned int now = fallout::getTicks();
+    unsigned int past = now > 1000 ? now - 1000 : 0;
+
+    fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(past);
+    std::printf("center0=%d\n", fallout::gCenterTile);
+
+    int rc0 = mapScrollCoreProbe(0, 0, true);
+    std::printf("zero rc=%d center=%d\n", rc0, fallout::gCenterTile);
+
+    fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(past);
+    int rcRight = mapScrollCoreProbe(1, 0, true);
+    std::printf("right rc=%d center=%d\n", rcRight, fallout::gCenterTile);
+
+    fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(past);
+    int rcDown = mapScrollCoreProbe(0, 1, true);
+    std::printf("down rc=%d center=%d\n", rcDown, fallout::gCenterTile);
+
+    fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(past);
+    int rcLeft = mapScrollCoreProbe(-1, 0, true);
+    std::printf("left rc=%d center=%d\n", rcLeft, fallout::gCenterTile);
+
+    fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(past);
+    int rcUp = mapScrollCoreProbe(0, -1, true);
+    std::printf("up rc=%d center=%d\n", rcUp, fallout::gCenterTile);
+
+    // The gate: with a fresh timestamp the next scroll is refused.
+    fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(now);
+    int rcGate = mapScrollCoreProbe(1, 0, false);
+    std::printf("gate rc=%d center=%d\n", rcGate, fallout::gCenterTile);
+
+    // A scroll that throws the center off the grid fails cleanly.
+    fallout::f2jReferenceMapSetIsoWindowScrollTimestamp(past);
+    int rcFar = mapScrollCoreProbe(9999, 0, true);
+    std::printf("far rc=%d center=%d\n", rcFar, fallout::gCenterTile);
 }
 
 void sectionMapSave()

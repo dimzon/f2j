@@ -14,4 +14,14 @@ void f2jReferenceMapTransitionGet(int* mapPtr, int* tilePtr, int* elevPtr, int* 
     *rotPtr = (int)gMapTransition.rotation;
 }
 
+void f2jReferenceMapSetIsoWindowScrollTimestamp(unsigned int value)
+{
+    gIsoWindowScrollTimestamp = value;
+}
+
+unsigned int f2jReferenceMapGetIsoWindowScrollTimestamp()
+{
+    return gIsoWindowScrollTimestamp;
+}
+
 } // namespace fallout

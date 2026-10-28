@@ -115,6 +115,70 @@ public final class Map {
     /** Script-side map id ({@code gMapSid}, fresh-process mirror: -1). */
     private static int mapSid = -1;
 
+    /** Port of {@code gIsoWindowScrollTimestamp} ({@code src/map.cc}). */
+    private static long isoWindowScrollTimestamp;
+
+    /** Test seam: pin both sides of the 33ms scroll gate. */
+    static void setIsoWindowScrollTimestampForTests(long ticks) {
+        isoWindowScrollTimestamp = ticks;
+    }
+
+    /**
+     * Port of {@code mapScroll} (0x4824CC): the 33ms gate, the screen-space
+     * offset, the center projection and the recenter. The buffer blit
+     * (memmove), the scroll refreshes and windowRefresh are render seams.
+     */
+    public static int mapScroll(int dx, int dy) {
+        if (Ticks.getTicksSince(isoWindowScrollTimestamp) < 33) {
+            return -2;
+        }
+
+        isoWindowScrollTimestamp = Ticks.getTicks();
+
+        int screenDx = dx * 32;
+        int screenDy = dy * 24;
+
+        if (screenDx == 0 && screenDy == 0) {
+            return -1;
+        }
+
+        GameMouse.gameMouseObjectsHide();
+
+        int[] centerScreenXPtr = new int[1];
+        int[] centerScreenYPtr = new int[1];
+        TileMath.tileToScreenXY(TileMath.gCenterTile, centerScreenXPtr, centerScreenYPtr);
+        int centerScreenX = centerScreenXPtr[0] + screenDx + 16;
+        int centerScreenY = centerScreenYPtr[0] + screenDy + 8;
+
+        int newCenterTile = TileMath.tileFromScreenXY(centerScreenX, centerScreenY);
+        if (newCenterTile == -1) {
+            return -1;
+        }
+
+        if (TileMath.tileSetCenter(newCenterTile, 0) == -1) {
+            return -1;
+        }
+
+        // memmove blit, _map_scroll_refresh, windowRefresh: render seams.
+        mapScrollBlit.run();
+        mapScrollRefresh.run();
+        isoWindowRefresh.run();
+
+        return 0;
+    }
+
+    /** Buffer-scroll blit seam (the {@code memmove} tail). */
+    public static Runnable mapScrollBlit = () -> {
+    };
+
+    /** Scroll-refresh seam ({@code _map_scroll_refresh}). */
+    public static Runnable mapScrollRefresh = () -> {
+    };
+
+    /** Iso-window refresh seam ({@code windowRefresh(gIsoWindow)}). */
+    public static Runnable isoWindowRefresh = () -> {
+    };
+
     /** Port of {@code gMapSid} read for combat-end scripts. */
     static int mapSid() {
         return mapSid;
@@ -147,6 +211,7 @@ public final class Map {
         mapTransition.elevation = 0;
         mapTransition.rotation = Rotation.NE;
         mapSid = -1;
+        isoWindowScrollTimestamp = 0;
         for (TileData grid : square) {
             java.util.Arrays.fill(grid.tileFid, 0);
         }
