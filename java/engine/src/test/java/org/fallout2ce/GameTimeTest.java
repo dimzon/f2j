@@ -91,4 +91,70 @@ class GameTimeTest {
             GameTime.gameTimeSetTime(302400);
         }
     }
+
+    @Test
+    void extendedCalendarRollovers() {
+        GameTime.resetClockForTests();
+        GameTime.setStartDateForTests(2241, 6, 24);
+
+        // The default start 08:24 is 302400 ticks.
+        GameTime.gameTimeSetTime(302400);
+        int[] sm = new int[1], sd = new int[1], sy = new int[1];
+        GameTime.gameTimeGetDate(sm, sd, sy);
+        assertEquals(7, sm[0]);
+        assertEquals(25, sd[0]);
+        assertEquals(2241, sy[0]);
+        assertEquals(824, GameTime.gameTimeGetHour());
+        assertEquals("8:24", GameTime.gameTimeGetTimeString());
+
+        // 23:59 + 1 min -> midnight, next day.
+        GameTime.gameTimeSetTime(863400);
+        GameTime.gameTimeAddSeconds(60);
+        assertEquals(864000, GameTime.gameTimeGetTime());
+        int[] mm = new int[1], md = new int[1], my = new int[1];
+        GameTime.gameTimeGetDate(mm, md, my);
+        assertEquals(7, mm[0]);
+        assertEquals(26, md[0]);
+        assertEquals(2241, my[0]);
+        assertEquals(0, GameTime.gameTimeGetHour());
+        assertEquals("0:00", GameTime.gameTimeGetTimeString());
+
+        // December 31st -> January 1st of the next year.
+        GameTime.gameTimeSetTime((364 - 24) * 864000);
+        int[] dm = new int[1], dd = new int[1], dy = new int[1];
+        GameTime.gameTimeGetDate(dm, dd, dy);
+        assertEquals(6, dm[0]);
+        assertEquals(30, dd[0]);
+        assertEquals(2242, dy[0]);
+
+        GameTime.gameTimeAddTicks(864000);
+        int[] jm = new int[1], jd = new int[1], jy = new int[1];
+        GameTime.gameTimeGetDate(jm, jd, jy);
+        assertEquals(7, jm[0]);
+        assertEquals(1, jd[0]);
+        assertEquals(2242, jy[0]);
+
+        // One 365-day year later: same month/day, next year.
+        GameTime.gameTimeSetTime((365 - 24) * 864000);
+        int[] lm = new int[1], ld = new int[1], ly = new int[1];
+        GameTime.gameTimeGetDate(lm, ld, ly);
+        assertEquals(7, lm[0]);
+        assertEquals(1, ld[0]);
+        assertEquals(2242, ly[0]);
+    }
+
+    @Test
+    void theThirteenYearTimeoutRequestsTheMainMenu() {
+        GameTime.resetClockForTests();
+        GameTime.setStartDateForTests(2241, 6, 24);
+        GameScriptApi.gameUserWantsToQuit = GameScriptApi.GAME_QUIT_REQUEST_NONE;
+
+        GameTime.gameTimeSetTime(GameTime.TICKS_PER_YEAR * 13 - 100);
+        GameTime.gameTimeAddTicks(100);
+
+        assertEquals(4099680000L, Integer.toUnsignedLong(GameTime.gameTimeGetTime()));
+        assertEquals(GameScriptApi.GAME_QUIT_REQUEST_MAIN_MENU,
+            GameScriptApi.gameUserWantsToQuit);
+        GameScriptApi.gameUserWantsToQuit = GameScriptApi.GAME_QUIT_REQUEST_NONE;
+    }
 }

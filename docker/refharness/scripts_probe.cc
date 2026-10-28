@@ -83,4 +83,11 @@ unsigned int f2jReferenceGameTime()
     return gameTimeGetTime();
 }
 
+void f2jReferenceGameTimeSetStartDate(int year, int month, int day)
+{
+    gStartYear = year;
+    gStartMonth = month;
+    gStartDay = day;
+}
+
 } // namespace fallout

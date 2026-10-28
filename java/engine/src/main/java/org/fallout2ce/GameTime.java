@@ -125,6 +125,13 @@ public final class GameTime {
         timeoutHandler = handler;
     }
 
+    /** Port of the harness probe {@code f2jReferenceGameTimeSetStartDate}. */
+    static void setStartDateForTests(int year, int month, int day) {
+        startYear = year;
+        startMonth = month;
+        startDay = day;
+    }
+
     /** Fresh-process mirror: clock to 302400, start fields to 0. */
     static void resetClockForTests() {
         gameTime = GAME_TIME_INITIAL;
@@ -208,15 +215,20 @@ public final class GameTime {
 
     /**
      * 0x4A34CC inc_game_time. The tick add and the year &gt;= 13 counter
-     * are faithful; the endgame/quit side effects only run when a
-     * {@link TimeoutHandler} is installed (default off/no-op).
+     * are faithful; the main-menu quit request is real (the harness pins
+     * {@code quit=2}), the endgame death ending is a {@link TimeoutHandler}
+     * seam.
      */
     public static void gameTimeAddTicks(int ticks) {
         gameTime += ticks;
 
         long year = Integer.toUnsignedLong(gameTime) / TICKS_PER_YEAR;
-        if (year >= 13 && timeoutHandler != null) {
-            timeoutHandler.onTimeout();
+        if (year >= 13) {
+            if (timeoutHandler != null) {
+                timeoutHandler.onTimeout();
+            }
+            GameScriptApi.gameUserWantsToQuit =
+                GameScriptApi.GAME_QUIT_REQUEST_MAIN_MENU;
         }
     }
 

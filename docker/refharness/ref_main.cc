@@ -5368,6 +5368,11 @@ void sectionCombatSkill()
         rawBufCrc(buf1, sizeof(buf1)), rawBufCrc(buf2, sizeof(buf2)), rawBufCrc(buf3, sizeof(buf3)));
 }
 
+namespace fallout {
+unsigned int f2jReferenceGameTime();
+void f2jReferenceGameTimeSetStartDate(int, int, int);
+} // namespace fallout
+
 void sectionGameTime()
 {
     std::puts("[gametime]");
@@ -5414,6 +5419,61 @@ void sectionGameTime()
     int idReset = fallout::scriptsGetUniqueObjectIdCounter();
     std::printf("ids=%d,%d,%d restored=%d badrestore=%d reset=%d\n",
         idCounter0, idNew1, idNew2, idRestored, idBadRestore, idReset);
+
+    // Calendar rollovers and the 13-year timeout, with the start date pinned
+    // to the game defaults (2241-06-24) via the probe. The endgame death
+    // ending is a seam; the timeout is observable through the quit request.
+    unsigned int savedTime = fallout::f2jReferenceGameTime();
+    int savedQuit = (int)fallout::_game_user_wants_to_quit;
+
+    fallout::f2jReferenceGameTimeSetStartDate(2241, 6, 24);
+
+    // The default start 08:24 is 302400 ticks.
+    fallout::gameTimeSetTime(302400);
+    int m1, d1, y1;
+    fallout::gameTimeGetDate(&m1, &d1, &y1);
+    std::printf("start time=%u date=%d/%d/%d hour=%d str=%s\n",
+        fallout::f2jReferenceGameTime(), m1, d1, y1,
+        fallout::gameTimeGetHour(), fallout::gameTimeGetTimeString());
+
+    // 23:59 + 1 min -> midnight, next day.
+    fallout::gameTimeSetTime(863400);
+    fallout::gameTimeAddSeconds(60);
+    int m2, d2, y2;
+    fallout::gameTimeGetDate(&m2, &d2, &y2);
+    std::printf("midnight time=%u date=%d/%d/%d hour=%d str=%s\n",
+        fallout::f2jReferenceGameTime(), m2, d2, y2,
+        fallout::gameTimeGetHour(), fallout::gameTimeGetTimeString());
+
+    // December 31st -> January 1st of the next year.
+    fallout::gameTimeSetTime((364 - 24) * 864000);
+    int m3, d3, y3;
+    fallout::gameTimeGetDate(&m3, &d3, &y3);
+    std::printf("dec31 time=%u date=%d/%d/%d\n",
+        fallout::f2jReferenceGameTime(), m3, d3, y3);
+    fallout::gameTimeAddTicks(864000);
+    int m4, d4, y4;
+    fallout::gameTimeGetDate(&m4, &d4, &y4);
+    std::printf("jan1 time=%u date=%d/%d/%d\n",
+        fallout::f2jReferenceGameTime(), m4, d4, y4);
+
+    // One 365-day year later: same month/day, next year.
+    fallout::gameTimeSetTime((365 - 24) * 864000);
+    int m5, d5, y5;
+    fallout::gameTimeGetDate(&m5, &d5, &y5);
+    std::printf("yearlater time=%u date=%d/%d/%d\n",
+        fallout::f2jReferenceGameTime(), m5, d5, y5);
+
+    // The 13-year timeout: crossing GAME_TIME_TICKS_PER_YEAR * 13 requests
+    // the main menu.
+    fallout::gameTimeSetTime(GAME_TIME_TICKS_PER_YEAR * 13 - 100);
+    fallout::gameTimeAddTicks(100);
+    std::printf("timeout time=%u quit=%d\n",
+        fallout::f2jReferenceGameTime(),
+        (int)fallout::_game_user_wants_to_quit);
+    fallout::_game_user_wants_to_quit = static_cast<fallout::GameQuitRequest>(savedQuit);
+
+    fallout::gameTimeSetTime(savedTime);
 }
 
 void sectionTraitSelect()
@@ -7350,6 +7410,7 @@ unsigned int f2jReferenceMapGetIsoWindowScrollTimestamp();
 int f2jReferenceScriptAddTimerEvent(int, int, int);
 int f2jReferenceScriptRemoveTimerEvents(int, int);
 bool f2jReferenceQueueIsEmpty();
+void f2jReferenceGameTimeSetStartDate(int, int, int);
 int f2jReferenceAiTeamCombatInit(Object**, int);
 void f2jReferenceAiTeamCombatExit();
 void f2jReferenceCombatAi(Object*, Object*);
